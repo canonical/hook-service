@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base",
+    ":disableDependencyDashboard",
+    ":automergeDigest",
+    ":automergePatch",
+    ":automergeMinor",
+    ":rebaseStalePrs",
+    ":semanticCommits",
+    ":semanticCommitScope(deps)",
+    "helpers:pinGitHubActionDigests",
+    ":enablePreCommit"
+  ],
+  "timezone": "Europe/London",
+  "schedule": ["* * * * 1,3,6"],
+  "automergeType": "pr",
+  "rebaseWhen": "behind-base-branch",
+  "packageRules": [
+    {
+      "groupName": "github actions",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "additionalBranchPrefix": "auto-"
+    },
+    {
+      "groupName": "UI deps",
+      "matchManagers": ["npm"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest"],
+      "automerge": true,
+      "prPriority": 4,
+      "additionalBranchPrefix": "auto-"
+    },
+    {
+      "groupName": "internal UI dependencies",
+      "groupSlug": "internal",
+      "packagePatterns": [
+          "^@canonical",
+          "^canonicalwebteam",
+          "^vanilla-framework"
+      ],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "prPriority": 5,
+      "additionalBranchPrefix": "auto-"
+    },
+    {
+      "groupName": "internal UI dependencies",
+      "groupSlug": "internal",
+      "packagePatterns": [
+          "^@canonical",
+          "^canonicalwebteam",
+          "^vanilla-framework"
+      ],
+      "matchUpdateTypes": ["major"],
+      "prPriority": 5
+    },
+    {
+      "groupName": "Go deps",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "additionalBranchPrefix": "auto-"
+    },
+    {
+      "groupName": "Go deps",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["major"]
+    },
+    {
+      "groupName": "pre-commit hooks",
+      "matchManagers": ["pre-commit"],
+      "matchUpdateTypes": ["major", "minor", "patch"],
+      "automerge": true,
+      "additionalBranchPrefix": "auto-"
+    },
+    {
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/openfga/go-sdk"],
+      "allowedVersions": "v0.3.7",
+      "automerge": false
+    }
+  ]
+}

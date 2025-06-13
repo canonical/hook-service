@@ -1,0 +1,27 @@
+name: unit test
+run-name: Unit test steps for ${{ github.sha }} on ${{ github.ref_name }}
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5
+        with:
+          go-version: '1.24'
+
+      - name: Build Go code
+        run: make test
+
+      - uses: codecov/codecov-action@18283e04ce6e62d37312384ff67231eb8fd56d24 # v5
+        with:
+          files: ./coverage.out
+
+      - name: Upload Go test results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Go-results
+          path: test.json

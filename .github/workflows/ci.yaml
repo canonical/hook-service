@@ -1,0 +1,33 @@
+name: ci
+run-name: CI for ${{ github.sha }} on ${{ github.ref_name }}
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+      - "release-**"
+    tags:
+      - "v**"
+  pull_request:
+    branches:
+      - "*"
+
+jobs:
+  unit-test:
+    uses: ./.github/workflows/unittest.yaml
+  build:
+    uses: ./.github/workflows/build-and-test-rock.yaml
+  gh-publish:
+    if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
+    needs: [ build, unit-test ]
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@6980fa34b31ca8631e6cb2d57980e7e035697a31 # v1.8.5
+    with:
+      rock: "hook-service"
+      structure-tests-enabled: true
+  scan:
+    if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
+    needs: gh-publish
+    uses: canonical/identity-team/.github/workflows/_rock-scan.yaml@6980fa34b31ca8631e6cb2d57980e7e035697a31 # v1.8.5
+    with:
+      image: ${{ needs.gh-publish.outputs.image }}
