@@ -1,0 +1,27 @@
+name: build rock
+run-name: Build and test the rock
+
+on:
+  workflow_call:
+
+jobs:
+  build:
+    name: Build rock
+    uses: canonical/oci-factory/.github/workflows/Build-Rock.yaml@main
+    with:
+      oci-archive-name: "hook-service"
+      rock-repo: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
+      rock-repo-commit: ${{ github.event_name == 'push' && github.ref_name || github.head_ref }}
+      rockfile-directory: .
+      arch-map: '{"amd64": ["self-hosted", "linux", "X64", "large", "jammy"]}'
+    secrets:
+      source-github-token: ${{ secrets.PAT_TOKEN }}
+      host-github-token: ${{ secrets.PAT_TOKEN }}
+  test:
+    uses: canonical/oci-factory/.github/workflows/Test-Rock.yaml@main
+    name: Test rock
+    needs: [build]
+    with:
+      oci-archive-name: "hook-service"
+    secrets:
+      host-github-token: ${{ secrets.PAT_TOKEN }}
