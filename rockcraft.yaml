@@ -1,0 +1,47 @@
+name: hook-service
+base: bare
+build-base: ubuntu@22.04
+version: 0.0.0
+summary: Canonical Identity Platform Hook Service
+description: >
+  This is the Canonical Identity Platform Hook Service used for
+  handling Hydra Hooks and managing groups
+license: Apache-2.0
+platforms:
+  amd64: null
+services:
+  hook-service:
+    override: replace
+    command: /usr/bin/hook-service serve
+    startup: enabled
+parts:
+  go-build:
+    plugin: go
+    source: .
+    source-type: local
+    build-snaps:
+      - go/1.24/stable
+    build-packages:
+      - make
+      - git
+    override-build: >
+      make build
+
+      install -D -m755 ./app
+      ${CRAFT_PART_INSTALL}/opt/hook-service/bin/app
+    organize:
+      opt/hook-service/bin/app: usr/bin/hook-service
+    stage-packages:
+      - ca-certificates_data
+      - base-files_var
+  deb-security-manifest:
+    plugin: nil
+    override-prime: >
+      set -x
+
+      mkdir -p $CRAFT_PRIME/usr/share/rocks/
+
+      (echo "# os-release" && cat /etc/os-release && echo "# dpkg-query" &&
+      dpkg-query --admindir=$CRAFT_PRIME/var/lib/dpkg/ -f
+      '${db:Status-Abbrev},${binary:Package},${Version},${source:Package},${Source:Version}\n'
+      -W) > $CRAFT_PRIME/usr/share/rocks/dpkg.query
