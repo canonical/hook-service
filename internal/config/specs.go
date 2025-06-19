@@ -11,6 +11,13 @@ type EnvSpec struct {
 	LogLevel string `envconfig:"log_level" default:"error"`
 
 	Port int `envconfig:"port" default:"8080"`
+
+	ApiToken string `envconfig:"api_token" default:""`
+
+	SalesforceEnabled        bool   `envconfig:"salesforce_enabled" default:"true"`
+	SalesforceDomain         string `envconfig:"salesforce_domain"`
+	SalesforceConsumerKey    string `envconfig:"salesforce_consumer_key"`
+	SalesforceConsumerSecret string `envconfig:"salesforce_consumer_secret"`
 }
 
 type Flags struct {
