@@ -15,6 +15,7 @@ import (
 	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
+	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/web"
 )
@@ -44,7 +45,16 @@ func serve() {
 	monitor := prometheus.NewMonitor("hook-service", logger)
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
-	router := web.NewRouter(tracer, monitor, logger)
+	var sf salesforce.SalesforceInterface
+	if specs.SalesforceEnabled {
+		sf = salesforce.NewClient(
+			specs.SalesforceDomain,
+			specs.SalesforceConsumerKey,
+			specs.SalesforceConsumerSecret,
+		)
+	}
+
+	router := web.NewRouter(specs.ApiToken, sf, tracer, monitor, logger)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{
