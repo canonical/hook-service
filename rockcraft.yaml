@@ -1,11 +1,11 @@
 name: hook-service
 base: bare
 build-base: ubuntu@22.04
-version: 0.0.0
+version: 1.0.0
 summary: Canonical Identity Platform Hook Service
 description: >
-  This is the Canonical Identity Platform Hook Service used for
-  handling Hydra Hooks and managing groups
+  This is the Canonical Identity Platform Hook Service used for handling Hydra
+  Hooks and managing groups
 license: Apache-2.0
 platforms:
   amd64: null
@@ -24,11 +24,9 @@ parts:
     build-packages:
       - make
       - git
-    override-build: >
+    override-build: |
       make build
-
-      install -D -m755 ./app
-      ${CRAFT_PART_INSTALL}/opt/hook-service/bin/app
+      install -D -m755 ./app ${CRAFT_PART_INSTALL}/opt/hook-service/bin/app
     organize:
       opt/hook-service/bin/app: usr/bin/hook-service
     stage-packages:
