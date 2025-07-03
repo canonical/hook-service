@@ -46,7 +46,7 @@ require (
 	github.com/forcedotcom/go-soql v0.0.0-20220705175410-00f698360bee // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-faker/faker/v4 v4.4.2 // indirect
-	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
+	github.com/go-jose/go-jose/v3 v3.0.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-openapi/jsonpointer v0.21.0 // indirect
