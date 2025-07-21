@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/canonical/hook-service/compare/v1.0.0...v1.0.1) (2025-07-21)
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([b065fb8](https://github.com/canonical/hook-service/commit/b065fb83fafe9d9dda61ac560df0fe2723cdd287))
+* **deps:** update go deps (patch) ([b92ad71](https://github.com/canonical/hook-service/commit/b92ad7115ae8774c55669ac2b0fe5cfb5687d7d6))
+
 ## 1.0.0 (2025-06-30)
 
 
