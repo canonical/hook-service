@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.1](https://github.com/canonical/hook-service/compare/v1.0.0...v1.0.1) (2025-08-23)
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([b065fb8](https://github.com/canonical/hook-service/commit/b065fb83fafe9d9dda61ac560df0fe2723cdd287))
+* **deps:** update go deps (patch) ([b92ad71](https://github.com/canonical/hook-service/commit/b92ad7115ae8774c55669ac2b0fe5cfb5687d7d6))
+* **deps:** update module github.com/prometheus/client_golang to v1.23.0 ([3f850a9](https://github.com/canonical/hook-service/commit/3f850a9ce4fcb24e434cb3be4e3e9b146d195366))
+* **deps:** update module github.com/prometheus/client_golang to v1.23.0 ([9a088a3](https://github.com/canonical/hook-service/commit/9a088a321228e60817fa3e67c53dd5fc419cf30b))
+* **deps:** update module go.uber.org/mock to v0.6.0 ([53ffd5f](https://github.com/canonical/hook-service/commit/53ffd5f40549baf43178e9cf37db8f18021bf8a6))
+* **deps:** update module go.uber.org/mock to v0.6.0 ([9143e65](https://github.com/canonical/hook-service/commit/9143e65518eb388aabf57375a2bab028f25b75f8))
+
 ## 1.0.0 (2025-06-30)
 
 
