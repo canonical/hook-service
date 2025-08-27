@@ -96,10 +96,11 @@ func TestServiceFetchUserGroups(t *testing.T) {
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
+			mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 
 			mockTracer.EXPECT().Start(gomock.Any(), "hooks.Service.FetchUserGroups").Times(1).Return(context.TODO(), trace.SpanFromContext(context.TODO()))
 
-			s := NewService(test.mockedClients(ctrl), mockTracer, mockMonitor, mockLogger)
+			s := NewService(test.mockedClients(ctrl), mockAuthorizer, mockTracer, mockMonitor, mockLogger)
 
 			groups, err := s.FetchUserGroups(context.TODO(), test.input)
 
@@ -108,6 +109,172 @@ func TestServiceFetchUserGroups(t *testing.T) {
 			}
 			if !reflect.DeepEqual(groups, test.expectedResult) {
 				t.Fatalf("expected return value to be %v not %v", test.expectedResult, groups)
+			}
+		})
+	}
+
+}
+
+func TestServiceAuthorizeRequest(t *testing.T) {
+	err := errors.New("some error")
+	user := User{SubjectId: "123", Email: "a@a.com"}
+	serviceAccount := User{ClientId: "client_id"}
+	tests := []struct {
+		name string
+
+		user       User
+		clientId   string
+		grantTypes []string
+		grantedAud []string
+		groups     []string
+
+		mockedCanAccess func(*gomock.Controller) AuthorizerInterface
+
+		expectedResult bool
+		expectedError  error
+	}{
+		{
+			name:       "User can access the application",
+			user:       user,
+			clientId:   "client_id",
+			grantTypes: []string{"authorization_code"},
+			grantedAud: []string{"client_id"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client_id", []string{"g1", "g2"}).Return(true, nil)
+				return mockAuthorizer
+			},
+			expectedResult: true,
+		},
+		{
+			name:       "User cannot access the application",
+			user:       user,
+			clientId:   "client_id",
+			grantTypes: []string{"authorization_code"},
+			grantedAud: []string{"client_id"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client_id", []string{"g1", "g2"}).Return(false, nil)
+				return mockAuthorizer
+			},
+			expectedResult: false,
+		},
+		{
+			name:       "Authorization check fails",
+			user:       user,
+			clientId:   "client_id",
+			grantTypes: []string{"authorization_code"},
+			grantedAud: []string{"client_id"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client_id", []string{"g1", "g2"}).Return(false, err)
+				return mockAuthorizer
+			},
+			expectedResult: false,
+			expectedError:  err,
+		},
+		{
+			name:       "Service account can access the application with single audience",
+			user:       serviceAccount,
+			clientId:   "client_id",
+			grantTypes: []string{"client_credentials"},
+			grantedAud: []string{"app"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app", []string{"g1", "g2"}).Return(true, nil)
+				return mockAuthorizer
+			},
+			expectedResult: true,
+		},
+		{
+			name:       "Service account cannot access the application with single audience",
+			user:       serviceAccount,
+			clientId:   "client_id",
+			grantTypes: []string{"client_credentials"},
+			grantedAud: []string{"app"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app", []string{"g1", "g2"}).Return(false, nil)
+				return mockAuthorizer
+			},
+			expectedResult: false,
+		},
+		{
+			name:       "Service account can access the application with multiple audiences",
+			user:       serviceAccount,
+			clientId:   "client_id",
+			grantTypes: []string{"urn:ietf:params:oauth:grant-type:jwt-bearer"},
+			grantedAud: []string{"app1", "app2"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app1", []string{"g1", "g2"}).Return(true, nil)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app2", []string{"g1", "g2"}).Return(true, nil)
+				return mockAuthorizer
+			},
+			expectedResult: true,
+		},
+		{
+			name:       "Service account cannot access the application with multiple audiences",
+			user:       serviceAccount,
+			clientId:   "client_id",
+			grantTypes: []string{"urn:ietf:params:oauth:grant-type:jwt-bearer"},
+			grantedAud: []string{"app1", "app2", "app3"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app1", []string{"g1", "g2"}).Return(true, nil)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app2", []string{"g1", "g2"}).Return(false, nil)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app3", []string{"g1", "g2"}).Times(0)
+				return mockAuthorizer
+			},
+			expectedResult: false,
+		},
+		{
+			name:       "Service account authorization check fails",
+			user:       serviceAccount,
+			clientId:   "client_id",
+			grantTypes: []string{"client_credentials"},
+			grantedAud: []string{"app"},
+			groups:     []string{"g1", "g2"},
+			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
+				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
+				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app", []string{"g1", "g2"}).Return(false, err)
+				return mockAuthorizer
+			},
+			expectedResult: false,
+			expectedError:  err,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockLogger := NewMockLoggerInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+			mockClient := NewMockClientInterface(ctrl)
+
+			mockTracer.EXPECT().Start(gomock.Any(), "hooks.Service.AuthorizeRequest").Times(1).Return(context.TODO(), trace.SpanFromContext(context.TODO()))
+
+			s := NewService([]ClientInterface{mockClient}, test.mockedCanAccess(ctrl), mockTracer, mockMonitor, mockLogger)
+
+			req := createHookRequest(test.clientId, test.user.SubjectId, test.grantTypes, test.grantedAud)
+
+			allowed, err := s.AuthorizeRequest(context.TODO(), test.user, req, test.groups)
+
+			if err != test.expectedError {
+				t.Fatalf("expected error to be %v not %v", test.expectedError, err)
+			}
+			if !reflect.DeepEqual(allowed, test.expectedResult) {
+				t.Fatalf("expected return value to be %v not %v", test.expectedResult, allowed)
 			}
 		})
 	}
