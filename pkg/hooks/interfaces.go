@@ -11,3 +11,7 @@ type ServiceInterface interface {
 type ClientInterface interface {
 	FetchUserGroups(context.Context, User) ([]string, error)
 }
+
+type AuthorizerInterface interface {
+	CanAccess(context.Context, string, string, []string) (bool, error)
+}
