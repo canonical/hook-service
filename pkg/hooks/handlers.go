@@ -57,7 +57,19 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 	groups, err := a.service.FetchUserGroups(r.Context(), *user)
 	if err != nil {
 		a.logger.Errorf("failed to fetch user groups: %v", err)
-		w.WriteHeader(http.StatusInternalServerError)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	allowed, err := a.service.AuthorizeRequest(r.Context(), *user, *req, groups)
+	if err != nil {
+		a.logger.Errorf("failed to authorize request: %v", err)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if !allowed {
+		a.logger.Infof("unauthorized request, user %s tried to access %s", user.GetUserId(), req.Request.ClientID)
+		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 

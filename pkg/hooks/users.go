@@ -23,8 +23,7 @@ func (u *User) GetUserId() string {
 
 func NewUserFromHookRequest(r *oauth2.TokenHookRequest, logger logging.LoggerInterface) *User {
 	u := new(User)
-	if exactOne(r.Request.GrantTypes, GrantTypeClientCredentials) ||
-		exactOne(r.Request.GrantTypes, GrantTypeJWTBearer) {
+	if isServiceAccount(r.Request.GrantTypes) {
 		u.ClientId = r.Request.ClientID
 		return u
 	}
@@ -40,6 +39,11 @@ func NewUserFromHookRequest(r *oauth2.TokenHookRequest, logger logging.LoggerInt
 		u.Email = email
 	}
 	return u
+}
+
+func isServiceAccount(grantTypes []string) bool {
+	return exactOne(grantTypes, GrantTypeClientCredentials) ||
+		exactOne(grantTypes, GrantTypeJWTBearer)
 }
 
 func exactOne(vs []string, v string) bool {
