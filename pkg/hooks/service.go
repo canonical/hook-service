@@ -8,10 +8,12 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/ory/hydra/v2/oauth2"
 )
 
 type Service struct {
 	clients []ClientInterface
+	authz   AuthorizerInterface
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -40,8 +42,35 @@ func (s *Service) FetchUserGroups(ctx context.Context, user User) ([]string, err
 	return ret, nil
 }
 
+// This implements deny by default
+// TODO: we should make this configurable
+func (s *Service) AuthorizeRequest(
+	ctx context.Context,
+	user User,
+	req oauth2.TokenHookRequest,
+	groups []string,
+) (bool, error) {
+	ctx, span := s.tracer.Start(ctx, "hooks.Service.AuthorizeRequest")
+	defer span.End()
+
+	var err error
+	if !isServiceAccount(req.Request.GrantTypes) {
+		return s.authz.CanAccess(ctx, user.GetUserId(), req.Request.ClientID, groups)
+	} else {
+		// TODO: Implement BatchCanAccess
+		for _, aud := range req.Request.GrantedAudience {
+			allowed, err := s.authz.CanAccess(ctx, user.GetUserId(), aud, groups)
+			if err != nil || allowed == false {
+				return false, err
+			}
+		}
+	}
+	return true, err
+}
+
 func NewService(
 	clients []ClientInterface,
+	authz AuthorizerInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -49,6 +78,7 @@ func NewService(
 	s := new(Service)
 
 	s.clients = clients
+	s.authz = authz
 
 	s.monitor = monitor
 	s.tracer = tracer

@@ -66,7 +66,13 @@ func NewRouter(
 
 	router.Use(middlewares...)
 
-	hooks.NewAPI(hooks.NewService(groupClients, tracer, monitor, logger), authMiddleware, tracer, monitor, logger).RegisterEndpoints(router)
+	hooks.NewAPI(
+		hooks.NewService(groupClients, tracer, monitor, logger),
+		hooks.NewAuthorizer(tracer, monitor, logger),
+		authMiddleware,
+		tracer,
+		monitor,
+		logger).RegisterEndpoints(router)
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
