@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -x
+# set -x
 set -e
 
 cleanup () {
@@ -10,6 +10,8 @@ cleanup () {
 }
 
 trap "cleanup" INT EXIT
+
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Start dependencies
 docker compose -f ./docker-compose.dev.yml up  --wait --force-recreate --build --remove-orphans -d || true
@@ -41,8 +43,27 @@ docker run --network="host" -d --name=oidc_client --rm $HYDRA_IMAGE \
   --scope openid,profile,email,offline_access \
   --no-open --no-shutdown --format json
 
+export PORT="8000"
 export TRACING_ENABLED="false"
 export LOG_LEVEL="debug"
 export API_TOKEN="secret_api_key"
 export SALESFORCE_DOMAIN="https://canonicalhr--staging.sandbox.my.salesforce.com"
+export SALESFORCE_CONSUMER_KEY="*****"
+export SALESFORCE_CONSUMER_SECRET="*****"
+export OPENFGA_API_SCHEME="http"
+export OPENFGA_API_HOST="127.0.0.1:8080"
+export OPENFGA_API_TOKEN="42"
+export OPENFGA_STORE_ID=$(fga store create --name hook-service | yq .store.id)
+export OPENFGA_AUTHORIZATION_MODEL_ID=$(fga model write --store-id $OPENFGA_STORE_ID --file $SCRIPT_DIR/internal/authorization/authorization_model.v0.openfga  | yq .authorization_model_id)
+export AUTHORIZATION_ENABLED="true"
+
+echo
+echo "==============================================="
+echo "Client ID: $CLIENT_ID"
+echo "Store ID: $OPENFGA_STORE_ID"
+echo "Model ID: $OPENFGA_AUTHORIZATION_MODEL_ID"
+echo "==============================================="
+echo
+
+
 go run . serve
