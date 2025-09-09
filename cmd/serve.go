@@ -12,9 +12,12 @@ import (
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/cobra"
 
+	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
+	"github.com/canonical/hook-service/internal/openfga"
+	"github.com/canonical/hook-service/internal/pool"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/web"
@@ -45,6 +48,46 @@ func serve() {
 	monitor := prometheus.NewMonitor("hook-service", logger)
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
+	wpool := pool.NewWorkerPool(specs.OpenFGAWorkersTotal, tracer, monitor, logger)
+	defer wpool.Stop()
+
+	var authorizer *authorization.Authorizer
+	if specs.AuthorizationEnabled {
+		ofga := openfga.NewClient(
+			openfga.NewConfig(
+				specs.OpenfgaApiScheme,
+				specs.OpenfgaApiHost,
+				specs.OpenfgaStoreId,
+				specs.OpenfgaApiToken,
+				specs.OpenfgaModelId,
+				specs.Debug,
+				tracer,
+				monitor,
+				logger,
+			),
+		)
+		authorizer = authorization.NewAuthorizer(
+			ofga,
+			wpool,
+			tracer,
+			monitor,
+			logger,
+		)
+		logger.Info("Authorization is enabled")
+		if authorizer.ValidateModel(context.Background()) != nil {
+			panic("Invalid authorization model provided")
+		}
+	} else {
+		authorizer = authorization.NewAuthorizer(
+			openfga.NewNoopClient(tracer, monitor, logger),
+			wpool,
+			tracer,
+			monitor,
+			logger,
+		)
+		logger.Info("Using noop authorizer")
+	}
+
 	var sf salesforce.SalesforceInterface
 	if specs.SalesforceEnabled {
 		sf = salesforce.NewClient(
@@ -54,7 +97,7 @@ func serve() {
 		)
 	}
 
-	router := web.NewRouter(specs.ApiToken, sf, tracer, monitor, logger)
+	router := web.NewRouter(specs.ApiToken, sf, authorizer, tracer, monitor, logger)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{
