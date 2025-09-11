@@ -10,6 +10,7 @@ services:
       - PORT=4455
       - LOG_LEVEL=DEBUG
       - TRACING_ENABLED=FALSE
+      - MFA_ENABLED=FALSE
       - OPENFGA_API_SCHEME=http
       - OPENFGA_API_HOST=openfga:8080
     ports:
@@ -61,7 +62,7 @@ services:
       - type: bind
         source: ./docker/kratos
         target: /etc/config/kratos
-    command: exec kratos import identities /etc/config/kratos/identity.json --endpoint http://kratosZnVuY3Rpb24oY3R4KSB7CiAgZW1haWw6IGN0eC5pZGVudGl0eS50cmFpdHMuZW1haWwKfQ==:4434
+    command: exec kratos import identities /etc/config/kratos/identity.json --endpoint http://kratos:4434
     networks:
       - intranet
   hydra:
@@ -119,6 +120,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    networks:
+      - intranet
+  migrateopenfga:
+    image: openfga/openfga:v1.9.0
+    container_name: migrateopenfga
+    command: migrate --datastore-engine postgres --datastore-uri 'postgresql://openfga:openfga@postgres/openfga?sslmode=disable'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - intranet
+  openfga:
+    image: openfga/openfga:v1.9.0
+    environment:
+      OPENFGA_DATASTORE_ENGINE: "postgres"
+      OPENFGA_DATASTORE_URI: "postgresql://openfga:openfga@postgres/openfga?sslmode=disable"
+      OPENFGA_AUTHN_PRESHARED_KEYS: "42"
+    command: run
+    ports:
+      - 8080:8080
+      - 8081:8081
+      - 3000:3000
+    depends_on:
+      migrateopenfga:
+        condition: service_completed_successfully
     networks:
       - intranet
 networks:

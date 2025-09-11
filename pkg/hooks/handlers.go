@@ -1,6 +1,7 @@
 package hooks
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -20,6 +21,7 @@ const (
 
 type API struct {
 	service    ServiceInterface
+	authz      AuthorizerInterface
 	middleware *AuthMiddleware
 
 	tracer  tracing.TracingInterface
@@ -61,6 +63,18 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	allowed, err := a.AuthorizeRequest(r.Context(), user, req, groups)
+	if err != nil {
+		a.logger.Errorf("failed to authorize request: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		a.logger.Infof("unauthorized request, user %s tried to access %s", user, req.Request.ClientID)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
 	resp := oauth2.TokenHookResponse{
 		Session: *flow.NewConsentRequestSessionData(),
 	}
@@ -71,8 +85,36 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// thought: Should this go into a separate struct?
+//
+// This implements deny by default
+// TODO: we should make this configurable
+func (a *API) AuthorizeRequest(
+	ctx context.Context,
+	user *User,
+	req *oauth2.TokenHookRequest,
+	groups []string,
+) (bool, error) {
+	var err error
+	ret := true
+	if !isServiceAccount(req) {
+		ret, err = a.authz.CanAccess(ctx, user.GetUserId(), req.Request.ClientID, groups)
+	} else {
+		// TODO: Implement BatchCanAccess
+		for _, aud := range req.Request.GrantedAudience {
+			allowed, err := a.authz.CanAccess(ctx, user.GetUserId(), aud, groups)
+			if err != nil {
+				break
+			}
+			ret = ret && allowed
+		}
+	}
+	return ret, err
+}
+
 func NewAPI(
 	service ServiceInterface,
+	authz AuthorizerInterface,
 	middleware *AuthMiddleware,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
@@ -81,6 +123,7 @@ func NewAPI(
 	a := new(API)
 
 	a.service = service
+	a.authz = authz
 	if middleware != nil {
 		a.middleware = middleware
 	}
