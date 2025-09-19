@@ -11,16 +11,13 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/openfga"
-	"github.com/canonical/hook-service/internal/pool"
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
-var ErrInvalidAuthModel = fmt.Errorf("Invalid authorization model schema")
+var ErrInvalidAuthModel = fmt.Errorf("invalid authorization model schema")
 
 type Authorizer struct {
 	client AuthzClientInterface
-
-	wpool pool.WorkerPoolInterface
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -84,10 +81,26 @@ func (a *Authorizer) CanAccess(ctx context.Context, userId, clientId string, gro
 	return a.Check(ctx, UserTuple(userId), CAN_ACCESS_RELATION, ClientTuple(clientId), ctxTuples...)
 }
 
-func NewAuthorizer(client AuthzClientInterface, wpool pool.WorkerPoolInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Authorizer {
+func (a *Authorizer) BatchCanAccess(ctx context.Context, userId string, clientIds []string, groups []string) (bool, error) {
+	ctx, span := a.tracer.Start(ctx, "authorization.Authorizer.BatchCanAccess")
+	defer span.End()
+
+	ctxTuples := []openfga.Tuple{}
+	for _, group := range groups {
+		ctxTuples = append(ctxTuples, *openfga.NewTuple(UserTuple(userId), MEMBER_RELATION, GroupTuple(group)))
+	}
+
+	tuples := []openfga.TupleWithContext{}
+	for _, clientId := range clientIds {
+		tuples = append(tuples, *openfga.NewTupleWithContext(UserTuple(userId), CAN_ACCESS_RELATION, ClientTuple(clientId), ctxTuples))
+	}
+
+	return a.client.BatchCheck(ctx, tuples...)
+}
+
+func NewAuthorizer(client AuthzClientInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Authorizer {
 	authorizer := new(Authorizer)
 	authorizer.client = client
-	authorizer.wpool = wpool
 	authorizer.tracer = tracer
 	authorizer.monitor = monitor
 	authorizer.logger = logger

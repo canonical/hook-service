@@ -18,7 +18,6 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
-	"github.com/canonical/hook-service/internal/pool"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/web"
@@ -50,9 +49,6 @@ func serve() error {
 	monitor := prometheus.NewMonitor("hook-service", logger)
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
-	wpool := pool.NewWorkerPool(specs.OpenFGAWorkersTotal, tracer, monitor, logger)
-	defer wpool.Stop()
-
 	var authorizer *authorization.Authorizer
 	if specs.AuthorizationEnabled {
 		ofga := openfga.NewClient(
@@ -70,7 +66,6 @@ func serve() error {
 		)
 		authorizer = authorization.NewAuthorizer(
 			ofga,
-			wpool,
 			tracer,
 			monitor,
 			logger,
@@ -82,7 +77,6 @@ func serve() error {
 	} else {
 		authorizer = authorization.NewAuthorizer(
 			openfga.NewNoopClient(tracer, monitor, logger),
-			wpool,
 			tracer,
 			monitor,
 			logger,
