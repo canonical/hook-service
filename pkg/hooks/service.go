@@ -53,19 +53,11 @@ func (s *Service) AuthorizeRequest(
 	ctx, span := s.tracer.Start(ctx, "hooks.Service.AuthorizeRequest")
 	defer span.End()
 
-	var err error
 	if !isServiceAccount(req.Request.GrantTypes) {
 		return s.authz.CanAccess(ctx, user.GetUserId(), req.Request.ClientID, groups)
 	} else {
-		// TODO: Implement BatchCanAccess
-		for _, aud := range req.Request.GrantedAudience {
-			allowed, err := s.authz.CanAccess(ctx, user.GetUserId(), aud, groups)
-			if err != nil || allowed == false {
-				return false, err
-			}
-		}
+		return s.authz.BatchCanAccess(ctx, user.GetUserId(), req.Request.GrantedAudience, groups)
 	}
-	return true, err
 }
 
 func NewService(
