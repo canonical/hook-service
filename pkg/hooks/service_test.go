@@ -185,7 +185,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			groups:     []string{"g1", "g2"},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app", []string{"g1", "g2"}).Return(true, nil)
+				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app"}, []string{"g1", "g2"}).Return(true, nil)
 				return mockAuthorizer
 			},
 			expectedResult: true,
@@ -199,7 +199,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			groups:     []string{"g1", "g2"},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app", []string{"g1", "g2"}).Return(false, nil)
+				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app"}, []string{"g1", "g2"}).Return(false, nil)
 				return mockAuthorizer
 			},
 			expectedResult: false,
@@ -213,8 +213,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			groups:     []string{"g1", "g2"},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app1", []string{"g1", "g2"}).Return(true, nil)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app2", []string{"g1", "g2"}).Return(true, nil)
+				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app1", "app2"}, []string{"g1", "g2"}).Return(true, nil)
 				return mockAuthorizer
 			},
 			expectedResult: true,
@@ -224,13 +223,11 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			user:       serviceAccount,
 			clientId:   "client_id",
 			grantTypes: []string{"urn:ietf:params:oauth:grant-type:jwt-bearer"},
-			grantedAud: []string{"app1", "app2", "app3"},
+			grantedAud: []string{"app1", "app2"},
 			groups:     []string{"g1", "g2"},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app1", []string{"g1", "g2"}).Return(true, nil)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app2", []string{"g1", "g2"}).Return(false, nil)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app3", []string{"g1", "g2"}).Times(0)
+				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app1", "app2"}, []string{"g1", "g2"}).Return(false, nil)
 				return mockAuthorizer
 			},
 			expectedResult: false,
@@ -244,7 +241,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			groups:     []string{"g1", "g2"},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
-				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), serviceAccount.GetUserId(), "app", []string{"g1", "g2"}).Return(false, err)
+				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app"}, []string{"g1", "g2"}).Return(false, err)
 				return mockAuthorizer
 			},
 			expectedResult: false,

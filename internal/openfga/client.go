@@ -254,7 +254,7 @@ func (c *Client) Check(ctx context.Context, user, relation, object string, tuple
 
 	return check.GetAllowed(), nil
 }
-func (c *Client) BatchCheck(ctx context.Context, tuples ...Tuple) (bool, error) {
+func (c *Client) BatchCheck(ctx context.Context, tuples ...TupleWithContext) (bool, error) {
 	ctx, span := c.tracer.Start(ctx, "openfga.Client.BatchCheck")
 	defer span.End()
 
@@ -267,12 +267,21 @@ func (c *Client) BatchCheck(ctx context.Context, tuples ...Tuple) (bool, error) 
 	body := client.ClientBatchCheckRequest{Checks: []client.ClientBatchCheckItem{}}
 
 	for _, t := range tuples {
+		ctxTuples := make([]client.ClientContextualTupleKey, len(t.ContextualTuples))
+		for i, ct := range t.ContextualTuples {
+			ctxTuples[i] = client.ClientContextualTupleKey{
+				User:     ct.User,
+				Relation: ct.Relation,
+				Object:   ct.Object,
+			}
+		}
 		body.Checks = append(
 			body.Checks,
 			client.ClientBatchCheckItem{
-				User:     t.User,
-				Relation: t.Relation,
-				Object:   t.Object,
+				User:             t.User,
+				Relation:         t.Relation,
+				Object:           t.Object,
+				ContextualTuples: ctxTuples,
 			},
 		)
 	}

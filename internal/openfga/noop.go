@@ -42,7 +42,7 @@ func (c *NoopClient) Check(ctx context.Context, user, relation, object string, t
 	return true, nil
 }
 
-func (c *NoopClient) BatchCheck(ctx context.Context, tuples ...Tuple) (bool, error) {
+func (c *NoopClient) BatchCheck(ctx context.Context, tuples ...TupleWithContext) (bool, error) {
 	return true, nil
 }
 

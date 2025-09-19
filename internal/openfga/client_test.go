@@ -517,14 +517,14 @@ func TestClientWriteBatchCheckSuccess(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		input    []Tuple
+		input    []TupleWithContext
 		expected []client.ClientCheckResponse
 		output   bool
 	}{
 		{
 			name: "one tuple",
-			input: []Tuple{
-				*NewTuple("user:me", "assignee", "role:administrator"),
+			input: []TupleWithContext{
+				*NewTupleWithContext("user:me", "assignee", "role:administrator", []Tuple{}),
 			},
 			expected: []client.ClientCheckResponse{
 				{CheckResponse: allowedResponse},
@@ -533,9 +533,9 @@ func TestClientWriteBatchCheckSuccess(t *testing.T) {
 		},
 		{
 			name: "multiple tuples all allowed",
-			input: []Tuple{
-				*NewTuple("user:me", "can_edit", "role:administrator"),
-				*NewTuple("user:me", "can_view", "group:editor"),
+			input: []TupleWithContext{
+				*NewTupleWithContext("user:me", "can_edit", "role:administrator", []Tuple{}),
+				*NewTupleWithContext("user:me", "can_view", "group:editor", []Tuple{}),
 			},
 			expected: []client.ClientCheckResponse{
 				{CheckResponse: allowedResponse},
@@ -545,9 +545,9 @@ func TestClientWriteBatchCheckSuccess(t *testing.T) {
 		},
 		{
 			name: "multiple tuples with failing condition",
-			input: []Tuple{
-				*NewTuple("user:me", "can_edit", "role:administrator"),
-				*NewTuple("user:me", "can_view", "group:editor"),
+			input: []TupleWithContext{
+				*NewTupleWithContext("user:me", "can_edit", "role:administrator", []Tuple{}),
+				*NewTupleWithContext("user:me", "can_view", "group:editor", []Tuple{}),
 			},
 			expected: []client.ClientCheckResponse{
 				{CheckResponse: allowedResponse},
@@ -583,9 +583,10 @@ func TestClientWriteBatchCheckSuccess(t *testing.T) {
 				body.Checks = append(
 					body.Checks,
 					client.ClientBatchCheckItem{
-						User:     tuple.User,
-						Relation: tuple.Relation,
-						Object:   tuple.Object,
+						User:             tuple.User,
+						Relation:         tuple.Relation,
+						Object:           tuple.Object,
+						ContextualTuples: []client.ClientContextualTupleKey{},
 					},
 				)
 			}

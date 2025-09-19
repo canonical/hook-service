@@ -17,4 +17,5 @@ type ClientInterface interface {
 
 type AuthorizerInterface interface {
 	CanAccess(context.Context, string, string, []string) (bool, error)
+	BatchCanAccess(context.Context, string, []string, []string) (bool, error)
 }

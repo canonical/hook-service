@@ -24,6 +24,13 @@ type Tuple struct {
 	Object   string
 }
 
+type TupleWithContext struct {
+	User             string
+	Relation         string
+	Object           string
+	ContextualTuples []Tuple
+}
+
 func (t *Tuple) Values() (string, string, string) {
 	return t.User, t.Relation, t.Object
 }
@@ -34,6 +41,17 @@ func NewTuple(user, relation, object string) *Tuple {
 	t.User = user
 	t.Relation = relation
 	t.Object = object
+
+	return t
+}
+
+func NewTupleWithContext(user, relation, object string, ContextualTuples []Tuple) *TupleWithContext {
+	t := new(TupleWithContext)
+
+	t.User = user
+	t.Relation = relation
+	t.Object = object
+	t.ContextualTuples = ContextualTuples
 
 	return t
 }
