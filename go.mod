@@ -8,7 +8,6 @@ require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
 	github.com/go-playground/validator/v10 v10.22.0
-	github.com/google/uuid v1.6.0
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/openfga/go-sdk v0.7.1
@@ -17,6 +16,7 @@ require (
 	github.com/ory/hydra/v2 v2.3.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.1
+	github.com/tomnomnom/linkheader v0.0.0-20180905144013-02ca5825eb80
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.38.0
 	go.opentelemetry.io/otel v1.38.0
@@ -82,6 +82,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/sessions v1.3.0 // indirect

@@ -100,7 +100,7 @@ func TestServiceFetchUserGroups(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), "hooks.Service.FetchUserGroups").Times(1).Return(context.TODO(), trace.SpanFromContext(context.TODO()))
 
-			s := NewService(test.mockedClients(ctrl), mockAuthorizer, mockTracer, mockMonitor, mockLogger)
+			s := NewService(test.mockedClients(ctrl), nil, mockAuthorizer, mockTracer, mockMonitor, mockLogger)
 
 			groups, err := s.FetchUserGroups(context.TODO(), test.input)
 
@@ -261,7 +261,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), "hooks.Service.AuthorizeRequest").Times(1).Return(context.TODO(), trace.SpanFromContext(context.TODO()))
 
-			s := NewService([]ClientInterface{mockClient}, test.mockedCanAccess(ctrl), mockTracer, mockMonitor, mockLogger)
+			s := NewService([]ClientInterface{mockClient}, nil, test.mockedCanAccess(ctrl), mockTracer, mockMonitor, mockLogger)
 
 			req := createHookRequest(test.clientId, test.user.SubjectId, test.grantTypes, test.grantedAud)
 
