@@ -1,0 +1,24 @@
+model
+  schema 1.1
+
+type user
+
+type privileged
+  relations
+    define admin: [user]
+
+type group
+  relations
+    define privileged: [privileged]
+    define member: [user, group#member]
+
+    define can_create: [user, group#member] or admin from privileged
+    define can_delete: [user, group#member] or admin from privileged
+    define can_edit: [user, group#member] or can_delete or admin from privileged
+    define can_view: [user, user:*, group#member] or can_edit or admin from privileged
+
+type client
+  relations
+    define privileged: [privileged]
+
+    define can_access: [user, group#member] or admin from privileged
