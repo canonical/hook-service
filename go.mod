@@ -5,7 +5,7 @@ go 1.24.2
 require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
-	github.com/k-capehart/go-salesforce/v2 v2.5.2
+	github.com/k-capehart/go-salesforce/v3 v3.0.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/ory/fosite v0.49.0
 	github.com/ory/hydra/v2 v2.3.0
