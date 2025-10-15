@@ -65,6 +65,7 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		Session: *flow.NewConsentRequestSessionData(),
 	}
 	resp.Session.AccessToken["groups"] = groups
+	resp.Session.IDToken["groups"] = groups
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
