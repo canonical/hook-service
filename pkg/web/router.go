@@ -1,35 +1,26 @@
 package web
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
+
+	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
+	chi "github.com/go-chi/chi/v5"
+	middleware "github.com/go-chi/chi/v5/middleware"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"golang.org/x/net/context"
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/canonical/hook-service/internal/authorization"
+	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/tracing"
+	authz_api "github.com/canonical/hook-service/pkg/authorization"
 	"github.com/canonical/hook-service/pkg/hooks"
 	"github.com/canonical/hook-service/pkg/metrics"
 	"github.com/canonical/hook-service/pkg/status"
-	chi "github.com/go-chi/chi/v5"
-	middleware "github.com/go-chi/chi/v5/middleware"
 )
-
-func parseBaseURL(baseUrl string) *url.URL {
-	if baseUrl[len(baseUrl)-1] != '/' {
-		baseUrl += "/"
-	}
-
-	// Check if has app suburl.
-	u, err := url.Parse(baseUrl)
-	if err != nil {
-		panic(fmt.Errorf("invalid BASE_URL: %v", err))
-	}
-
-	return u
-}
 
 func NewRouter(
 	token string,
@@ -61,13 +52,26 @@ func NewRouter(
 		authMiddleware = hooks.NewAuthMiddleware(token, tracer, logger)
 	}
 
+	authzService := authz_api.NewService(authz_api.NewStorage(), authz, tracer, monitor, logger)
+
 	groupClients := []hooks.ClientInterface{}
 	if salesforceClient != nil {
 		groupClients = append(groupClients, hooks.NewSalesforceClient(salesforceClient, tracer, monitor, logger))
 	}
 
+	gRPCGatewayMux := runtime.NewServeMux(
+		runtime.WithForwardResponseRewriter(types.ForwardErrorResponseRewriter),
+		// Use proto field names (snake_case) in JSON output instead of lowerCamelCase.
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{
+				UseProtoNames: true,
+			},
+		}),
+	)
+
 	router.Use(middlewares...)
 
+	v0_authz.RegisterAppAuthorizationServiceHandlerClient(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		authMiddleware,
@@ -76,6 +80,8 @@ func NewRouter(
 		logger).RegisterEndpoints(router)
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
+
+	router.Mount("/api/v0/authz", gRPCGatewayMux)
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }
