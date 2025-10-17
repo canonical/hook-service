@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/salesforce"
@@ -33,6 +34,7 @@ func parseBaseURL(baseUrl string) *url.URL {
 func NewRouter(
 	token string,
 	salesforceClient salesforce.SalesforceInterface,
+	authz authorization.AuthorizerInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -66,7 +68,12 @@ func NewRouter(
 
 	router.Use(middlewares...)
 
-	hooks.NewAPI(hooks.NewService(groupClients, tracer, monitor, logger), authMiddleware, tracer, monitor, logger).RegisterEndpoints(router)
+	hooks.NewAPI(
+		hooks.NewService(groupClients, authz, tracer, monitor, logger),
+		authMiddleware,
+		tracer,
+		monitor,
+		logger).RegisterEndpoints(router)
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
