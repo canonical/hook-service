@@ -84,7 +84,7 @@ func TestGrpcServer_GetAllowedAppsInGroup(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockSvc.EXPECT().GetAllowedAppsInGroup(gomock.Any(), tt.groupID).Return(tt.expectResult, tt.expectErr)
 
 			req := &v0_authz.GetAllowedAppsInGroupReq{GroupId: tt.groupID}
@@ -171,7 +171,7 @@ func TestGrpcServer_AddAllowedAppToGroup(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockSvc.EXPECT().AddAllowedAppToGroup(gomock.Any(), tt.groupID, tt.clientID).Return(tt.expectErr)
 
 			req := &v0_authz.AddAllowedAppToGroupReq{GroupId: tt.groupID, App: &v0_authz.App{ClientId: tt.clientID}}
@@ -262,7 +262,7 @@ func TestGrpcServer_RemoveAllowedAppFromGroup(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockSvc.EXPECT().RemoveAllowedAppFromGroup(gomock.Any(), tt.groupID, tt.appID).Return(tt.expectErr)
 
 			req := &v0_authz.RemoveAllowedAppFromGroupReq{GroupId: tt.groupID, AppId: tt.appID}
@@ -342,7 +342,7 @@ func TestGrpcServer_RemoveAllowedAppsFromGroup(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockSvc.EXPECT().RemoveAllAllowedAppsFromGroup(gomock.Any(), tt.groupID).Return(tt.expectErr)
 
 			req := &v0_authz.RemoveAllowedAppsFromGroupReq{GroupId: tt.groupID}
@@ -446,7 +446,7 @@ func TestGrpcServer_GetAllowedGroupsForApp(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockSvc.EXPECT().GetAllowedGroupsForApp(gomock.Any(), tt.appID).Return(tt.expectResult, tt.expectErr)
 
 			req := &v0_authz.GetAllowedGroupsForAppReq{AppId: tt.appID}
@@ -526,7 +526,7 @@ func TestGrpcServer_RemoveAllowedGroupsForApp(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 			mockSvc.EXPECT().RemoveAllAllowedGroupsForApp(gomock.Any(), tt.appID).Return(tt.expectErr)
 
 			req := &v0_authz.RemoveAllowedGroupsForAppReq{AppId: tt.appID}
@@ -579,7 +579,7 @@ func TestGrpcServer_ValidationErrors(t *testing.T) {
 	// tracer.Start is always called before validation returns
 	mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background())).AnyTimes()
 	mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-	mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+	mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
 
 	tests := []struct {
 		name string

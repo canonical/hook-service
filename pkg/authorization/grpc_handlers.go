@@ -220,7 +220,7 @@ func (g *GrpcServer) mapErrorToStatus(err error, action string) error {
 	case errors.Is(err, ErrInternalServerError):
 		return status.Errorf(codes.Internal, "internal server error")
 	default:
-		g.logger.Infof("Unhandled error in %s: %v", action, err)
+		g.logger.Errorf("Unhandled error in %s: %v", action, err)
 		return status.Errorf(codes.Internal, "%s failed", action)
 	}
 }
