@@ -24,6 +24,8 @@ type AuthorizerInterface interface {
 	RemoveAllowedAppFromGroup(context.Context, string, string) error
 	RemoveAllAllowedAppsFromGroup(context.Context, string) error
 	RemoveAllAllowedGroupsForApp(context.Context, string) error
+
+	DeleteGroup(context.Context, string) error
 }
 
 type AuthzClientInterface interface {

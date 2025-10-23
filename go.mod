@@ -5,10 +5,11 @@ go 1.24.4
 toolchain go1.24.6
 
 require (
-	github.com/canonical/identity-platform-api v0.0.0-20251016130230-d608825fbc61
+	github.com/canonical/identity-platform-api v0.0.0-20251024132801-f4d11eb336d3
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
-	github.com/go-playground/validator/v10 v10.22.0
+	github.com/go-playground/validator/v10 v10.22.1
+	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.2
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -18,6 +19,7 @@ require (
 	github.com/ory/hydra/v2 v2.3.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/spf13/cobra v1.10.1
+	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.38.0
 	go.opentelemetry.io/otel v1.38.0
@@ -86,7 +88,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/sessions v1.3.0 // indirect
@@ -167,7 +168,6 @@ require (
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/spf13/viper v1.18.2 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tidwall/gjson v1.17.3 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
