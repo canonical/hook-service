@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
+	v0_groups "github.com/canonical/identity-platform-api/v0/authz_groups"
 	chi "github.com/go-chi/chi/v5"
 	middleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
@@ -17,6 +18,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/tracing"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
+	groups_api "github.com/canonical/hook-service/pkg/groups"
 	"github.com/canonical/hook-service/pkg/hooks"
 	"github.com/canonical/hook-service/pkg/metrics"
 	"github.com/canonical/hook-service/pkg/status"
@@ -53,6 +55,7 @@ func NewRouter(
 	}
 
 	authzService := authz_api.NewService(authz_api.NewStorage(), authz, tracer, monitor, logger)
+	groupService := groups_api.NewService(groups_api.NewStorage(), authz, tracer, monitor, logger)
 
 	groupClients := []hooks.ClientInterface{}
 	if salesforceClient != nil {
@@ -72,6 +75,7 @@ func NewRouter(
 	router.Use(middlewares...)
 
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
+	v0_groups.RegisterAuthzGroupsServiceHandlerClient(context.Background(), gRPCGatewayMux, groups_api.NewGrpcServer(groupService, tracer, monitor, logger))
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		authMiddleware,
