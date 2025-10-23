@@ -47,7 +47,7 @@ func (m *Storage) GetGroup(ctx context.Context, id string) (*Group, error) {
 
 	group, ok := m.groups[id]
 	if !ok {
-		return nil, ErrGroupNotFound
+		return nil, NewGroupNotFoundError(id, "")
 	}
 	return group, nil
 }
@@ -58,7 +58,7 @@ func (m *Storage) UpdateGroup(ctx context.Context, id string, group *Group) (*Gr
 
 	existingGroup, ok := m.groups[id]
 	if !ok {
-		return nil, ErrGroupNotFound
+		return nil, NewGroupNotFoundError(id, "")
 	}
 
 	// Update fields
@@ -77,7 +77,7 @@ func (m *Storage) DeleteGroup(ctx context.Context, id string) error {
 	defer m.mu.Unlock()
 
 	if _, ok := m.groups[id]; !ok {
-		return ErrGroupNotFound
+		return NewGroupNotFoundError(id, "")
 	}
 
 	delete(m.groups, id)
@@ -90,7 +90,7 @@ func (m *Storage) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 	defer m.mu.Unlock()
 
 	if _, ok := m.groups[groupID]; !ok {
-		return ErrGroupNotFound
+		return NewGroupNotFoundError(groupID, "")
 	}
 
 	userSet := make(map[string]struct{})
@@ -112,7 +112,7 @@ func (m *Storage) ListUsersInGroup(ctx context.Context, groupID string) ([]strin
 	defer m.mu.RUnlock()
 
 	if _, ok := m.groups[groupID]; !ok {
-		return nil, ErrGroupNotFound
+		return nil, NewGroupNotFoundError(groupID, "")
 	}
 
 	return m.users[groupID], nil
@@ -123,7 +123,7 @@ func (m *Storage) RemoveUsersFromGroup(ctx context.Context, groupID string, user
 	defer m.mu.Unlock()
 
 	if _, ok := m.groups[groupID]; !ok {
-		return ErrGroupNotFound
+		return NewGroupNotFoundError(groupID, "")
 	}
 
 	usersToRemove := make(map[string]struct{})
@@ -146,7 +146,7 @@ func (m *Storage) RemoveAllUsersFromGroup(ctx context.Context, groupID string) (
 	defer m.mu.Unlock()
 
 	if _, ok := m.groups[groupID]; !ok {
-		return nil, ErrGroupNotFound
+		return nil, NewGroupNotFoundError(groupID, "")
 	}
 
 	users := m.users[groupID]
@@ -178,7 +178,7 @@ func (m *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 
 	for _, g := range groupIDs {
 		if _, ok := m.groups[g]; !ok {
-			return ErrGroupNotFound
+			return NewGroupNotFoundError(g, "")
 		}
 	}
 

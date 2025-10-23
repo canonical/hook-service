@@ -33,6 +33,6 @@ func parseGroupType(s string) (groupType, error) {
 	case "external":
 		return GroupTypeExternal, nil
 	default:
-		return "", ErrInvalidGroupTyoe
+		return "", NewInvalidGroupTypeError(s, "")
 	}
 }

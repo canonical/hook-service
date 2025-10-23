@@ -25,12 +25,12 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 	now := time.Now()
 	strPtr := func(s string) *string { return &s }
 	tests := []struct {
-		name         string
-		req          *v0_groups.CreateGroupReq
-		serviceResp  *Group
-		serviceErr   error
-		expectErr    bool
-		expectedResp *v0_groups.CreateGroupResp
+		name       string
+		req        *v0_groups.CreateGroupReq
+		expectResp *Group
+		expectErr  error
+		wantErr    bool
+		wantResp   *v0_groups.CreateGroupResp
 	}{
 		{
 			name: "Success",
@@ -41,7 +41,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 					Type:        strPtr("local"),
 				},
 			},
-			serviceResp: &Group{
+			expectResp: &Group{
 				ID:           "group-id",
 				Name:         "test-group",
 				Organization: "default",
@@ -50,9 +50,9 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 				CreatedAt:    now,
 				UpdatedAt:    now,
 			},
-			serviceErr: nil,
-			expectErr:  false,
-			expectedResp: &v0_groups.CreateGroupResp{
+			expectErr: nil,
+			wantErr:   false,
+			wantResp: &v0_groups.CreateGroupResp{
 				Data: []*v0_groups.Group{{
 					Id:           "group-id",
 					Name:         "test-group",
@@ -74,7 +74,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 					Description: strPtr("A test group"),
 				},
 			},
-			serviceResp: &Group{
+			expectResp: &Group{
 				ID:           "group-id",
 				Name:         "test-group",
 				Organization: "default",
@@ -83,9 +83,9 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 				CreatedAt:    now,
 				UpdatedAt:    now,
 			},
-			serviceErr: nil,
-			expectErr:  false,
-			expectedResp: &v0_groups.CreateGroupResp{
+			expectErr: nil,
+			wantErr:   false,
+			wantResp: &v0_groups.CreateGroupResp{
 				Data: []*v0_groups.Group{{
 					Id:           "group-id",
 					Name:         "test-group",
@@ -106,9 +106,9 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 					Name: "test-group",
 				},
 			},
-			serviceResp: nil,
-			serviceErr:  errors.New("service error"),
-			expectErr:   true,
+			expectResp: nil,
+			expectErr:  errors.New("service error"),
+			wantErr:    true,
 		},
 	}
 
@@ -128,22 +128,21 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 			if gType == "" {
 				gType = GroupTypeLocal
 			}
-
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			mockSvc.EXPECT().CreateGroup(gomock.Any(), tt.req.Group.Name, "default", tt.req.Group.GetDescription(), gType).Return(tt.serviceResp, tt.serviceErr)
+			mockSvc.EXPECT().CreateGroup(gomock.Any(), tt.req.Group.Name, "default", tt.req.Group.GetDescription(), gType).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.CreateGroup(context.Background(), tt.req)
 
-			if (err != nil) != tt.expectErr {
-				t.Errorf("CreateGroup() error = %v, wantErr %v", err, tt.expectErr)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("CreateGroup() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if tt.expectErr {
+			if tt.wantErr {
 				return
 			}
 
-			if !reflect.DeepEqual(resp, tt.expectedResp) {
-				t.Errorf("CreateGroup() resp = %v, want %v", resp, tt.expectedResp)
+			if !reflect.DeepEqual(resp, tt.wantResp) {
+				t.Errorf("CreateGroup() resp = %v, want %v", resp, tt.wantResp)
 			}
 		})
 	}
@@ -152,18 +151,18 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 func TestGrpcHandler_GetGroup(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
-		name         string
-		req          *v0_groups.GetGroupReq
-		serviceResp  *Group
-		serviceErr   error
-		expectErr    bool
-		expectedCode codes.Code
-		expectedResp *v0_groups.GetGroupResp
+		name       string
+		req        *v0_groups.GetGroupReq
+		expectResp *Group
+		expectErr  error
+		wantCode   codes.Code
+		wantResp   *v0_groups.GetGroupResp
+		wantErr    error
 	}{
 		{
 			name: "Success",
 			req:  &v0_groups.GetGroupReq{Id: "group-id"},
-			serviceResp: &Group{
+			expectResp: &Group{
 				ID:           "group-id",
 				Name:         "test-group",
 				Organization: "default",
@@ -172,9 +171,9 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 				CreatedAt:    now,
 				UpdatedAt:    now,
 			},
-			serviceErr: nil,
-			expectErr:  false,
-			expectedResp: &v0_groups.GetGroupResp{
+			expectErr: nil,
+			wantErr:   nil,
+			wantResp: &v0_groups.GetGroupResp{
 				Data: []*v0_groups.Group{{
 					Id:           "group-id",
 					Name:         "test-group",
@@ -189,20 +188,20 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 			},
 		},
 		{
-			name:         "Group not found",
-			req:          &v0_groups.GetGroupReq{Id: "not-found"},
-			serviceResp:  nil,
-			serviceErr:   ErrGroupNotFound,
-			expectErr:    true,
-			expectedCode: codes.NotFound,
+			name:       "Group not found",
+			req:        &v0_groups.GetGroupReq{Id: "not-found"},
+			expectResp: nil,
+			expectErr:  NewGroupNotFoundError("not-found", ""),
+			wantErr:    true,
+			wantCode:   codes.NotFound,
 		},
 		{
-			name:         "Service returns error",
-			req:          &v0_groups.GetGroupReq{Id: "error-id"},
-			serviceResp:  nil,
-			serviceErr:   errors.New("service error"),
-			expectErr:    true,
-			expectedCode: codes.Internal,
+			name:       "Service returns error",
+			req:        &v0_groups.GetGroupReq{Id: "error-id"},
+			expectResp: nil,
+			expectErr:  errors.New("service error"),
+			wantErr:    true,
+			wantCode:   codes.Internal,
 		},
 	}
 
@@ -219,24 +218,21 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			mockSvc.EXPECT().GetGroup(gomock.Any(), tt.req.Id).Return(tt.serviceResp, tt.serviceErr)
+			mockSvc.EXPECT().GetGroup(gomock.Any(), tt.req.Id).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.GetGroup(context.Background(), tt.req)
 
-			if (err != nil) != tt.expectErr {
-				t.Errorf("GetGroup() error = %v, wantErr %v", err, tt.expectErr)
+			if err != tt.wantErr {
+				t.Errorf("GetGroup() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if tt.expectErr {
-				st, ok := status.FromError(err)
-				if !ok || st.Code() != tt.expectedCode {
-					t.Errorf("expected gRPC status %v, got %v", tt.expectedCode, st.Code())
-				}
-				return
+			st, ok := status.FromError(err)
+			if !ok || st.Code() != tt.wantCode {
+				t.Errorf("expected gRPC status %v, got %v", tt.wantCode, st.Code())
 			}
 
-			if !reflect.DeepEqual(resp, tt.expectedResp) {
-				t.Errorf("GetGroup() resp = %v, want %v", resp, tt.expectedResp)
+			if !reflect.DeepEqual(resp, tt.wantResp) {
+				t.Errorf("GetGroup() resp = %v, want %v", resp, tt.wantResp)
 			}
 		})
 	}
@@ -338,7 +334,7 @@ func TestGrpcHandler_RemoveGroup(t *testing.T) {
 		{
 			name:         "Group not found",
 			req:          &v0_groups.RemoveGroupReq{Id: "not-found"},
-			serviceErr:   ErrGroupNotFound,
+			serviceErr:   NewGroupNotFoundError("not-found", ""),
 			expectErr:    true,
 			expectedCode: codes.NotFound,
 		},
@@ -412,8 +408,13 @@ func TestGrpcHandler_UpdateGroup(t *testing.T) {
 		},
 		{
 			name:           "Group not found",
+<<<<<<< HEAD
 			req:            &v0_groups.UpdateGroupReq{Id: "not-found"},
 			updateGroupErr: ErrGroupNotFound,
+=======
+			req:            &v0_groups.UpdateGroupReq{Id: "not-found", Group: &v0_groups.GroupInput{Description: strPtr("new description")}},
+			updateGroupErr: NewGroupNotFoundError("not-found", ""),
+>>>>>>> 654c7bb (wip: improve error handling)
 			expectErr:      true,
 			expectedCode:   codes.NotFound,
 		},
@@ -503,7 +504,7 @@ func TestGrpcHandler_ListUsersInGroup(t *testing.T) {
 		{
 			name:         "Group not found",
 			req:          &v0_groups.ListUsersInGroupReq{Id: "not-found"},
-			serviceErr:   ErrGroupNotFound,
+			serviceErr:   NewGroupNotFoundError("not-found", ""),
 			expectErr:    true,
 			expectedCode: codes.NotFound,
 		},
@@ -568,7 +569,7 @@ func TestGrpcHandler_AddUsersToGroup(t *testing.T) {
 		{
 			name:         "Group not found",
 			req:          &v0_groups.AddUsersToGroupReq{Id: "not-found", UserIds: []string{"user-1"}},
-			serviceErr:   ErrGroupNotFound,
+			serviceErr:   NewGroupNotFoundError("not-found", ""),
 			expectErr:    true,
 			expectedCode: codes.NotFound,
 		},
@@ -633,7 +634,7 @@ func TestGrpcHandler_RemoveUserFromGroup(t *testing.T) {
 		{
 			name:         "Group not found",
 			req:          &v0_groups.RemoveUserFromGroupReq{Id: "not-found", UserId: "user-1"},
-			serviceErr:   ErrGroupNotFound,
+			serviceErr:   NewGroupNotFoundError("not-found", ""),
 			expectErr:    true,
 			expectedCode: codes.NotFound,
 		},
@@ -782,7 +783,7 @@ func TestGrpcHandler_AddUserToGroups(t *testing.T) {
 		{
 			name:         "Group not found",
 			req:          &v0_groups.AddUserToGroupsReq{Id: "user-1", GroupIds: []string{"not-found"}},
-			serviceErr:   ErrGroupNotFound,
+			serviceErr:   NewGroupNotFoundError("not-found", ""),
 			expectErr:    true,
 			expectedCode: codes.NotFound,
 		},
@@ -840,11 +841,27 @@ func TestMapErrorToStatus(t *testing.T) {
 		wantMsg  string
 	}{
 		{"nil error", nil, "action", codes.OK, ""},
-		{"group not found", ErrGroupNotFound, "action", codes.NotFound, "group not found"},
-		{"duplicate group", ErrDuplicateGroup, "action", codes.AlreadyExists, "group already exists"},
-		{"invalid group name", ErrInvalidGroupName, "action", codes.InvalidArgument, "invalid group name"},
-		{"invalid group type", ErrInvalidGroupType, "action", codes.InvalidArgument, "invalid group type"},
-		{"invalid organization", ErrInvalidOrganization, "action", codes.InvalidArgument, "invalid organization"},
+		{
+			"group not found with metadata",
+			NewGroupNotFoundError("group123", "FindGroup"),
+			"action",
+			codes.NotFound,
+			"FindGroup: group not found (group_id=group123)",
+		},
+		{
+			"duplicate group with metadata",
+			NewDuplicateGroupError("admins", "CreateGroup"),
+			"action",
+			codes.AlreadyExists,
+			"CreateGroup: group already exists (group_name=admins)",
+		},
+		{
+			"invalid group name with metadata",
+			NewInvalidGroupNameError("@invalid", "ValidateGroup"),
+			"action",
+			codes.InvalidArgument,
+			"ValidateGroup: invalid group name (group_name=@invalid)",
+		},
 		{"unknown error", errors.New("something went wrong"), "test-action", codes.Internal, "test-action: something went wrong"},
 	}
 

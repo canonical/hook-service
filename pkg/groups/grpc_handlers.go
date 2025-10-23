@@ -3,7 +3,10 @@ package groups
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"sort"
+	"strings"
 
 	v0_groups "github.com/canonical/identity-platform-api/v0/authz_groups"
 	"google.golang.org/grpc"
@@ -64,7 +67,12 @@ func (g *GrpcServer) GetGroup(ctx context.Context, req *v0_groups.GetGroupReq, o
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.GetGroup")
 	defer span.End()
 
-	group, err := g.svc.GetGroup(ctx, req.Id)
+	groupID := req.GetId()
+	if groupID == "" {
+		return nil, mapErrorToStatus(NewValidationError("group_id", "cannot be empty", "GetGroup"), "")
+	}
+
+	group, err := g.svc.GetGroup(ctx, groupID)
 	if err != nil {
 		return nil, mapErrorToStatus(err, "get group")
 	}
@@ -106,6 +114,7 @@ func (g *GrpcServer) ListGroups(ctx context.Context, req *v0_groups.ListGroupsRe
 			UpdatedAt:    timestamppb.New(group.UpdatedAt),
 		}
 	}
+
 	msg := "Group list"
 	return &v0_groups.ListGroupsResp{
 		Data:    respGroups,
@@ -148,6 +157,7 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 	}
 
 	group := &Group{
+		ID:           req.GetId(),
 		Description:  req.Group.GetDescription(),
 		Type:         gType,
 		Organization: "default",
@@ -283,22 +293,63 @@ func NewGrpcServer(svc ServiceInterface, tracer tracing.TracingInterface, monito
 	}
 }
 
+// formatMetadata converts a metadata map to a sorted string representation
+func formatMetadata(metadata map[string]string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+
+	// Get all keys
+	keys := make([]string, 0, len(metadata))
+	for k := range metadata {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Build metadata string
+	pairs := make([]string, 0, len(metadata))
+	for _, k := range keys {
+		pairs = append(pairs, fmt.Sprintf("%s=%s", k, metadata[k]))
+	}
+	return strings.Join(pairs, ", ")
+}
+
 // mapErrorToStatus maps known errors to gRPC status errors
 func mapErrorToStatus(err error, action string) error {
-	switch {
-	case err == nil:
+	if err == nil {
 		return nil
-	case errors.Is(err, ErrGroupNotFound):
-		return status.Errorf(codes.NotFound, "group not found")
-	case errors.Is(err, ErrDuplicateGroup):
-		return status.Errorf(codes.AlreadyExists, "group already exists")
-	case errors.Is(err, ErrInvalidGroupName):
-		return status.Errorf(codes.InvalidArgument, "invalid group name")
-	case errors.Is(err, ErrInvalidGroupType):
-		return status.Errorf(codes.InvalidArgument, "invalid group type")
-	case errors.Is(err, ErrInvalidOrganization):
-		return status.Errorf(codes.InvalidArgument, "invalid organization")
-	default:
-		return status.Errorf(codes.Internal, "%s: %v", action, err)
 	}
+
+	var gerr *GroupError
+	if errors.As(err, &gerr) {
+		// Use the operation from the error if available, otherwise use the provided action
+		op := gerr.Op
+		if op == "" {
+			op = action
+		}
+
+		var code codes.Code
+		switch gerr.Code {
+		case ErrCodeGroupNotFound, ErrCodeUserNotFound:
+			code = codes.NotFound
+		case ErrCodeDuplicateGroup, ErrCodeUserAlreadyInGroup:
+			code = codes.AlreadyExists
+		case ErrCodeInvalidGroupName:
+			code = codes.InvalidArgument
+		case ErrCodeUserNotInGroup:
+			code = codes.FailedPrecondition
+		default:
+			code = codes.Internal
+		}
+
+		msg := gerr.Message
+		if len(gerr.Metadata) > 0 {
+			// Include relevant metadata in the error message
+			msg = fmt.Sprintf("%s (%s)", msg, formatMetadata(gerr.Metadata))
+		}
+		return status.Errorf(code, "%s: %s", op, msg)
+	}
+
+	// Fallback for non-GroupError errors
+	return status.Errorf(codes.Internal, "%s: %v", action, err)
 }

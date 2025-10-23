@@ -99,6 +99,7 @@ func TestService_GetGroup(t *testing.T) {
 	groupID := "test-id"
 	expectedGroup := &Group{ID: groupID, Name: "test-group"}
 	dbErr := errors.New("db error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name          string
@@ -120,10 +121,10 @@ func TestService_GetGroup(t *testing.T) {
 			name:    "not found",
 			groupID: "not-found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().GetGroup(gomock.Any(), "not-found").Return(nil, ErrGroupNotFound)
+				mockStorage.EXPECT().GetGroup(gomock.Any(), "not-found").Return(nil, notFoundErr)
 			},
 			expectedGroup: nil,
-			expectedErr:   ErrGroupNotFound,
+			expectedErr:   notFoundErr,
 		},
 		{
 			name:    "db error",
@@ -232,6 +233,7 @@ func TestService_UpdateGroup(t *testing.T) {
 	groupToUpdate := &Group{Name: "updated-name"}
 	updatedGroup := &Group{ID: groupID, Name: "updated-name"}
 	dbErr := errors.New("db error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name          string
@@ -256,10 +258,10 @@ func TestService_UpdateGroup(t *testing.T) {
 			groupID: "not-found",
 			group:   groupToUpdate,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().UpdateGroup(gomock.Any(), "not-found", groupToUpdate).Return(nil, ErrGroupNotFound)
+				mockStorage.EXPECT().UpdateGroup(gomock.Any(), "not-found", groupToUpdate).Return(nil, notFoundErr)
 			},
 			expectedGroup: nil,
-			expectedErr:   ErrGroupNotFound,
+			expectedErr:   notFoundErr,
 		},
 		{
 			name:    "db error",
@@ -304,6 +306,7 @@ func TestService_DeleteGroup(t *testing.T) {
 	groupID := "test-id"
 	dbErr := errors.New("db error")
 	authzErr := errors.New("authz error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name        string
@@ -324,9 +327,9 @@ func TestService_DeleteGroup(t *testing.T) {
 			name:    "not found",
 			groupID: "not-found",
 			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface) {
-				mockStorage.EXPECT().DeleteGroup(gomock.Any(), "not-found").Return(ErrGroupNotFound)
+				mockStorage.EXPECT().DeleteGroup(gomock.Any(), "not-found").Return(notFoundErr)
 			},
-			expectedErr: fmt.Errorf("failed to delete group from db: %w", ErrGroupNotFound),
+			expectedErr: fmt.Errorf("failed to delete group from db: %w", notFoundErr),
 		},
 		{
 			name:    "db error",
@@ -376,6 +379,7 @@ func TestService_AddUsersToGroup(t *testing.T) {
 	groupID := "group-id"
 	userIDs := []string{"user1", "user2"}
 	dbErr := errors.New("db error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name        string
@@ -392,9 +396,9 @@ func TestService_AddUsersToGroup(t *testing.T) {
 		{
 			name: "not found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(ErrGroupNotFound)
+				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(notFoundErr)
 			},
-			expectedErr: fmt.Errorf("failed to add users to group: %w", ErrGroupNotFound),
+			expectedErr: fmt.Errorf("failed to add users to group: %w", notFoundErr),
 		},
 		{
 			name: "db error",
@@ -434,6 +438,7 @@ func TestService_ListUsersInGroup(t *testing.T) {
 	groupID := "group-id"
 	expectedUsers := []string{"user1", "user2"}
 	dbErr := errors.New("db error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name          string
@@ -460,10 +465,10 @@ func TestService_ListUsersInGroup(t *testing.T) {
 		{
 			name: "not found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return(nil, ErrGroupNotFound)
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return(nil, notFoundErr)
 			},
 			expectedUsers: nil,
-			expectedErr:   ErrGroupNotFound,
+			expectedErr:   notFoundErr,
 		},
 		{
 			name: "db error",
@@ -506,6 +511,7 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 	groupID := "group-id"
 	userIDs := []string{"user1", "user2"}
 	dbErr := errors.New("db error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name        string
@@ -522,9 +528,9 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 		{
 			name: "not found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(ErrGroupNotFound)
+				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(notFoundErr)
 			},
-			expectedErr: ErrGroupNotFound,
+			expectedErr: notFoundErr,
 		},
 		{
 			name: "db error",
@@ -563,6 +569,7 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 func TestService_RemoveAllUsersFromGroup(t *testing.T) {
 	groupID := "group-id"
 	dbErr := errors.New("db error")
+	notFoundErr := NewGroupNotFoundError("id", "")
 
 	testCases := []struct {
 		name        string
@@ -579,9 +586,9 @@ func TestService_RemoveAllUsersFromGroup(t *testing.T) {
 		{
 			name: "not found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveAllUsersFromGroup(gomock.Any(), groupID).Return(nil, ErrGroupNotFound)
+				mockStorage.EXPECT().RemoveAllUsersFromGroup(gomock.Any(), groupID).Return(nil, notFoundErr)
 			},
-			expectedErr: fmt.Errorf("failed to remove users from group: %w", ErrGroupNotFound),
+			expectedErr: fmt.Errorf("failed to remove users from group: %w", notFoundErr),
 		},
 		{
 			name: "db error",
