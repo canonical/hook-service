@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.2](https://github.com/canonical/hook-service/compare/v1.0.1...v1.0.2) (2025-11-01)
+
+
+### Bug Fixes
+
+* add openfga integration ([ee29bae](https://github.com/canonical/hook-service/commit/ee29bae1686b4aa498597a0e698179553a7f1d83))
+* **deps:** update go deps ([c7d1433](https://github.com/canonical/hook-service/commit/c7d143358ea908b2bbb1386e057bc4b81bff10f2))
+* **deps:** update go deps (patch) ([f8d4e83](https://github.com/canonical/hook-service/commit/f8d4e837b6f18a9de9e6156b5d5a167e5a9d7cd6))
+* introduce hook authorizer ([589c240](https://github.com/canonical/hook-service/commit/589c24044d55ef2aa321ba9e04cf4774cdeb0bf0))
+* remove pool, add batch check ([76eb9f2](https://github.com/canonical/hook-service/commit/76eb9f20ad0a7c81bc232860d6b85142c9e50548))
+
 ## [1.0.1](https://github.com/canonical/hook-service/compare/v1.0.0...v1.0.1) (2025-10-15)
 
 
