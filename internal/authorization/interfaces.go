@@ -7,6 +7,7 @@ import (
 	"context"
 
 	fga "github.com/openfga/go-sdk"
+	"github.com/openfga/go-sdk/client"
 
 	"github.com/canonical/hook-service/internal/openfga"
 )
@@ -18,6 +19,11 @@ type AuthorizerInterface interface {
 	ValidateModel(context.Context) error
 	CanAccess(context.Context, string, string, []string) (bool, error)
 	BatchCanAccess(context.Context, string, []string, []string) (bool, error)
+
+	AddAllowedAppToGroup(context.Context, string, string) error
+	RemoveAllowedAppFromGroup(context.Context, string, string) error
+	RemoveAllAllowedAppsFromGroup(context.Context, string) error
+	RemoveAllAllowedGroupsForApp(context.Context, string) error
 }
 
 type AuthzClientInterface interface {
@@ -26,6 +32,8 @@ type AuthzClientInterface interface {
 	BatchCheck(context.Context, ...openfga.TupleWithContext) (bool, error)
 	ReadModel(context.Context) (*fga.AuthorizationModel, error)
 	CompareModel(context.Context, fga.AuthorizationModel) (bool, error)
+	ReadTuples(context.Context, string, string, string, string) (*client.ClientReadResponse, error)
 	WriteTuple(ctx context.Context, user, relation, object string) error
 	DeleteTuple(ctx context.Context, user, relation, object string) error
+	DeleteTuples(context.Context, ...openfga.Tuple) error
 }
