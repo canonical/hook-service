@@ -2,7 +2,7 @@ module github.com/canonical/hook-service
 
 go 1.24.4
 
-toolchain go1.24.9
+toolchain go1.24.10
 
 require (
 	github.com/go-chi/chi/v5 v5.2.3
