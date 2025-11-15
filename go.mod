@@ -1,6 +1,6 @@
 module github.com/canonical/hook-service
 
-go 1.24.4
+go 1.24.5
 
 toolchain go1.24.10
 
@@ -10,6 +10,7 @@ require (
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/google/uuid v1.6.0
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
+	github.com/k-capehart/go-salesforce/v3 v3.0.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/openfga/go-sdk v0.7.1
 	github.com/openfga/language/pkg/go v0.2.0-beta.2
@@ -79,7 +80,7 @@ require (
 	github.com/goccy/go-yaml v1.11.3 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.0 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
@@ -159,7 +160,7 @@ require (
 	github.com/sourcegraph/annotate v0.0.0-20160123013949-f4cad6c6324d // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/sourcegraph/syntaxhighlight v0.0.0-20170531221838-bd320f5d308e // indirect
-	github.com/spf13/afero v1.14.0 // indirect
+	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/spf13/viper v1.18.2 // indirect
@@ -197,7 +198,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apimachinery v0.33.2 // indirect
+	k8s.io/apimachinery v0.34.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
+	k8s.io/utils v0.0.0-20250604170112-4c0f3b243397 // indirect
 )
