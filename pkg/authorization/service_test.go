@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/canonical/hook-service/internal/storage"
 	trace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -125,18 +126,39 @@ func TestService_AddAllowedAppToGroup(t *testing.T) {
 				return mock
 			},
 			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
-				return NewMockAuthorizerInterface(ctrl) // Not called
+				return NewMockAuthorizerInterface(ctrl)
 			},
 			expectedError: dbErr,
 		},
 		{
-			name: "Authorizer error with rollback",
+			name: "Duplicate key - app already exists in group",
 			mockDB: func(ctrl *gomock.Controller) AuthorizationDatabaseInterface {
 				mock := NewMockAuthorizationDatabaseInterface(ctrl)
-				gomock.InOrder(
-					mock.EXPECT().AddAllowedApp(gomock.Any(), groupID, app).Return(nil),
-					mock.EXPECT().RemoveAllowedApp(gomock.Any(), groupID, app).Return(nil), // Rollback
-				)
+				mock.EXPECT().AddAllowedApp(gomock.Any(), groupID, app).Return(storage.ErrDuplicateKey)
+				return mock
+			},
+			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
+				return NewMockAuthorizerInterface(ctrl)
+			},
+			expectedError: ErrAppAlreadyExistsInGroup,
+		},
+		{
+			name: "Foreign key violation - invalid group ID",
+			mockDB: func(ctrl *gomock.Controller) AuthorizationDatabaseInterface {
+				mock := NewMockAuthorizationDatabaseInterface(ctrl)
+				mock.EXPECT().AddAllowedApp(gomock.Any(), groupID, app).Return(storage.ErrForeignKeyViolation)
+				return mock
+			},
+			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
+				return NewMockAuthorizerInterface(ctrl)
+			},
+			expectedError: ErrInvalidGroupID,
+		},
+		{
+			name: "Authorizer error - no rollback (transaction middleware handles it)",
+			mockDB: func(ctrl *gomock.Controller) AuthorizationDatabaseInterface {
+				mock := NewMockAuthorizationDatabaseInterface(ctrl)
+				mock.EXPECT().AddAllowedApp(gomock.Any(), groupID, app).Return(nil)
 				return mock
 			},
 			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
@@ -154,9 +176,6 @@ func TestService_AddAllowedAppToGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
-			if test.expectedError == nil {
-				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
-			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -168,8 +187,14 @@ func TestService_AddAllowedAppToGroup(t *testing.T) {
 
 			err := s.AddAllowedAppToGroup(context.TODO(), groupID, app)
 
-			if err != test.expectedError {
-				t.Fatalf("expected error to be %v not %v", test.expectedError, err)
+			if test.expectedError != nil {
+				if err == nil || err.Error() != test.expectedError.Error() {
+					t.Fatalf("expected error %q, got %v", test.expectedError.Error(), err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
 		})
 	}
@@ -216,11 +241,10 @@ func TestService_RemoveAllAllowedAppsFromGroup(t *testing.T) {
 			expectedError: dbErr,
 		},
 		{
-			name: "Authorizer error with rollback",
+			name: "Authorizer error - no rollback (transaction middleware handles it)",
 			mockDB: func(ctrl *gomock.Controller) AuthorizationDatabaseInterface {
 				mock := NewMockAuthorizationDatabaseInterface(ctrl)
 				mock.EXPECT().RemoveAllowedApps(gomock.Any(), groupID).Return(apps, nil)
-				mock.EXPECT().AddAllowedApps(gomock.Any(), groupID, apps).Return(nil)
 				return mock
 			},
 			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
@@ -238,9 +262,6 @@ func TestService_RemoveAllAllowedAppsFromGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
-			if test.expectedError == nil {
-				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
-			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -252,8 +273,14 @@ func TestService_RemoveAllAllowedAppsFromGroup(t *testing.T) {
 
 			err := s.RemoveAllAllowedAppsFromGroup(context.TODO(), groupID)
 
-			if err != test.expectedError {
-				t.Fatalf("expected error to be %v not %v", test.expectedError, err)
+			if test.expectedError != nil {
+				if err == nil || err.Error() != test.expectedError.Error() {
+					t.Fatalf("expected error %q, got %v", test.expectedError.Error(), err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
 		})
 	}
@@ -300,13 +327,10 @@ func TestService_RemoveAllowedAppFromGroup(t *testing.T) {
 			expectedError: dbErr,
 		},
 		{
-			name: "Authorizer error with rollback",
+			name: "Authorizer error - no rollback (transaction middleware handles it)",
 			mockDB: func(ctrl *gomock.Controller) AuthorizationDatabaseInterface {
 				mock := NewMockAuthorizationDatabaseInterface(ctrl)
-				gomock.InOrder(
-					mock.EXPECT().RemoveAllowedApp(gomock.Any(), groupID, app).Return(nil),
-					mock.EXPECT().AddAllowedApp(gomock.Any(), groupID, app).Return(nil), // Rollback
-				)
+				mock.EXPECT().RemoveAllowedApp(gomock.Any(), groupID, app).Return(nil)
 				return mock
 			},
 			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
@@ -324,9 +348,6 @@ func TestService_RemoveAllowedAppFromGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
-			if test.expectedError == nil {
-				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
-			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -338,8 +359,14 @@ func TestService_RemoveAllowedAppFromGroup(t *testing.T) {
 
 			err := s.RemoveAllowedAppFromGroup(context.TODO(), groupID, app)
 
-			if err != test.expectedError {
-				t.Fatalf("expected error to be %v not %v", test.expectedError, err)
+			if test.expectedError != nil {
+				if err == nil || err.Error() != test.expectedError.Error() {
+					t.Fatalf("expected error %q, got %v", test.expectedError.Error(), err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
 		})
 	}
@@ -383,9 +410,6 @@ func TestService_GetAllowedGroupsForApp(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
-			if test.expectedError == nil {
-				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
-			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := NewMockAuthorizerInterface(ctrl)
@@ -458,13 +482,10 @@ func TestService_RemoveAllAllowedGroupsForApp(t *testing.T) {
 			expectedError: dbErr,
 		},
 		{
-			name: "Authorizer error",
+			name: "Authorizer error - no rollback (transaction middleware handles it)",
 			mockDB: func(ctrl *gomock.Controller) AuthorizationDatabaseInterface {
 				mock := NewMockAuthorizationDatabaseInterface(ctrl)
-				gomock.InOrder(
-					mock.EXPECT().RemoveAllAllowedGroupsForApp(gomock.Any(), app).Return(groups, nil),
-					mock.EXPECT().AddAllowedGroupsForApp(gomock.Any(), app, groups).Return(nil), // Rollback
-				)
+				mock.EXPECT().RemoveAllAllowedGroupsForApp(gomock.Any(), app).Return(groups, nil)
 				return mock
 			},
 			mockAuthorizer: func(ctrl *gomock.Controller) AuthorizerInterface {
@@ -482,9 +503,6 @@ func TestService_RemoveAllAllowedGroupsForApp(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
-			if test.expectedError == nil {
-				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
-			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -496,8 +514,14 @@ func TestService_RemoveAllAllowedGroupsForApp(t *testing.T) {
 
 			err := s.RemoveAllAllowedGroupsForApp(context.TODO(), app)
 
-			if err != test.expectedError {
-				t.Fatalf("expected error to be %v not %v", test.expectedError, err)
+			if test.expectedError != nil {
+				if err == nil || err.Error() != test.expectedError.Error() {
+					t.Fatalf("expected error %q, got %v", test.expectedError.Error(), err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
 			}
 		})
 	}

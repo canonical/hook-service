@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/canonical/hook-service/internal/types"
 	"github.com/google/uuid"
 )
 
@@ -15,22 +16,22 @@ var _ DatabaseInterface = (*Storage)(nil)
 
 type Storage struct {
 	mu     sync.RWMutex
-	groups map[string]*Group
+	groups map[string]*types.Group
 	users  map[string][]string
 }
 
-func (m *Storage) ListGroups(ctx context.Context) ([]*Group, error) {
+func (m *Storage) ListGroups(ctx context.Context) ([]*types.Group, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
-	groups := make([]*Group, 0, len(m.groups))
+	groups := make([]*types.Group, 0, len(m.groups))
 	for _, group := range m.groups {
 		groups = append(groups, group)
 	}
 	return groups, nil
 }
 
-func (m *Storage) CreateGroup(ctx context.Context, group *Group) (*Group, error) {
+func (m *Storage) CreateGroup(ctx context.Context, group *types.Group) (*types.Group, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -44,7 +45,7 @@ func (m *Storage) CreateGroup(ctx context.Context, group *Group) (*Group, error)
 	return group, nil
 }
 
-func (m *Storage) GetGroup(ctx context.Context, id string) (*Group, error) {
+func (m *Storage) GetGroup(ctx context.Context, id string) (*types.Group, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -55,7 +56,7 @@ func (m *Storage) GetGroup(ctx context.Context, id string) (*Group, error) {
 	return group, nil
 }
 
-func (m *Storage) UpdateGroup(ctx context.Context, id string, group *Group) (*Group, error) {
+func (m *Storage) UpdateGroup(ctx context.Context, id string, group *types.Group) (*types.Group, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -157,7 +158,7 @@ func (m *Storage) RemoveAllUsersFromGroup(ctx context.Context, groupID string) (
 	return users, nil
 }
 
-func (m *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*Group, error) {
+func (m *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -166,7 +167,7 @@ func (m *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*Group
 		return nil, nil
 	}
 
-	var groups []*Group
+	var groups []*types.Group
 	for _, groupID := range user {
 		if group, ok := m.groups[groupID]; ok {
 			groups = append(groups, group)
@@ -214,7 +215,7 @@ func (m *Storage) RemoveGroupsForUser(ctx context.Context, userID string) ([]str
 
 func NewStorage() *Storage {
 	return &Storage{
-		groups: make(map[string]*Group),
+		groups: make(map[string]*types.Group),
 		users:  make(map[string][]string),
 	}
 }

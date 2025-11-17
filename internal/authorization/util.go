@@ -21,8 +21,6 @@ func ClientTuple(clientId string) string {
 func GroupTuple(groupId string) string {
 	// Groups may include invalid characters for an ofga resource (e.g. spaces)
 	// that's why b64 encode them
-	// TODO: Once database support is implemented, we should consider using IDs
-	// instead of encoded names
 	return "group:" + base64.StdEncoding.EncodeToString([]byte(groupId))
 }
 

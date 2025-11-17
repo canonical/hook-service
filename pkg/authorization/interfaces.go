@@ -19,8 +19,8 @@ type AuthorizationDatabaseInterface interface {
 	GetAllowedApps(context.Context, string) ([]string, error)
 	AddAllowedApp(context.Context, string, string) error
 	AddAllowedApps(context.Context, string, []string) error
-	RemoveAllowedApps(context.Context, string) ([]string, error)
 	RemoveAllowedApp(context.Context, string, string) error
+	RemoveAllowedApps(context.Context, string) ([]string, error)
 
 	AddAllowedGroupsForApp(context.Context, string, []string) error
 	GetAllowedGroupsForApp(context.Context, string) ([]string, error)
