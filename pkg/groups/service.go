@@ -5,11 +5,14 @@ package groups
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/internal/types"
 )
 
 var _ ServiceInterface = (*Service)(nil)
@@ -23,14 +26,14 @@ type Service struct {
 	logger  logging.LoggerInterface
 }
 
-func (s *Service) ListGroups(ctx context.Context) ([]*Group, error) {
+func (s *Service) ListGroups(ctx context.Context) ([]*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.ListGroups")
 	defer span.End()
 
 	return s.db.ListGroups(ctx)
 }
 
-func (s *Service) CreateGroup(ctx context.Context, group *Group) (*Group, error) {
+func (s *Service) CreateGroup(ctx context.Context, group *types.Group) (*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.CreateGroup")
 	defer span.End()
 
@@ -38,21 +41,42 @@ func (s *Service) CreateGroup(ctx context.Context, group *Group) (*Group, error)
 		return nil, fmt.Errorf("group ID must be empty")
 	}
 
-	return s.db.CreateGroup(ctx, group)
+	createdGroup, err := s.db.CreateGroup(ctx, group)
+	if err != nil {
+		if errors.Is(err, storage.ErrDuplicateKey) {
+			return nil, ErrDuplicateGroup
+		}
+		return nil, err
+	}
+	return createdGroup, nil
 }
 
-func (s *Service) GetGroup(ctx context.Context, id string) (*Group, error) {
+func (s *Service) GetGroup(ctx context.Context, id string) (*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.GetGroup")
 	defer span.End()
 
-	return s.db.GetGroup(ctx, id)
+	group, err := s.db.GetGroup(ctx, id)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, ErrGroupNotFound
+		}
+		return nil, err
+	}
+	return group, nil
 }
 
-func (s *Service) UpdateGroup(ctx context.Context, id string, group *Group) (*Group, error) {
+func (s *Service) UpdateGroup(ctx context.Context, id string, group *types.Group) (*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.UpdateGroup")
 	defer span.End()
 
-	return s.db.UpdateGroup(ctx, id, group)
+	updated, err := s.db.UpdateGroup(ctx, id, group)
+	if err != nil {
+		if errors.Is(err, storage.ErrNotFound) {
+			return nil, ErrGroupNotFound
+		}
+		return nil, err
+	}
+	return updated, nil
 }
 
 func (s *Service) DeleteGroup(ctx context.Context, id string) error {
@@ -60,10 +84,10 @@ func (s *Service) DeleteGroup(ctx context.Context, id string) error {
 	defer span.End()
 
 	if err := s.db.DeleteGroup(ctx, id); err != nil {
-		return fmt.Errorf("failed to delete group from db: %w", err)
+		return fmt.Errorf("failed to delete group from db: %v", err)
 	}
 	if err := s.authz.DeleteGroup(ctx, id); err != nil {
-		return fmt.Errorf("%w, failed to delete group from authz: %w", ErrInternalServerError, err)
+		return fmt.Errorf("failed to delete group from authz: %v", err)
 	}
 	return nil
 }
@@ -73,7 +97,13 @@ func (s *Service) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 	defer span.End()
 
 	if err := s.db.AddUsersToGroup(ctx, groupID, userIDs); err != nil {
-		return fmt.Errorf("failed to add users to group: %w", err)
+		if errors.Is(err, storage.ErrDuplicateKey) {
+			return ErrUserAlreadyInGroup
+		}
+		if errors.Is(err, storage.ErrForeignKeyViolation) {
+			return ErrInvalidGroupID
+		}
+		return fmt.Errorf("failed to add users to group: %v", err)
 	}
 	return nil
 }
@@ -110,24 +140,26 @@ func (s *Service) RemoveAllUsersFromGroup(ctx context.Context, groupID string) e
 	return nil
 }
 
-func (s *Service) GetGroupsForUser(ctx context.Context, userID string) ([]*Group, error) {
+func (s *Service) GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.GetGroupsForUser")
 	defer span.End()
 
-	g, err := s.db.GetGroupsForUser(ctx, userID)
+	groups, err := s.db.GetGroupsForUser(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get groups for user: %w", err)
 	}
-	return g, nil
+	return groups, nil
 }
 
 func (s *Service) UpdateGroupsForUser(ctx context.Context, userID string, groupIDs []string) error {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.UpdateGroupsForUser")
 	defer span.End()
 
-	err := s.db.UpdateGroupsForUser(ctx, userID, groupIDs)
-	if err != nil {
-		return fmt.Errorf("failed to update groups for user: %w", err)
+	if err := s.db.UpdateGroupsForUser(ctx, userID, groupIDs); err != nil {
+		if errors.Is(err, storage.ErrForeignKeyViolation) {
+			return ErrInvalidGroupID
+		}
+		return err
 	}
 	return nil
 }
@@ -138,7 +170,7 @@ func (s *Service) RemoveGroupsForUser(ctx context.Context, userID string) error 
 
 	_, err := s.db.RemoveGroupsForUser(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to remove groups for user: %w", err)
+		return err
 	}
 	return nil
 }

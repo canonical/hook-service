@@ -57,7 +57,7 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 	err := s.db.Statement(ctx).
 		Insert("groups").
 		Columns("name", "tenant_id", "description", "type", "created_at", "updated_at").
-		Values(group.Name, group.Organization, group.Description, group.Type, now, now).
+		Values(group.Name, group.TenantId, group.Description, group.Type, now, now).
 		Suffix("RETURNING id, created_at, updated_at").
 		QueryRowContext(ctx).
 		Scan(&id, &createdAt, &updatedAt)
@@ -69,13 +69,13 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 	}
 
 	return &types.Group{
-		ID:           fmt.Sprintf("%d", id),
-		Name:         group.Name,
-		Organization: group.Organization,
-		Description:  group.Description,
-		Type:         group.Type,
-		CreatedAt:    createdAt,
-		UpdatedAt:    updatedAt,
+		ID:          fmt.Sprintf("%d", id),
+		Name:        group.Name,
+		TenantId:    group.TenantId,
+		Description: group.Description,
+		Type:        group.Type,
+		CreatedAt:   createdAt,
+		UpdatedAt:   updatedAt,
 	}, nil
 }
 
@@ -382,7 +382,7 @@ func scanGroup(row interface{ Scan(...interface{}) error }) (*types.Group, error
 	err := row.Scan(
 		&group.ID,
 		&group.Name,
-		&group.Organization,
+		&group.TenantId,
 		&group.Description,
 		&typeStr,
 		&group.CreatedAt,

@@ -5,8 +5,8 @@ go 1.24.4
 toolchain go1.24.10
 
 require (
-	github.com/canonical/identity-platform-api v0.0.0-20251124101154-ab78e5ddfcd5
 	github.com/Masterminds/squirrel v1.5.4
+	github.com/canonical/identity-platform-api v0.0.0-20251124101154-ab78e5ddfcd5
 	github.com/exaring/otelpgx v0.9.3
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
