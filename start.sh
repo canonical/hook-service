@@ -47,15 +47,16 @@ export PORT="8000"
 export TRACING_ENABLED="false"
 export LOG_LEVEL="debug"
 export API_TOKEN="secret_api_key"
-export SALESFORCE_DOMAIN="https://canonicalhr--staging2.sandbox.my.salesforce.com"
-export SALESFORCE_CONSUMER_KEY="*****"
-export SALESFORCE_CONSUMER_SECRET="*****"
+export SALESFORCE_ENABLED="false"
 export OPENFGA_API_SCHEME="http"
 export OPENFGA_API_HOST="127.0.0.1:8080"
 export OPENFGA_API_TOKEN="42"
 export OPENFGA_STORE_ID=$(fga store create --name hook-service | yq .store.id)
 export OPENFGA_AUTHORIZATION_MODEL_ID=$(fga model write --store-id $OPENFGA_STORE_ID --file $SCRIPT_DIR/internal/authorization/authorization_model.v0.openfga  | yq .authorization_model_id)
 export AUTHORIZATION_ENABLED="true"
+export DSN="postgres://groups:groups@127.0.0.1:5432/groups"
+
+make db
 
 echo
 echo "==============================================="
@@ -64,6 +65,5 @@ echo "Store ID: $OPENFGA_STORE_ID"
 echo "Model ID: $OPENFGA_AUTHORIZATION_MODEL_ID"
 echo "==============================================="
 echo
-
 
 go run . serve
