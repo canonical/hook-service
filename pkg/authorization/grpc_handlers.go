@@ -72,6 +72,14 @@ func (g *GrpcServer) AddAllowedAppToGroup(ctx context.Context, req *v0_authz.Add
 		g.logger.Debugf("group not found: %v", req.GetGroupId())
 		return nil, status.Errorf(codes.NotFound, "group not found: %v", req.GetGroupId())
 	}
+	if errors.Is(err, errAppAlreadyExistsInGroup) {
+		g.logger.Debugf("app already exists in group: %v", app.GetClientId())
+		return nil, status.Errorf(codes.AlreadyExists, "app already exists in group")
+	}
+	if errors.Is(err, errInvalidGroupID) {
+		g.logger.Debugf("invalid group id: %v", req.GetGroupId())
+		return nil, status.Errorf(codes.InvalidArgument, "invalid group id")
+	}
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "add allowed app to group: %v", err)
 	}
@@ -96,10 +104,6 @@ func (g *GrpcServer) RemoveAllowedAppFromGroup(ctx context.Context, req *v0_auth
 	}
 
 	err := g.svc.RemoveAllowedAppFromGroup(ctx, req.GroupId, req.AppId)
-	if errors.Is(err, errAppDoesNotExistInGroup) {
-		g.logger.Debugf("app not in group: %v", req.GetAppId())
-		return nil, status.Errorf(codes.NotFound, "app not in group: %v", req.GetAppId())
-	}
 	if errors.Is(err, errGroupNotFound) {
 		g.logger.Debugf("group not found: %v", req.GetGroupId())
 		return nil, status.Errorf(codes.NotFound, "group not found: %v", req.GetGroupId())

@@ -237,13 +237,6 @@ func TestGrpcServer_RemoveAllowedAppFromGroup(t *testing.T) {
 			expectErr: errGroupNotFound,
 			wantErr:   errGroupNotFound,
 		},
-		{
-			name:      "App does not exist in group",
-			groupID:   "group1",
-			appID:     "app-not-in-group",
-			expectErr: errAppDoesNotExistInGroup,
-			wantErr:   errAppDoesNotExistInGroup,
-		},
 	}
 
 	for _, tt := range tests {
@@ -271,7 +264,7 @@ func TestGrpcServer_RemoveAllowedAppFromGroup(t *testing.T) {
 					return
 				}
 
-				if errors.Is(tt.wantErr, errGroupNotFound) || errors.Is(tt.wantErr, errAppDoesNotExistInGroup) {
+				if errors.Is(tt.wantErr, errGroupNotFound) {
 					st, ok := status.FromError(err)
 					if !ok || st.Code() != codes.NotFound {
 						t.Errorf("expected gRPC NotFound for not found errors, got %v", err)

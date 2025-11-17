@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package groups
 
 import "errors"
@@ -9,4 +12,6 @@ var (
 	ErrInvalidGroupType    = errors.New("invalid group type")
 	ErrInvalidOrganization = errors.New("invalid organization")
 	ErrInternalServerError = errors.New("internal server error")
+	ErrUserAlreadyInGroup  = errors.New("user already in group")
+	ErrInvalidGroupID      = errors.New("invalid group id")
 )

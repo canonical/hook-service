@@ -2,9 +2,12 @@ package authorization
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
@@ -31,15 +34,17 @@ func (s *Service) AddAllowedAppToGroup(ctx context.Context, groupID string, app 
 	defer span.End()
 
 	if err := s.db.AddAllowedApp(ctx, groupID, app); err != nil {
-		s.logger.Error(err.Error())
-		return err
+		if errors.Is(err, storage.ErrDuplicateKey) {
+			return errAppAlreadyExistsInGroup
+		}
+		if errors.Is(err, storage.ErrForeignKeyViolation) {
+			return errInvalidGroupID
+		}
+		return fmt.Errorf("failed to add allowed app to group in db: %v", err)
 	}
 
-	// TODO: use group name instead when group API is implemented
 	if err := s.authz.AddAllowedAppToGroup(ctx, groupID, app); err != nil {
-		s.db.RemoveAllowedApp(ctx, groupID, app) // Rollback
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to add allowed app to group in authz: %v", err)
 	}
 
 	return nil
@@ -49,18 +54,14 @@ func (s *Service) RemoveAllAllowedAppsFromGroup(ctx context.Context, groupID str
 	ctx, span := s.tracer.Start(ctx, "authorization.Service.RemoveAllAllowedAppsFromGroup")
 	defer span.End()
 
-	apps, err := s.db.RemoveAllowedApps(ctx, groupID)
+	_, err := s.db.RemoveAllowedApps(ctx, groupID)
 	if err != nil {
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to remove allowed apps from db: %v", err)
 	}
 
-	// TODO: use group name instead when group API is implemented
 	err = s.authz.RemoveAllAllowedAppsFromGroup(ctx, groupID)
 	if err != nil {
-		s.db.AddAllowedApps(ctx, groupID, apps) // Rollback
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to remove allowed apps from authz: %v", err)
 	}
 
 	return nil
@@ -71,15 +72,11 @@ func (s *Service) RemoveAllowedAppFromGroup(ctx context.Context, groupID string,
 	defer span.End()
 
 	if err := s.db.RemoveAllowedApp(ctx, groupID, app); err != nil {
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to remove allowed app from db: %v", err)
 	}
 
-	// TODO: use group name instead when group API is implemented
 	if err := s.authz.RemoveAllowedAppFromGroup(ctx, groupID, app); err != nil {
-		s.db.AddAllowedApp(ctx, groupID, app) // Rollback
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to remove allowed app from authz: %v", err)
 	}
 
 	return nil
@@ -91,7 +88,6 @@ func (s *Service) GetAllowedGroupsForApp(ctx context.Context, app string) ([]str
 
 	groups, err := s.db.GetAllowedGroupsForApp(ctx, app)
 	if err != nil {
-		s.logger.Error(err.Error())
 		return nil, err
 	}
 
@@ -102,17 +98,13 @@ func (s *Service) RemoveAllAllowedGroupsForApp(ctx context.Context, app string) 
 	ctx, span := s.tracer.Start(ctx, "authorization.Service.RemoveAllAllowedGroupsForApp")
 	defer span.End()
 
-	groups, err := s.db.RemoveAllAllowedGroupsForApp(ctx, app)
+	_, err := s.db.RemoveAllAllowedGroupsForApp(ctx, app)
 	if err != nil {
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to remove allowed groups from db: %v", err)
 	}
 
-	// TODO: use group name instead when group API is implemented
 	if err := s.authz.RemoveAllAllowedGroupsForApp(ctx, app); err != nil {
-		s.db.AddAllowedGroupsForApp(ctx, app, groups) // Rollback
-		s.logger.Error(err.Error())
-		return err
+		return fmt.Errorf("failed to remove allowed groups from authz: %v", err)
 	}
 
 	return nil
