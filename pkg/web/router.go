@@ -31,6 +31,7 @@ import (
 
 func NewRouter(
 	token string,
+	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
@@ -64,7 +65,6 @@ func NewRouter(
 	if token != "" {
 		authMiddleware = hooks.NewAuthMiddleware(token, tracer, logger)
 	}
-	s := storage.NewStorage(dbClient, tracer, monitor, logger)
 
 	authzService := authz_api.NewService(s, authz, tracer, monitor, logger)
 	groupService := groups_api.NewService(s, authz, tracer, monitor, logger)
@@ -72,6 +72,9 @@ func NewRouter(
 	groupClients := []hooks.ClientInterface{}
 	if salesforceClient != nil {
 		groupClients = append(groupClients, hooks.NewSalesforceClient(salesforceClient, tracer, monitor, logger))
+	}
+	if s != nil {
+		groupClients = append(groupClients, hooks.NewLocalStorageClient(s, tracer, monitor, logger))
 	}
 
 	gRPCGatewayMux := runtime.NewServeMux(
