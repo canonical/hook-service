@@ -38,7 +38,7 @@ func (s *Service) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 	defer span.End()
 
 	if group.ID != "" {
-		return nil, fmt.Errorf("group ID must be empty")
+		return nil, ErrInvalidGroupID
 	}
 
 	createdGroup, err := s.db.CreateGroup(ctx, group)
@@ -95,6 +95,10 @@ func (s *Service) DeleteGroup(ctx context.Context, id string) error {
 func (s *Service) AddUsersToGroup(ctx context.Context, groupID string, userIDs []string) error {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.AddUsersToGroup")
 	defer span.End()
+
+	if len(userIDs) == 0 {
+		return nil
+	}
 
 	if err := s.db.AddUsersToGroup(ctx, groupID, userIDs); err != nil {
 		if errors.Is(err, storage.ErrDuplicateKey) {
