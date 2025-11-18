@@ -65,6 +65,9 @@ func TestService_GetAllowedAppsInGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
+			if test.expectedError == nil {
+				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
+			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := NewMockAuthorizerInterface(ctrl)
@@ -151,6 +154,9 @@ func TestService_AddAllowedAppToGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
+			if test.expectedError == nil {
+				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
+			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -232,6 +238,9 @@ func TestService_RemoveAllAllowedAppsFromGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
+			if test.expectedError == nil {
+				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
+			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -315,6 +324,9 @@ func TestService_RemoveAllowedAppFromGroup(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
+			if test.expectedError == nil {
+				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
+			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)
@@ -371,6 +383,9 @@ func TestService_GetAllowedGroupsForApp(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
+			if test.expectedError == nil {
+				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
+			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := NewMockAuthorizerInterface(ctrl)
@@ -467,6 +482,9 @@ func TestService_RemoveAllAllowedGroupsForApp(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockLogger := NewMockLoggerInterface(ctrl)
+			if test.expectedError == nil {
+				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any(), gomock.Any())
+			}
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockAuthorizer := test.mockAuthorizer(ctrl)

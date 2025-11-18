@@ -38,6 +38,8 @@ func (g *GrpcServer) GetAllowedAppsInGroup(ctx context.Context, req *v0_authz.Ge
 		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
 	}
 
+	g.logger.Debugf("GetAllowedAppsInGroup request for group: %s", req.GetGroupId())
+
 	apps, err := g.svc.GetAllowedAppsInGroup(ctx, req.GroupId)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "get allowed apps in group")
@@ -66,6 +68,8 @@ func (g *GrpcServer) AddAllowedAppToGroup(ctx context.Context, req *v0_authz.Add
 		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
 	}
 
+	g.logger.Debugf("AddAllowedAppToGroup request for group: %s, app: %s", req.GetGroupId(), app.GetClientId())
+
 	err := g.svc.AddAllowedAppToGroup(ctx, req.GroupId, app.GetClientId())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "add allowed app to group")
@@ -89,6 +93,8 @@ func (g *GrpcServer) RemoveAllowedAppFromGroup(ctx context.Context, req *v0_auth
 		return nil, status.Errorf(codes.InvalidArgument, "app id is empty")
 	}
 
+	g.logger.Debugf("RemoveAllowedAppFromGroup request for group: %s, app: %s", req.GetGroupId(), req.GetAppId())
+
 	err := g.svc.RemoveAllowedAppFromGroup(ctx, req.GroupId, req.AppId)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "remove allowed app from group")
@@ -109,6 +115,8 @@ func (g *GrpcServer) RemoveAllowedAppsFromGroup(ctx context.Context, req *v0_aut
 		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
 	}
 
+	g.logger.Debugf("RemoveAllowedAppsFromGroup request for group: %s", req.GetGroupId())
+
 	err := g.svc.RemoveAllAllowedAppsFromGroup(ctx, req.GroupId)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "remove allowed apps from group")
@@ -128,6 +136,8 @@ func (g *GrpcServer) GetAllowedGroupsForApp(ctx context.Context, req *v0_authz.G
 	if req.GetAppId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "app id is empty")
 	}
+
+	g.logger.Debugf("GetAllowedGroupsForApp request for app: %s", req.GetAppId())
 
 	groups, err := g.svc.GetAllowedGroupsForApp(ctx, req.AppId)
 	if err != nil {
@@ -151,6 +161,8 @@ func (g *GrpcServer) RemoveAllowedGroupsForApp(ctx context.Context, req *v0_auth
 	if req.GetAppId() == "" {
 		return nil, status.Errorf(codes.InvalidArgument, "app id is empty")
 	}
+
+	g.logger.Debugf("RemoveAllowedGroupsForApp request for app: %s", req.GetAppId())
 
 	err := g.svc.RemoveAllAllowedGroupsForApp(ctx, req.AppId)
 	if err != nil {

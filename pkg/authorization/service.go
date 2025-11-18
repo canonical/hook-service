@@ -26,7 +26,11 @@ func (s *Service) GetAllowedAppsInGroup(ctx context.Context, groupID string) ([]
 	ctx, span := s.tracer.Start(ctx, "authorization.Service.GetAllowedAppsInGroup")
 	defer span.End()
 
-	return s.db.GetAllowedApps(ctx, groupID)
+	apps, err := s.db.GetAllowedApps(ctx, groupID)
+	if err == nil {
+		s.logger.Infof("Retrieved %d allowed app(s) for group %s", len(apps), groupID)
+	}
+	return apps, err
 }
 
 func (s *Service) AddAllowedAppToGroup(ctx context.Context, groupID string, app string) error {
@@ -43,6 +47,7 @@ func (s *Service) AddAllowedAppToGroup(ctx context.Context, groupID string, app 
 		return err
 	}
 
+	s.logger.Infof("Added app %s to allowed list for group %s", app, groupID)
 	return nil
 }
 
@@ -62,6 +67,7 @@ func (s *Service) RemoveAllAllowedAppsFromGroup(ctx context.Context, groupID str
 		return err
 	}
 
+	s.logger.Infof("Removed %d app(s) from allowed list for group %s", len(apps), groupID)
 	return nil
 }
 
@@ -79,6 +85,7 @@ func (s *Service) RemoveAllowedAppFromGroup(ctx context.Context, groupID string,
 		return err
 	}
 
+	s.logger.Infof("Removed app %s from allowed list for group %s", app, groupID)
 	return nil
 }
 
@@ -86,7 +93,11 @@ func (s *Service) GetAllowedGroupsForApp(ctx context.Context, app string) ([]str
 	ctx, span := s.tracer.Start(ctx, "authorization.Service.GetAllowedGroupsForApp")
 	defer span.End()
 
-	return s.db.GetAllowedGroupsForApp(ctx, app)
+	groups, err := s.db.GetAllowedGroupsForApp(ctx, app)
+	if err == nil {
+		s.logger.Infof("Retrieved %d allowed group(s) for app %s", len(groups), app)
+	}
+	return groups, err
 }
 
 func (s *Service) RemoveAllAllowedGroupsForApp(ctx context.Context, app string) error {
@@ -104,6 +115,7 @@ func (s *Service) RemoveAllAllowedGroupsForApp(ctx context.Context, app string) 
 		return err
 	}
 
+	s.logger.Infof("Removed %d group(s) from allowed list for app %s", len(groups), app)
 	return nil
 }
 
