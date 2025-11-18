@@ -9,6 +9,7 @@ import (
 	reflect "reflect"
 	"testing"
 
+	"github.com/canonical/hook-service/internal/types"
 	trace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -27,7 +28,7 @@ func TestServiceFetchUserGroups(t *testing.T) {
 
 		mockedClients func(*gomock.Controller) []ClientInterface
 
-		expectedResult []string
+		expectedResult []*types.Group
 		expectedError  error
 	}{
 		{
@@ -35,53 +36,53 @@ func TestServiceFetchUserGroups(t *testing.T) {
 			input: u,
 			mockedClients: func(ctrl *gomock.Controller) []ClientInterface {
 				mockClient1 := NewMockClientInterface(ctrl)
-				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{"g1", "g2"}, nil)
+				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: "g1"}, {Name: "g2"}}, nil)
 				return []ClientInterface{mockClient1}
 			},
-			expectedResult: []string{"g1", "g2"},
+			expectedResult: []*types.Group{{Name: "g1"}, {Name: "g2"}},
 		},
 		{
 			name:  "Single service repeated",
 			input: u,
 			mockedClients: func(ctrl *gomock.Controller) []ClientInterface {
 				mockClient1 := NewMockClientInterface(ctrl)
-				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{"g1", "g2", "g1"}, nil)
+				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: "g1"}, {Name: "g2"}, {Name: "g1"}}, nil)
 				return []ClientInterface{mockClient1}
 			},
-			expectedResult: []string{"g1", "g2"},
+			expectedResult: []*types.Group{{Name: "g1"}, {Name: "g2"}, {Name: "g1"}},
 		},
 		{
 			name:  "Multiple services",
 			input: u,
 			mockedClients: func(ctrl *gomock.Controller) []ClientInterface {
 				mockClient1 := NewMockClientInterface(ctrl)
-				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{"g1", "g2"}, nil)
+				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: "g1"}, {Name: "g2"}}, nil)
 				mockClient2 := NewMockClientInterface(ctrl)
-				mockClient2.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{"g3", "g1"}, nil)
+				mockClient2.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: "g3"}, {Name: "g1"}}, nil)
 				return []ClientInterface{mockClient1, mockClient2}
 			},
-			expectedResult: []string{"g1", "g2", "g3"},
+			expectedResult: []*types.Group{{Name: "g1"}, {Name: "g2"}, {Name: "g3"}, {Name: "g1"}},
 		},
 		{
 			name:  "Multiple services with empty result",
 			input: u,
 			mockedClients: func(ctrl *gomock.Controller) []ClientInterface {
 				mockClient1 := NewMockClientInterface(ctrl)
-				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{"g1", "g2"}, nil)
+				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: "g1"}, {Name: "g2"}}, nil)
 				mockClient2 := NewMockClientInterface(ctrl)
-				mockClient2.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{""}, nil)
+				mockClient2.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: ""}}, nil)
 				mockClient3 := NewMockClientInterface(ctrl)
 				mockClient3.EXPECT().FetchUserGroups(gomock.Any(), u).Return(nil, nil)
 				return []ClientInterface{mockClient1, mockClient2, mockClient3}
 			},
-			expectedResult: []string{"g1", "g2"},
+			expectedResult: []*types.Group{{Name: "g1"}, {Name: "g2"}, {Name: ""}},
 		},
 		{
 			name:  "Multiple services with error",
 			input: u,
 			mockedClients: func(ctrl *gomock.Controller) []ClientInterface {
 				mockClient1 := NewMockClientInterface(ctrl)
-				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]string{"g1", "g2"}, nil)
+				mockClient1.EXPECT().FetchUserGroups(gomock.Any(), u).Return([]*types.Group{{Name: "g1"}, {Name: "g2"}}, nil)
 				mockClient2 := NewMockClientInterface(ctrl)
 				mockClient2.EXPECT().FetchUserGroups(gomock.Any(), u).Return(nil, err)
 				mockClient3 := NewMockClientInterface(ctrl)
@@ -129,7 +130,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 		clientId   string
 		grantTypes []string
 		grantedAud []string
-		groups     []string
+		groups     []*types.Group
 
 		mockedCanAccess func(*gomock.Controller) AuthorizerInterface
 
@@ -142,7 +143,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"authorization_code"},
 			grantedAud: []string{"client_id"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client_id", []string{"g1", "g2"}).Return(true, nil)
@@ -156,7 +157,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"authorization_code"},
 			grantedAud: []string{"client_id"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client_id", []string{"g1", "g2"}).Return(false, nil)
@@ -170,7 +171,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"authorization_code"},
 			grantedAud: []string{"client_id"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client_id", []string{"g1", "g2"}).Return(false, err)
@@ -185,7 +186,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"client_credentials"},
 			grantedAud: []string{"app"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app"}, []string{"g1", "g2"}).Return(true, nil)
@@ -199,7 +200,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"client_credentials"},
 			grantedAud: []string{"app"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app"}, []string{"g1", "g2"}).Return(false, nil)
@@ -213,7 +214,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"urn:ietf:params:oauth:grant-type:jwt-bearer"},
 			grantedAud: []string{"app1", "app2"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app1", "app2"}, []string{"g1", "g2"}).Return(true, nil)
@@ -227,7 +228,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"urn:ietf:params:oauth:grant-type:jwt-bearer"},
 			grantedAud: []string{"app1", "app2"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app1", "app2"}, []string{"g1", "g2"}).Return(false, nil)
@@ -241,7 +242,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 			clientId:   "client_id",
 			grantTypes: []string{"client_credentials"},
 			grantedAud: []string{"app"},
-			groups:     []string{"g1", "g2"},
+			groups:     []*types.Group{{ID: "g1", Name: "g1"}, {ID: "g2", Name: "g2"}},
 			mockedCanAccess: func(ctrl *gomock.Controller) AuthorizerInterface {
 				mockAuthorizer := NewMockAuthorizerInterface(ctrl)
 				mockAuthorizer.EXPECT().BatchCanAccess(gomock.Any(), serviceAccount.GetUserId(), []string{"app"}, []string{"g1", "g2"}).Return(false, err)
@@ -256,6 +257,11 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
+
+			groupIDs := make([]string, len(test.groups))
+			for i, g := range test.groups {
+				groupIDs[i] = g.ID
+			}
 
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)

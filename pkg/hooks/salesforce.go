@@ -11,7 +11,10 @@ import (
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/internal/types"
 )
+
+var _ ClientInterface = (*Salesforce)(nil)
 
 var ErrInvalidTotalSize = fmt.Errorf("invalid total size")
 
@@ -30,7 +33,7 @@ type Salesforce struct {
 	logger  logging.LoggerInterface
 }
 
-func (s *Salesforce) FetchUserGroups(ctx context.Context, user User) ([]string, error) {
+func (s *Salesforce) FetchUserGroups(ctx context.Context, user User) ([]*types.Group, error) {
 	_, span := s.tracer.Start(ctx, "hooks.Salesforce.FetchUserGroups")
 	defer span.End()
 
@@ -57,7 +60,14 @@ func (s *Salesforce) FetchUserGroups(ctx context.Context, user User) ([]string, 
 	}
 	r := rs[0]
 
-	return []string{r.Department, r.Team}, nil
+	if r.Department == "" || r.Team == "" {
+		return nil, nil
+	}
+
+	return []*types.Group{
+		{ID: r.Department, Name: r.Department},
+		{ID: r.Team, Name: r.Team},
+	}, nil
 }
 
 func NewSalesforceClient(c salesforce.SalesforceInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Salesforce {

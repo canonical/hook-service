@@ -6,11 +6,14 @@ package hooks
 import (
 	"encoding/json"
 	"io"
+	"maps"
 	"net/http"
+	"slices"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/hydra/v2/flow"
 	"github.com/ory/hydra/v2/oauth2"
@@ -76,15 +79,29 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := oauth2.TokenHookResponse{
-		Session: *flow.NewConsentRequestSessionData(),
-	}
-	resp.Session.AccessToken["groups"] = groups
-	resp.Session.IDToken["groups"] = groups
+	resp := a.newHookResponse(groups)
 
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 
+}
+
+// newHookResponse creates a TokenHookResponse with the group names added to both
+// the access token and ID token session data. Duplicate group names are removed.
+func (a *API) newHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
+	resp := oauth2.TokenHookResponse{
+		Session: *flow.NewConsentRequestSessionData(),
+	}
+
+	groupNames := make(map[string]struct{}, len(groups))
+	for _, g := range groups {
+		groupNames[g.Name] = struct{}{}
+	}
+
+	gg := slices.Collect(maps.Keys(groupNames))
+	resp.Session.AccessToken["groups"] = gg
+	resp.Session.IDToken["groups"] = gg
+	return &resp
 }
 
 func NewAPI(
