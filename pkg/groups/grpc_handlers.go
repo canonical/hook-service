@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	v0_groups "github.com/canonical/identity-platform-api/v0/authz_groups"
-	"google.golang.org/grpc"
+	"github.com/gogo/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -16,17 +16,18 @@ import (
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
-var _ v0_groups.AuthzGroupsServiceClient = (*GrpcServer)(nil)
+var _ v0_groups.AuthzGroupsServiceServer = (*GrpcServer)(nil)
 
 type GrpcServer struct {
 	svc ServiceInterface
+	v0_groups.UnimplementedAuthzGroupsServiceServer
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
 	logger  logging.LoggerInterface
 }
 
-func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroupReq, opts ...grpc.CallOption) (*v0_groups.CreateGroupResp, error) {
+func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroupReq) (*v0_groups.CreateGroupResp, error) {
 	if req.Group == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "group cannot be nil")
 	}
@@ -41,7 +42,6 @@ func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroup
 		return nil, g.mapErrorToStatus(err, "create group")
 	}
 
-	msg := "Group created"
 	return &v0_groups.CreateGroupResp{
 		Data: []*v0_groups.Group{{
 			Id:           group.ID,
@@ -53,17 +53,16 @@ func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroup
 			UpdatedAt:    timestamppb.New(group.UpdatedAt),
 		}},
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Group created"),
 	}, nil
 }
 
-func (g *GrpcServer) GetGroup(ctx context.Context, req *v0_groups.GetGroupReq, opts ...grpc.CallOption) (*v0_groups.GetGroupResp, error) {
+func (g *GrpcServer) GetGroup(ctx context.Context, req *v0_groups.GetGroupReq) (*v0_groups.GetGroupResp, error) {
 	group, err := g.svc.GetGroup(ctx, req.Id)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "get group")
 	}
 
-	msg := "Group details"
 	return &v0_groups.GetGroupResp{
 		Data: []*v0_groups.Group{{
 			Id:           group.ID,
@@ -75,11 +74,11 @@ func (g *GrpcServer) GetGroup(ctx context.Context, req *v0_groups.GetGroupReq, o
 			UpdatedAt:    timestamppb.New(group.UpdatedAt),
 		}},
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Group details"),
 	}, nil
 }
 
-func (g *GrpcServer) ListGroups(ctx context.Context, req *v0_groups.ListGroupsReq, opts ...grpc.CallOption) (*v0_groups.ListGroupsResp, error) {
+func (g *GrpcServer) ListGroups(ctx context.Context, req *v0_groups.ListGroupsReq) (*v0_groups.ListGroupsResp, error) {
 	groups, err := g.svc.ListGroups(ctx)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "list groups")
@@ -97,28 +96,26 @@ func (g *GrpcServer) ListGroups(ctx context.Context, req *v0_groups.ListGroupsRe
 			UpdatedAt:    timestamppb.New(group.UpdatedAt),
 		}
 	}
-	msg := "Group list"
 	return &v0_groups.ListGroupsResp{
 		Data:    respGroups,
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Group list"),
 	}, nil
 }
 
-func (g *GrpcServer) RemoveGroup(ctx context.Context, req *v0_groups.RemoveGroupReq, opts ...grpc.CallOption) (*v0_groups.RemoveGroupResp, error) {
+func (g *GrpcServer) RemoveGroup(ctx context.Context, req *v0_groups.RemoveGroupReq) (*v0_groups.RemoveGroupResp, error) {
 	err := g.svc.DeleteGroup(ctx, req.Id)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "delete group")
 	}
 
-	msg := "Group deleted"
 	return &v0_groups.RemoveGroupResp{
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Group deleted"),
 	}, nil
 }
 
-func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroupReq, opts ...grpc.CallOption) (*v0_groups.UpdateGroupResp, error) {
+func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroupReq) (*v0_groups.UpdateGroupResp, error) {
 	if req.Group == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "group cannot be nil")
 	}
@@ -143,7 +140,6 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 		return nil, g.mapErrorToStatus(err, "update group")
 	}
 
-	msg := "Group updated"
 	return &v0_groups.UpdateGroupResp{
 		Data: []*v0_groups.Group{{
 			Id:           gg.ID,
@@ -155,11 +151,11 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 			UpdatedAt:    timestamppb.New(gg.UpdatedAt),
 		}},
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Group updated"),
 	}, nil
 }
 
-func (g *GrpcServer) ListUsersInGroup(ctx context.Context, req *v0_groups.ListUsersInGroupReq, opts ...grpc.CallOption) (*v0_groups.ListUsersInGroupResp, error) {
+func (g *GrpcServer) ListUsersInGroup(ctx context.Context, req *v0_groups.ListUsersInGroupReq) (*v0_groups.ListUsersInGroupResp, error) {
 	users, err := g.svc.ListUsersInGroup(ctx, req.GetId())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "list users in group")
@@ -170,41 +166,38 @@ func (g *GrpcServer) ListUsersInGroup(ctx context.Context, req *v0_groups.ListUs
 		respUsers[i] = &v0_groups.User{Id: user}
 	}
 
-	msg := "Users in group"
 	return &v0_groups.ListUsersInGroupResp{
 		Data:    respUsers,
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Users in group"),
 	}, nil
 }
 
-func (g *GrpcServer) AddUsersToGroup(ctx context.Context, req *v0_groups.AddUsersToGroupReq, opts ...grpc.CallOption) (*v0_groups.AddUsersToGroupResp, error) {
+func (g *GrpcServer) AddUsersToGroup(ctx context.Context, req *v0_groups.AddUsersToGroupReq) (*v0_groups.AddUsersToGroupResp, error) {
 	err := g.svc.AddUsersToGroup(ctx, req.GetId(), req.GetUserIds())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "add user to group")
 	}
 
-	msg := "Users added to group"
 	return &v0_groups.AddUsersToGroupResp{
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("Users added to group"),
 	}, nil
 }
 
-func (g *GrpcServer) RemoveUserFromGroup(ctx context.Context, req *v0_groups.RemoveUserFromGroupReq, opts ...grpc.CallOption) (*v0_groups.RemoveUserFromGroupResp, error) {
+func (g *GrpcServer) RemoveUserFromGroup(ctx context.Context, req *v0_groups.RemoveUserFromGroupReq) (*v0_groups.RemoveUserFromGroupResp, error) {
 	err := g.svc.RemoveUsersFromGroup(ctx, req.GetId(), []string{req.UserId})
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "remove user from group")
 	}
 
-	msg := "User removed from group"
 	return &v0_groups.RemoveUserFromGroupResp{
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("User removed from group"),
 	}, nil
 }
 
-func (g *GrpcServer) ListUserGroups(ctx context.Context, req *v0_groups.ListUserGroupsReq, opts ...grpc.CallOption) (*v0_groups.ListUserGroupsResp, error) {
+func (g *GrpcServer) ListUserGroups(ctx context.Context, req *v0_groups.ListUserGroupsReq) (*v0_groups.ListUserGroupsResp, error) {
 	groups, err := g.svc.GetGroupsForUser(ctx, req.GetId())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "list user groups")
@@ -223,24 +216,22 @@ func (g *GrpcServer) ListUserGroups(ctx context.Context, req *v0_groups.ListUser
 		}
 	}
 
-	msg := "User group list"
 	return &v0_groups.ListUserGroupsResp{
 		Data:    respGroups,
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("User group list"),
 	}, nil
 }
 
-func (g *GrpcServer) AddUserToGroups(ctx context.Context, req *v0_groups.AddUserToGroupsReq, opts ...grpc.CallOption) (*v0_groups.AddUserToGroupsResp, error) {
+func (g *GrpcServer) AddUserToGroups(ctx context.Context, req *v0_groups.AddUserToGroupsReq) (*v0_groups.AddUserToGroupsResp, error) {
 	err := g.svc.UpdateGroupsForUser(ctx, req.GetId(), req.GetGroupIds())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "add user to groups")
 	}
 
-	msg := "User groups added"
 	return &v0_groups.AddUserToGroupsResp{
 		Status:  http.StatusOK,
-		Message: &msg,
+		Message: proto.String("User groups added"),
 	}, nil
 }
 
