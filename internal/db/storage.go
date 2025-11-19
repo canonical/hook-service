@@ -81,7 +81,7 @@ type DBClient struct {
 	pool *pgxpool.Pool
 	// db original instance to handle transactions
 	db *sql.DB
-	// dbRunner is the runner instance of choice (either original DB or db with query cache, cannot be used for transactions)
+	// dbRunner is the runner instance of choice
 	dbRunner sq.BaseRunner
 
 	tracer  tracing.TracingInterface
@@ -210,7 +210,7 @@ func (d *DBClient) Close() {
 }
 
 // NewDBClient creates a new DBClient instance with the provided DSN and configuration options.
-func NewDBClient(dsn string, queryCacheEnabled bool, tracingEnabled bool, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *DBClient {
+func NewDBClient(dsn string, tracingEnabled bool, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *DBClient {
 	config, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		logger.Fatalf("DSN validation failed, shutting down, err: %v", err)
@@ -242,10 +242,6 @@ func NewDBClient(dsn string, queryCacheEnabled bool, tracingEnabled bool, tracer
 	d.pool = pool
 	d.db = db
 	d.dbRunner = db
-
-	if queryCacheEnabled {
-		d.dbRunner = sq.NewStmtCache(db)
-	}
 
 	d.tracer = tracer
 	d.monitor = monitor
