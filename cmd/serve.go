@@ -57,7 +57,7 @@ func serve() error {
 	var s storage.StorageInterface
 	var dbClient db.DBClientInterface
 	if specs.DSN != "" {
-		dbClient = db.NewDBClient(specs.DSN, true, specs.TracingEnabled, tracer, monitor, logger)
+		dbClient = db.NewDBClient(specs.DSN, specs.TracingEnabled, tracer, monitor, logger)
 		defer dbClient.Close()
 		s = storage.NewStorage(dbClient, tracer, monitor, logger)
 	}
