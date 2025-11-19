@@ -9,7 +9,6 @@ import (
 	"net/http"
 
 	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
-	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -18,6 +17,8 @@ import (
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
 )
+
+var _ v0_authz.AppAuthorizationServiceServer = (*GrpcServer)(nil)
 
 // GrpcServer is the gRPC server for the authorization service.
 type GrpcServer struct {
@@ -30,7 +31,7 @@ type GrpcServer struct {
 }
 
 // GetAllowedAppsInGroup handles the gRPC request to get allowed apps in a group.
-func (g *GrpcServer) GetAllowedAppsInGroup(ctx context.Context, req *v0_authz.GetAllowedAppsInGroupReq, opts ...grpc.CallOption) (*v0_authz.GetAllowedAppsInGroupResp, error) {
+func (g *GrpcServer) GetAllowedAppsInGroup(ctx context.Context, req *v0_authz.GetAllowedAppsInGroupReq) (*v0_authz.GetAllowedAppsInGroupResp, error) {
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.GetAllowedAppsInGroup")
 	defer span.End()
 
@@ -55,7 +56,7 @@ func (g *GrpcServer) GetAllowedAppsInGroup(ctx context.Context, req *v0_authz.Ge
 }
 
 // AddAllowedAppToGroup handles the gRPC request to add an allowed app to a group.
-func (g *GrpcServer) AddAllowedAppToGroup(ctx context.Context, req *v0_authz.AddAllowedAppToGroupReq, opts ...grpc.CallOption) (*v0_authz.AddAllowedAppToGroupResp, error) {
+func (g *GrpcServer) AddAllowedAppToGroup(ctx context.Context, req *v0_authz.AddAllowedAppToGroupReq) (*v0_authz.AddAllowedAppToGroupResp, error) {
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.AddAllowedAppToGroup")
 	defer span.End()
 
@@ -82,7 +83,7 @@ func (g *GrpcServer) AddAllowedAppToGroup(ctx context.Context, req *v0_authz.Add
 }
 
 // RemoveAllowedAppFromGroup handles the gRPC request to remove an allowed app from a group.
-func (g *GrpcServer) RemoveAllowedAppFromGroup(ctx context.Context, req *v0_authz.RemoveAllowedAppFromGroupReq, opts ...grpc.CallOption) (*v0_authz.RemoveAllowedAppFromGroupResp, error) {
+func (g *GrpcServer) RemoveAllowedAppFromGroup(ctx context.Context, req *v0_authz.RemoveAllowedAppFromGroupReq) (*v0_authz.RemoveAllowedAppFromGroupResp, error) {
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.RemoveAllowedAppFromGroup")
 	defer span.End()
 
@@ -107,7 +108,7 @@ func (g *GrpcServer) RemoveAllowedAppFromGroup(ctx context.Context, req *v0_auth
 }
 
 // RemoveAllowedAppsFromGroup handles the gRPC request to remove all allowed apps from a group.
-func (g *GrpcServer) RemoveAllowedAppsFromGroup(ctx context.Context, req *v0_authz.RemoveAllowedAppsFromGroupReq, opts ...grpc.CallOption) (*v0_authz.RemoveAllowedAppsFromGroupResp, error) {
+func (g *GrpcServer) RemoveAllowedAppsFromGroup(ctx context.Context, req *v0_authz.RemoveAllowedAppsFromGroupReq) (*v0_authz.RemoveAllowedAppsFromGroupResp, error) {
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.RemoveAllowedAppsFromGroup")
 	defer span.End()
 
@@ -129,7 +130,7 @@ func (g *GrpcServer) RemoveAllowedAppsFromGroup(ctx context.Context, req *v0_aut
 }
 
 // GetAllowedGroupsForApp handles the gRPC request to get allowed groups for an app.
-func (g *GrpcServer) GetAllowedGroupsForApp(ctx context.Context, req *v0_authz.GetAllowedGroupsForAppReq, opts ...grpc.CallOption) (*v0_authz.GetAllowedGroupsForAppResp, error) {
+func (g *GrpcServer) GetAllowedGroupsForApp(ctx context.Context, req *v0_authz.GetAllowedGroupsForAppReq) (*v0_authz.GetAllowedGroupsForAppResp, error) {
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.GetAllowedGroupsForApp")
 	defer span.End()
 
@@ -154,7 +155,7 @@ func (g *GrpcServer) GetAllowedGroupsForApp(ctx context.Context, req *v0_authz.G
 }
 
 // RemoveAllowedGroupsForApp handles the gRPC request to remove all allowed groups for an app.
-func (g *GrpcServer) RemoveAllowedGroupsForApp(ctx context.Context, req *v0_authz.RemoveAllowedGroupsForAppReq, opts ...grpc.CallOption) (*v0_authz.RemoveAllowedGroupsForAppResp, error) {
+func (g *GrpcServer) RemoveAllowedGroupsForApp(ctx context.Context, req *v0_authz.RemoveAllowedGroupsForAppReq) (*v0_authz.RemoveAllowedGroupsForAppResp, error) {
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.RemoveAllowedGroupsForApp")
 	defer span.End()
 

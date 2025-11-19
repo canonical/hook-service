@@ -71,7 +71,7 @@ func NewRouter(
 
 	router.Use(middlewares...)
 
-	v0_authz.RegisterAppAuthorizationServiceHandlerClient(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
+	v0_authz.RegisterAppAuthorizationServiceHandlerServer(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		authMiddleware,
