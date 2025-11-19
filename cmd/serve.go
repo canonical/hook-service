@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package cmd
 
 import (
@@ -15,10 +18,12 @@ import (
 
 	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/config"
+	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
 	"github.com/canonical/hook-service/internal/salesforce"
+	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/web"
 )
@@ -48,6 +53,14 @@ func serve() error {
 
 	monitor := prometheus.NewMonitor("hook-service", logger)
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
+
+	var s storage.StorageInterface
+	var dbClient db.DBClientInterface
+	if specs.DSN != "" {
+		dbClient = db.NewDBClient(specs.DSN, specs.TracingEnabled, tracer, monitor, logger)
+		defer dbClient.Close()
+		s = storage.NewStorage(dbClient, tracer, monitor, logger)
+	}
 
 	var authorizer *authorization.Authorizer
 	if specs.AuthorizationEnabled {
@@ -93,7 +106,7 @@ func serve() error {
 		)
 	}
 
-	router := web.NewRouter(specs.ApiToken, sf, authorizer, tracer, monitor, logger)
+	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, tracer, monitor, logger)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{

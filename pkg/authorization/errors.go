@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package authorization
 
 import "errors"
@@ -8,6 +11,6 @@ import "errors"
 var (
 	errGroupNotFound           = errors.New("group not found")
 	errAppAlreadyExistsInGroup = errors.New("app already exists in group")
-	errAppDoesNotExistInGroup  = errors.New("app does not exist in group")
 	errAppDoesNotExist         = errors.New("app does not exist")
+	errInvalidGroupID          = errors.New("invalid group id")
 )

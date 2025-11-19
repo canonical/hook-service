@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package web
 
 import (
@@ -12,10 +15,12 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/canonical/hook-service/internal/authorization"
+	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/salesforce"
+	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
 	groups_api "github.com/canonical/hook-service/pkg/groups"
@@ -26,6 +31,8 @@ import (
 
 func NewRouter(
 	token string,
+	s storage.StorageInterface,
+	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
 	tracer tracing.TracingInterface,
@@ -42,6 +49,11 @@ func NewRouter(
 		middlewareCORS([]string{"*"}),
 	)
 
+	// Add transaction middleware if DB client is provided
+	if dbClient != nil {
+		middlewares = append(middlewares, db.TransactionMiddleware(dbClient, logger))
+	}
+
 	if true {
 		middlewares = append(
 			middlewares,
@@ -54,12 +66,15 @@ func NewRouter(
 		authMiddleware = hooks.NewAuthMiddleware(token, tracer, logger)
 	}
 
-	authzService := authz_api.NewService(authz_api.NewStorage(), authz, tracer, monitor, logger)
-	groupService := groups_api.NewService(groups_api.NewStorage(), authz, tracer, monitor, logger)
+	authzService := authz_api.NewService(s, authz, tracer, monitor, logger)
+	groupService := groups_api.NewService(s, authz, tracer, monitor, logger)
 
 	groupClients := []hooks.ClientInterface{}
 	if salesforceClient != nil {
 		groupClients = append(groupClients, hooks.NewSalesforceClient(salesforceClient, tracer, monitor, logger))
+	}
+	if s != nil {
+		groupClients = append(groupClients, hooks.NewLocalStorageClient(s, tracer, monitor, logger))
 	}
 
 	gRPCGatewayMux := runtime.NewServeMux(

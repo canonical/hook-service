@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package authorization
 
 import "context"
@@ -16,8 +19,8 @@ type AuthorizationDatabaseInterface interface {
 	GetAllowedApps(context.Context, string) ([]string, error)
 	AddAllowedApp(context.Context, string, string) error
 	AddAllowedApps(context.Context, string, []string) error
-	RemoveAllowedApps(context.Context, string) ([]string, error)
 	RemoveAllowedApp(context.Context, string, string) error
+	RemoveAllowedApps(context.Context, string) ([]string, error)
 
 	AddAllowedGroupsForApp(context.Context, string, []string) error
 	GetAllowedGroupsForApp(context.Context, string) ([]string, error)

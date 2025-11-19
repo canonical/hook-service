@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package groups
 
 import (
@@ -14,6 +17,7 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/internal/types"
 )
 
 var _ v0_groups.AuthzGroupsServiceClient = (*GrpcServer)(nil)
@@ -31,7 +35,7 @@ func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroup
 		return nil, status.Errorf(codes.InvalidArgument, "group cannot be nil")
 	}
 
-	gType, err := parseGroupType(req.Group.GetType())
+	gType, err := types.ParseGroupType(req.Group.GetType())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "create group")
 	}
@@ -127,12 +131,12 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 		return nil, status.Errorf(codes.InvalidArgument, "group name cannot be updated")
 	}
 
-	gType, err := parseGroupType(req.Group.GetType())
+	gType, err := types.ParseGroupType(req.Group.GetType())
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "update group")
 	}
 
-	group := &Group{
+	group := &types.Group{
 		Description:  req.Group.GetDescription(),
 		Type:         gType,
 		Organization: "default",
@@ -253,12 +257,16 @@ func (g *GrpcServer) mapErrorToStatus(err error, action string) error {
 		return status.Errorf(codes.NotFound, "group not found")
 	case errors.Is(err, ErrDuplicateGroup):
 		return status.Errorf(codes.AlreadyExists, "group already exists")
+	case errors.Is(err, ErrUserAlreadyInGroup):
+		return status.Errorf(codes.AlreadyExists, "user already in group")
 	case errors.Is(err, ErrInvalidGroupName):
 		return status.Errorf(codes.InvalidArgument, "invalid group name")
 	case errors.Is(err, ErrInvalidGroupType):
 		return status.Errorf(codes.InvalidArgument, "invalid group type")
 	case errors.Is(err, ErrInvalidOrganization):
 		return status.Errorf(codes.InvalidArgument, "invalid organization")
+	case errors.Is(err, ErrInvalidGroupID):
+		return status.Errorf(codes.InvalidArgument, "invalid group id")
 	case errors.Is(err, ErrInternalServerError):
 		return status.Errorf(codes.Internal, "internal server error")
 	default:

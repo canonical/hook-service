@@ -1,13 +1,21 @@
-package groups
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
 
-import "time"
+package types
 
-type groupType string
+import (
+	"errors"
+	"time"
+)
+
+type GroupType string
 
 const (
-	GroupTypeExternal groupType = "external"
-	GroupTypeLocal    groupType = "local"
+	GroupTypeExternal GroupType = "external"
+	GroupTypeLocal    GroupType = "local"
 )
+
+var ErrInvalidGroupType = errors.New("invalid group type")
 
 // Group represents a group of users.
 type Group struct {
@@ -15,18 +23,20 @@ type Group struct {
 	Name         string    `json:"name"`
 	Organization string    `json:"organization" default:"default"`
 	Description  string    `json:"description"`
-	Type         groupType `json:"type" default:"local"`
+	Type         GroupType `json:"type" default:"local"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
 
+// GroupUser represents a user's membership in a group.
 type GroupUser struct {
 	ID           string `json:"id"`
 	Role         string `json:"role"`
 	Organization string `json:"organization" default:"default"`
 }
 
-func parseGroupType(s string) (groupType, error) {
+// ParseGroupType converts a string to a GroupType.
+func ParseGroupType(s string) (GroupType, error) {
 	switch s {
 	case "local", "":
 		return GroupTypeLocal, nil

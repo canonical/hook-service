@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package config
 
 import "flag"
@@ -28,6 +31,8 @@ type EnvSpec struct {
 
 	AuthorizationEnabled bool `envconfig:"authorization_enabled" default:"false"`
 	OpenFGAWorkersTotal  int  `envconfig:"openfga_workers_total" default:"150"`
+
+	DSN string `envconfig:"DSN" default:""`
 }
 
 type Flags struct {
