@@ -25,3 +25,7 @@ func GroupTuple(groupId string) string {
 	// instead of encoded names
 	return "group:" + base64.StdEncoding.EncodeToString([]byte(groupId))
 }
+
+func GroupMemberTuple(groupId string) string {
+	return GroupTuple(groupId) + "#" + MEMBER_RELATION
+}
