@@ -1,4 +1,4 @@
-// Copyright 2024 Canonical Ltd.
+// Copyright 2025 Canonical Ltd
 // SPDX-License-Identifier: AGPL-3.0
 
 package authorization
@@ -24,6 +24,8 @@ type AuthorizerInterface interface {
 	RemoveAllowedAppFromGroup(context.Context, string, string) error
 	RemoveAllAllowedAppsFromGroup(context.Context, string) error
 	RemoveAllAllowedGroupsForApp(context.Context, string) error
+
+	DeleteGroup(context.Context, string) error
 }
 
 type AuthzClientInterface interface {
