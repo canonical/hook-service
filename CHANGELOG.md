@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.0.2](https://github.com/canonical/hook-service/compare/v1.0.1...v1.0.2) (2025-11-22)
+
+
+### Bug Fixes
+
+* add authorization API ([344ee39](https://github.com/canonical/hook-service/commit/344ee39f78d054289079529aeb613f9fd847f182))
+* add more logs ([dc69bda](https://github.com/canonical/hook-service/commit/dc69bda26b82d2065075573e97feb3144166e6aa))
+* add openfga integration ([ee29bae](https://github.com/canonical/hook-service/commit/ee29bae1686b4aa498597a0e698179553a7f1d83))
+* **deps:** update go deps ([a7a1224](https://github.com/canonical/hook-service/commit/a7a12245000f78321c9562e205152331dc80a7e3))
+* **deps:** update go deps ([c7d1433](https://github.com/canonical/hook-service/commit/c7d143358ea908b2bbb1386e057bc4b81bff10f2))
+* **deps:** update go deps (patch) ([f8d4e83](https://github.com/canonical/hook-service/commit/f8d4e837b6f18a9de9e6156b5d5a167e5a9d7cd6))
+* **deps:** update module go.uber.org/zap to v1.27.1 ([d12b53a](https://github.com/canonical/hook-service/commit/d12b53a0104bfa741f20466c6631aa9e7306f145))
+* **deps:** update module go.uber.org/zap to v1.27.1 ([#90](https://github.com/canonical/hook-service/issues/90)) ([18957a7](https://github.com/canonical/hook-service/commit/18957a746b5c048ac596f151e92f3cb9ef2e1be6))
+* introduce hook authorizer ([589c240](https://github.com/canonical/hook-service/commit/589c24044d55ef2aa321ba9e04cf4774cdeb0bf0))
+* remove pool, add batch check ([76eb9f2](https://github.com/canonical/hook-service/commit/76eb9f20ad0a7c81bc232860d6b85142c9e50548))
+* use grpc server ([4018d24](https://github.com/canonical/hook-service/commit/4018d244f8c220d68472ab2bbc091f3c6cbd72e9))
+
 ## [1.0.1](https://github.com/canonical/hook-service/compare/v1.0.0...v1.0.1) (2025-10-15)
 
 
