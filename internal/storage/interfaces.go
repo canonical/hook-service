@@ -21,12 +21,10 @@ type StorageInterface interface {
 	AddUsersToGroup(ctx context.Context, groupID string, userIDs []string) error
 	ListUsersInGroup(ctx context.Context, groupID string) ([]string, error)
 	RemoveUsersFromGroup(ctx context.Context, groupID string, users []string) error
-	RemoveAllUsersFromGroup(ctx context.Context, groupID string) ([]string, error)
 
 	// User-centric group operations
 	GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error)
 	UpdateGroupsForUser(ctx context.Context, userID string, groupIDs []string) error
-	RemoveGroupsForUser(ctx context.Context, userID string) ([]string, error)
 
 	// Application authorization operations
 	GetAllowedApps(ctx context.Context, groupID string) ([]string, error)

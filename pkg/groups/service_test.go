@@ -656,69 +656,6 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 	}
 }
 
-func TestService_RemoveAllUsersFromGroup(t *testing.T) {
-	groupID := "group-id"
-	dbErr := errors.New("db error")
-
-	testCases := []struct {
-		name        string
-		setupMocks  func(mockStorage *MockDatabaseInterface)
-		expectedErr error
-	}{
-		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveAllUsersFromGroup(gomock.Any(), groupID).Return([]string{"user1", "user2"}, nil)
-			},
-			expectedErr: nil,
-		},
-		{
-			name: "db error - group not found",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveAllUsersFromGroup(gomock.Any(), groupID).Return(nil, storage.ErrNotFound)
-			},
-			expectedErr: fmt.Errorf("failed to remove all users from group: %w", ErrGroupNotFound),
-		},
-		{
-			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveAllUsersFromGroup(gomock.Any(), groupID).Return(nil, dbErr)
-			},
-			expectedErr: fmt.Errorf("failed to remove all users from group: %w", dbErr),
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockStorage := NewMockDatabaseInterface(ctrl)
-			mockAuthz := NewMockAuthorizerInterface(ctrl)
-			mockTracer := NewMockTracingInterface(ctrl)
-			mockLogger := NewMockLoggerInterface(ctrl)
-			mockMonitor := NewMockMonitorInterface(ctrl)
-
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
-
-			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
-
-			err := s.RemoveAllUsersFromGroup(context.Background(), groupID)
-
-			if tc.expectedErr != nil {
-				if err == nil || err.Error() != tc.expectedErr.Error() {
-					t.Fatalf("expected error %q, got %v", tc.expectedErr.Error(), err)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-			}
-		})
-	}
-}
-
 func TestService_GetGroupsForUser(t *testing.T) {
 	userID := "user-id"
 	expectedGroups := []*types.Group{{ID: "group1"}, {ID: "group2"}}
@@ -843,62 +780,6 @@ func TestService_UpdateGroupsForUser(t *testing.T) {
 			tc.setupMocks(mockStorage)
 
 			err := s.UpdateGroupsForUser(context.Background(), userID, groupIDs)
-
-			if tc.expectedErr != nil {
-				if err == nil || err.Error() != tc.expectedErr.Error() {
-					t.Fatalf("expected error %q, got %v", tc.expectedErr.Error(), err)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-			}
-		})
-	}
-}
-
-func TestService_RemoveGroupsForUser(t *testing.T) {
-	userID := "user-id"
-	dbErr := errors.New("db error")
-
-	testCases := []struct {
-		name        string
-		setupMocks  func(mockStorage *MockDatabaseInterface)
-		expectedErr error
-	}{
-		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveGroupsForUser(gomock.Any(), userID).Return([]string{"group1", "group2"}, nil)
-			},
-			expectedErr: nil,
-		},
-		{
-			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveGroupsForUser(gomock.Any(), userID).Return(nil, dbErr)
-			},
-			expectedErr: dbErr,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockStorage := NewMockDatabaseInterface(ctrl)
-			mockAuthz := NewMockAuthorizerInterface(ctrl)
-			mockTracer := NewMockTracingInterface(ctrl)
-			mockLogger := NewMockLoggerInterface(ctrl)
-			mockMonitor := NewMockMonitorInterface(ctrl)
-
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
-
-			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
-
-			err := s.RemoveGroupsForUser(context.Background(), userID)
 
 			if tc.expectedErr != nil {
 				if err == nil || err.Error() != tc.expectedErr.Error() {

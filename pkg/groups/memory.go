@@ -145,19 +145,6 @@ func (m *Storage) RemoveUsersFromGroup(ctx context.Context, groupID string, user
 	return nil
 }
 
-func (m *Storage) RemoveAllUsersFromGroup(ctx context.Context, groupID string) ([]string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if _, ok := m.groups[groupID]; !ok {
-		return nil, ErrGroupNotFound
-	}
-
-	users := m.users[groupID]
-	delete(m.users, groupID)
-	return users, nil
-}
-
 func (m *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -188,29 +175,6 @@ func (m *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 
 	m.users[userID] = groupIDs
 	return nil
-}
-
-func (m *Storage) RemoveGroupsForUser(ctx context.Context, userID string) ([]string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	var removedFrom []string
-	for groupID, users := range m.users {
-		var newUsers []string
-		removed := false
-		for _, u := range users {
-			if u == userID {
-				removed = true
-			} else {
-				newUsers = append(newUsers, u)
-			}
-		}
-		if removed {
-			m.users[groupID] = newUsers
-			removedFrom = append(removedFrom, groupID)
-		}
-	}
-	return removedFrom, nil
 }
 
 func NewStorage() *Storage {

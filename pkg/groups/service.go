@@ -133,17 +133,6 @@ func (s *Service) RemoveUsersFromGroup(ctx context.Context, groupID string, user
 	return nil
 }
 
-func (s *Service) RemoveAllUsersFromGroup(ctx context.Context, groupID string) error {
-	ctx, span := s.tracer.Start(ctx, "groups.Service.RemoveAllUsersFromGroup")
-	defer span.End()
-
-	_, err := s.db.RemoveAllUsersFromGroup(ctx, groupID)
-	if err != nil {
-		return fmt.Errorf("failed to remove all users from group: %w", err)
-	}
-	return nil
-}
-
 func (s *Service) GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.GetGroupsForUser")
 	defer span.End()
@@ -163,17 +152,6 @@ func (s *Service) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 		if errors.Is(err, storage.ErrForeignKeyViolation) {
 			return ErrInvalidGroupID
 		}
-		return err
-	}
-	return nil
-}
-
-func (s *Service) RemoveGroupsForUser(ctx context.Context, userID string) error {
-	ctx, span := s.tracer.Start(ctx, "groups.Service.RemoveGroupsForUser")
-	defer span.End()
-
-	_, err := s.db.RemoveGroupsForUser(ctx, userID)
-	if err != nil {
 		return err
 	}
 	return nil

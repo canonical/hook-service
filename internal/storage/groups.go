@@ -234,37 +234,6 @@ func (s *Storage) RemoveUsersFromGroup(ctx context.Context, groupID string, user
 	return nil
 }
 
-// RemoveAllUsersFromGroup removes all users from a group and returns the list of removed user IDs.
-func (s *Storage) RemoveAllUsersFromGroup(ctx context.Context, groupID string) ([]string, error) {
-	ctx, span := s.tracer.Start(ctx, "storage.Storage.RemoveAllUsersFromGroup")
-	defer span.End()
-
-	rows, err := s.db.Statement(ctx).
-		Delete("group_members").
-		Where(sq.Eq{"group_id": groupID}).
-		Suffix("RETURNING user_id").
-		QueryContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove all users from group: %v", err)
-	}
-	defer rows.Close()
-
-	userIDs := make([]string, 0)
-	for rows.Next() {
-		var userID string
-		if err := rows.Scan(&userID); err != nil {
-			return nil, fmt.Errorf("failed to scan user ID: %v", err)
-		}
-		userIDs = append(userIDs, userID)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating removed users: %v", err)
-	}
-
-	return userIDs, nil
-}
-
 // GetGroupsForUser retrieves all groups that a user belongs to.
 func (s *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.GetGroupsForUser")
@@ -348,37 +317,6 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	}
 
 	return nil
-}
-
-// RemoveGroupsForUser removes all group memberships for a user and returns the list of removed group IDs.
-func (s *Storage) RemoveGroupsForUser(ctx context.Context, userID string) ([]string, error) {
-	ctx, span := s.tracer.Start(ctx, "storage.Storage.RemoveGroupsForUser")
-	defer span.End()
-
-	rows, err := s.db.Statement(ctx).
-		Delete("group_members").
-		Where(sq.Eq{"user_id": userID}).
-		Suffix("RETURNING group_id").
-		QueryContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to remove group memberships: %v", err)
-	}
-	defer rows.Close()
-
-	groupIDs := make([]string, 0)
-	for rows.Next() {
-		var groupID string
-		if err := rows.Scan(&groupID); err != nil {
-			return nil, fmt.Errorf("failed to scan group ID: %v", err)
-		}
-		groupIDs = append(groupIDs, groupID)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("error iterating removed groups: %v", err)
-	}
-
-	return groupIDs, nil
 }
 
 // scanGroup scans a database row into a Group struct.
