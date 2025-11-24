@@ -7,6 +7,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -297,18 +299,33 @@ func (s *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*types
 }
 
 // UpdateGroupsForUser replaces all group memberships for a user with the specified groups.
+// It deduplicates the provided group IDs, removes any memberships not in the list,
+// and upserts the remaining memberships to preserve history.
 func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupIDs []string) error {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.UpdateGroupsForUser")
 	defer span.End()
 
-	if len(groupIDs) == 0 {
-		_, err := s.db.Statement(ctx).
-			Delete("group_members").
-			Where(sq.Eq{"user_id": userID}).
-			ExecContext(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to remove all group memberships: %v", err)
-		}
+	// Deduplicate groupIDs to avoid PostgreSQL error: "ON CONFLICT DO UPDATE command cannot affect row a second time"
+	uniqueGroupIDsMap := make(map[string]struct{}, len(groupIDs))
+	for _, id := range groupIDs {
+		uniqueGroupIDsMap[id] = struct{}{}
+	}
+	uniqueGroupIDs := slices.Collect(maps.Keys(uniqueGroupIDsMap))
+
+	// Remove groups that are not in the provided list
+	delBuilder := s.db.Statement(ctx).
+		Delete("group_members").
+		Where(sq.Eq{"user_id": userID})
+
+	if len(uniqueGroupIDs) > 0 {
+		delBuilder = delBuilder.Where(sq.NotEq{"group_id": uniqueGroupIDs})
+	}
+
+	if _, err := delBuilder.ExecContext(ctx); err != nil {
+		return fmt.Errorf("failed to remove old group memberships: %v", err)
+	}
+
+	if len(uniqueGroupIDs) == 0 {
 		return nil
 	}
 
@@ -319,7 +336,7 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at").
 		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
 
-	for _, groupID := range groupIDs {
+	for _, groupID := range uniqueGroupIDs {
 		insert = insert.Values(groupID, userID, "default", "member", now, now)
 	}
 
@@ -328,17 +345,6 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 			return WrapForeignKeyError(err, "one or more groups do not exist")
 		}
 		return fmt.Errorf("failed to upsert group memberships: %v", err)
-	}
-
-	_, err := s.db.Statement(ctx).
-		Delete("group_members").
-		Where(sq.And{
-			sq.Eq{"user_id": userID},
-			sq.NotEq{"group_id": groupIDs},
-		}).
-		ExecContext(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to remove old group memberships: %v", err)
 	}
 
 	return nil
