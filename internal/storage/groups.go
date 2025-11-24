@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -52,14 +53,13 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.CreateGroup")
 	defer span.End()
 
-	now := time.Now().UTC()
 	var id int64
 	var createdAt, updatedAt time.Time
 
 	err := s.db.Statement(ctx).
 		Insert("groups").
-		Columns("name", "tenant_id", "description", "type", "created_at", "updated_at").
-		Values(group.Name, group.TenantId, group.Description, group.Type, now, now).
+		Columns("name", "tenant_id", "description", "type").
+		Values(group.Name, group.TenantId, group.Description, group.Type).
 		Suffix("RETURNING id, created_at, updated_at").
 		QueryRowContext(ctx).
 		Scan(&id, &createdAt, &updatedAt)
@@ -93,7 +93,7 @@ func (s *Storage) GetGroup(ctx context.Context, id string) (*types.Group, error)
 		QueryRowContext(ctx)
 
 	group, err := scanGroup(row)
-	if err == sql.ErrNoRows {
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
@@ -169,7 +169,7 @@ func (s *Storage) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at")
 
 	for _, userID := range userIDs {
-		insert = insert.Values(groupID, userID, "default", "member", now, now)
+		insert = insert.Values(groupID, userID, "default", types.RoleMember, now, now)
 	}
 
 	_, err := insert.ExecContext(ctx)
@@ -306,7 +306,7 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
 
 	for _, groupID := range uniqueGroupIDs {
-		insert = insert.Values(groupID, userID, "default", "member", now, now)
+		insert = insert.Values(groupID, userID, "default", types.RoleMember, now, now)
 	}
 
 	if _, err := insert.ExecContext(ctx); err != nil {
@@ -320,25 +320,19 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 }
 
 // scanGroup scans a database row into a Group struct.
-func scanGroup(row interface{ Scan(...interface{}) error }) (*types.Group, error) {
+func scanGroup(row sq.RowScanner) (*types.Group, error) {
 	group := &types.Group{}
-	var typeStr string
 	err := row.Scan(
 		&group.ID,
 		&group.Name,
 		&group.TenantId,
 		&group.Description,
-		&typeStr,
+		&group.Type,
 		&group.CreatedAt,
 		&group.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
-	}
-
-	group.Type, err = types.ParseGroupType(typeStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid group type %q: %v", typeStr, err)
 	}
 
 	return group, nil

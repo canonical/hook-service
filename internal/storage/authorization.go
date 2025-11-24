@@ -5,6 +5,7 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -27,13 +28,9 @@ func (s *Storage) GetAllowedApps(ctx context.Context, groupID string) ([]string,
 	}
 	defer rows.Close()
 
-	appIDs := make([]string, 0)
-	for rows.Next() {
-		var appID string
-		if err := rows.Scan(&appID); err != nil {
-			return nil, fmt.Errorf("failed to scan application ID: %v", err)
-		}
-		appIDs = append(appIDs, appID)
+	appIDs, err := scanApps(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan allowed apps: %v", err)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -129,13 +126,9 @@ func (s *Storage) RemoveAllowedApps(ctx context.Context, groupID string) ([]stri
 	}
 	defer rows.Close()
 
-	appIDs := make([]string, 0)
-	for rows.Next() {
-		var appID string
-		if err := rows.Scan(&appID); err != nil {
-			return nil, fmt.Errorf("failed to scan application ID: %v", err)
-		}
-		appIDs = append(appIDs, appID)
+	appIDs, err := scanApps(rows)
+	if err != nil {
+		return nil, fmt.Errorf("failed to scan allowed apps: %v", err)
 	}
 
 	if err := rows.Err(); err != nil {
@@ -236,4 +229,16 @@ func (s *Storage) RemoveAllAllowedGroupsForApp(ctx context.Context, appID string
 	}
 
 	return groupIDs, nil
+}
+
+func scanApps(rows *sql.Rows) ([]string, error) {
+	appIDs := make([]string, 0)
+	for rows.Next() {
+		var appID string
+		if err := rows.Scan(&appID); err != nil {
+			return nil, fmt.Errorf("failed to scan application ID: %v", err)
+		}
+		appIDs = append(appIDs, appID)
+	}
+	return appIDs, nil
 }

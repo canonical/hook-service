@@ -4,19 +4,13 @@
 -- +goose Up
 -- +goose StatementBegin
 
-DO $$ BEGIN
-    CREATE TYPE group_type AS ENUM ('local', 'external');
-EXCEPTION
-    WHEN duplicate_object THEN null;
-END $$;
-
 CREATE TABLE IF NOT EXISTS groups
 (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL DEFAULT 'default',
     description TEXT,
-    type group_type NOT NULL DEFAULT 'local',
+    type SMALLINT NOT NULL DEFAULT 0,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
@@ -30,7 +24,7 @@ CREATE TABLE IF NOT EXISTS group_members
     group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
     user_id VARCHAR(255) NOT NULL,
     tenant_id VARCHAR(255) NOT NULL DEFAULT 'default',
-    role VARCHAR(100) NOT NULL,
+    role SMALLINT NOT NULL DEFAULT 0,
 
     created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now()
