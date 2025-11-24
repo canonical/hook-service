@@ -30,15 +30,12 @@ func (s *Service) ListGroups(ctx context.Context) ([]*Group, error) {
 	return s.db.ListGroups(ctx)
 }
 
-func (s *Service) CreateGroup(ctx context.Context, name, organization, description string, gType groupType) (*Group, error) {
+func (s *Service) CreateGroup(ctx context.Context, group *Group) (*Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.CreateGroup")
 	defer span.End()
 
-	group := &Group{
-		Name:         name,
-		Organization: organization,
-		Description:  description,
-		Type:         gType,
+	if group.ID != "" {
+		return nil, fmt.Errorf("group ID must be empty")
 	}
 
 	return s.db.CreateGroup(ctx, group)

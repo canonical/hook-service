@@ -65,7 +65,7 @@ func (m *Storage) UpdateGroup(ctx context.Context, id string, group *Group) (*Gr
 	}
 
 	// Update fields
-	existingGroup.Organization = group.Organization
+	existingGroup.TenantId = group.TenantId
 	existingGroup.Description = group.Description
 	existingGroup.Type = group.Type
 	existingGroup.UpdatedAt = time.Now()

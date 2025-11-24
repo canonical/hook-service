@@ -9,7 +9,7 @@ import (
 
 type ServiceInterface interface {
 	ListGroups(context.Context) ([]*Group, error)
-	CreateGroup(context.Context, string, string, string, groupType) (*Group, error)
+	CreateGroup(context.Context, *Group) (*Group, error)
 	GetGroup(context.Context, string) (*Group, error)
 	UpdateGroup(context.Context, string, *Group) (*Group, error)
 	DeleteGroup(context.Context, string) error

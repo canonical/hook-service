@@ -21,6 +21,8 @@ import (
 
 var _ v0_groups.AuthzGroupsServiceServer = (*GrpcServer)(nil)
 
+const DefaultTenantID = "default"
+
 type GrpcServer struct {
 	svc ServiceInterface
 	v0_groups.UnimplementedAuthzGroupsServiceServer
@@ -40,20 +42,27 @@ func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroup
 		return nil, g.mapErrorToStatus(err, "create group")
 	}
 
-	group, err := g.svc.CreateGroup(ctx, req.Group.Name, "default", req.Group.GetDescription(), gType)
+	group := &Group{
+		Name:        req.Group.GetName(),
+		TenantId:    DefaultTenantID,
+		Description: req.Group.GetDescription(),
+		Type:        gType,
+	}
+
+	group, err = g.svc.CreateGroup(ctx, group)
 	if err != nil {
 		return nil, g.mapErrorToStatus(err, "create group")
 	}
 
 	return &v0_groups.CreateGroupResp{
 		Data: []*v0_groups.Group{{
-			Id:           group.ID,
-			Name:         group.Name,
-			Organization: group.Organization,
-			Description:  group.Description,
-			Type:         string(group.Type),
-			CreatedAt:    timestamppb.New(group.CreatedAt),
-			UpdatedAt:    timestamppb.New(group.UpdatedAt),
+			Id:          group.ID,
+			Name:        group.Name,
+			TenantId:    group.TenantId,
+			Description: group.Description,
+			Type:        string(group.Type),
+			CreatedAt:   timestamppb.New(group.CreatedAt),
+			UpdatedAt:   timestamppb.New(group.UpdatedAt),
 		}},
 		Status:  http.StatusOK,
 		Message: proto.String("Group created"),
@@ -68,13 +77,13 @@ func (g *GrpcServer) GetGroup(ctx context.Context, req *v0_groups.GetGroupReq) (
 
 	return &v0_groups.GetGroupResp{
 		Data: []*v0_groups.Group{{
-			Id:           group.ID,
-			Name:         group.Name,
-			Organization: group.Organization,
-			Description:  group.Description,
-			Type:         string(group.Type),
-			CreatedAt:    timestamppb.New(group.CreatedAt),
-			UpdatedAt:    timestamppb.New(group.UpdatedAt),
+			Id:          group.ID,
+			Name:        group.Name,
+			TenantId:    group.TenantId,
+			Description: group.Description,
+			Type:        string(group.Type),
+			CreatedAt:   timestamppb.New(group.CreatedAt),
+			UpdatedAt:   timestamppb.New(group.UpdatedAt),
 		}},
 		Status:  http.StatusOK,
 		Message: proto.String("Group details"),
@@ -90,13 +99,13 @@ func (g *GrpcServer) ListGroups(ctx context.Context, req *v0_groups.ListGroupsRe
 	respGroups := make([]*v0_groups.Group, len(groups))
 	for i, group := range groups {
 		respGroups[i] = &v0_groups.Group{
-			Id:           group.ID,
-			Name:         group.Name,
-			Organization: group.Organization,
-			Description:  group.Description,
-			Type:         string(group.Type),
-			CreatedAt:    timestamppb.New(group.CreatedAt),
-			UpdatedAt:    timestamppb.New(group.UpdatedAt),
+			Id:          group.ID,
+			Name:        group.Name,
+			TenantId:    group.TenantId,
+			Description: group.Description,
+			Type:        string(group.Type),
+			CreatedAt:   timestamppb.New(group.CreatedAt),
+			UpdatedAt:   timestamppb.New(group.UpdatedAt),
 		}
 	}
 	return &v0_groups.ListGroupsResp{
@@ -133,9 +142,9 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 	}
 
 	group := &Group{
-		Description:  req.Group.GetDescription(),
-		Type:         gType,
-		Organization: "default",
+		Description: req.Group.GetDescription(),
+		Type:        gType,
+		TenantId:    DefaultTenantID,
 	}
 
 	gg, err := g.svc.UpdateGroup(ctx, req.GetId(), group)
@@ -145,13 +154,13 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 
 	return &v0_groups.UpdateGroupResp{
 		Data: []*v0_groups.Group{{
-			Id:           gg.ID,
-			Name:         gg.Name,
-			Organization: gg.Organization,
-			Description:  gg.Description,
-			Type:         string(gg.Type),
-			CreatedAt:    timestamppb.New(gg.CreatedAt),
-			UpdatedAt:    timestamppb.New(gg.UpdatedAt),
+			Id:          gg.ID,
+			Name:        gg.Name,
+			TenantId:    gg.TenantId,
+			Description: gg.Description,
+			Type:        string(gg.Type),
+			CreatedAt:   timestamppb.New(gg.CreatedAt),
+			UpdatedAt:   timestamppb.New(gg.UpdatedAt),
 		}},
 		Status:  http.StatusOK,
 		Message: proto.String("Group updated"),
@@ -209,13 +218,13 @@ func (g *GrpcServer) ListUserGroups(ctx context.Context, req *v0_groups.ListUser
 	respGroups := make([]*v0_groups.Group, len(groups))
 	for i, group := range groups {
 		respGroups[i] = &v0_groups.Group{
-			Id:           group.ID,
-			Name:         group.Name,
-			Organization: group.Organization,
-			Description:  group.Description,
-			Type:         string(group.Type),
-			CreatedAt:    timestamppb.New(group.CreatedAt),
-			UpdatedAt:    timestamppb.New(group.UpdatedAt),
+			Id:          group.ID,
+			Name:        group.Name,
+			TenantId:    group.TenantId,
+			Description: group.Description,
+			Type:        string(group.Type),
+			CreatedAt:   timestamppb.New(group.CreatedAt),
+			UpdatedAt:   timestamppb.New(group.UpdatedAt),
 		}
 	}
 
@@ -251,8 +260,8 @@ func (g *GrpcServer) mapErrorToStatus(err error, action string) error {
 		return status.Errorf(codes.InvalidArgument, "invalid group name")
 	case errors.Is(err, ErrInvalidGroupType):
 		return status.Errorf(codes.InvalidArgument, "invalid group type")
-	case errors.Is(err, ErrInvalidOrganization):
-		return status.Errorf(codes.InvalidArgument, "invalid organization")
+	case errors.Is(err, ErrInvalidTenant):
+		return status.Errorf(codes.InvalidArgument, "invalid tenant")
 	case errors.Is(err, ErrInternalServerError):
 		return status.Errorf(codes.Internal, "internal server error")
 	default:

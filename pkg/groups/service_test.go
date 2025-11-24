@@ -22,7 +22,7 @@ import (
 
 func TestService_CreateGroup(t *testing.T) {
 	groupName := "test-group"
-	org := "default"
+	org := DefaultTenantID
 	description := "A test group"
 	groupType := GroupTypeLocal
 	dbErr := errors.New("db error")
@@ -41,8 +41,8 @@ func TestService_CreateGroup(t *testing.T) {
 						if g.Name != groupName {
 							t.Fatalf("expected group name %q, got %q", groupName, g.Name)
 						}
-						if g.Organization != org {
-							t.Fatalf("expected organization %q, got %q", org, g.Organization)
+						if g.TenantId != org {
+							t.Fatalf("expected tenant %q, got %q", org, g.TenantId)
 						}
 						if g.Description != description {
 							t.Fatalf("expected description %q, got %q", description, g.Description)
@@ -58,11 +58,11 @@ func TestService_CreateGroup(t *testing.T) {
 				).Times(1)
 			},
 			expectedGroup: &Group{
-				ID:           "new-id",
-				Name:         groupName,
-				Organization: org,
-				Description:  description,
-				Type:         groupType,
+				ID:          "new-id",
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
 			},
 			expectedErr: nil,
 		},
@@ -92,7 +92,13 @@ func TestService_CreateGroup(t *testing.T) {
 
 			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
 
-			createdGroup, err := s.CreateGroup(context.Background(), groupName, org, description, groupType)
+			g := &Group{
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			}
+			createdGroup, err := s.CreateGroup(context.Background(), g)
 
 			if tc.expectedErr != nil {
 				if !errors.Is(err, tc.expectedErr) {

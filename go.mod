@@ -5,10 +5,11 @@ go 1.24.4
 toolchain go1.24.10
 
 require (
-	github.com/canonical/identity-platform-api v0.0.0-20251117080348-653a6ee7623c
+	github.com/canonical/identity-platform-api v0.0.0-20251124101154-ab78e5ddfcd5
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/cors v1.2.2
 	github.com/go-playground/validator/v10 v10.22.1
+	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.3
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
@@ -83,7 +84,6 @@ require (
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-yaml v1.11.3 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/mock v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
