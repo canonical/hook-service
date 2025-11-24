@@ -54,13 +54,20 @@ func serve() error {
 	monitor := prometheus.NewMonitor("hook-service", logger)
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
-	var s storage.StorageInterface
-	var dbClient db.DBClientInterface
-	if specs.DSN != "" {
-		dbClient = db.NewDBClient(specs.DSN, specs.TracingEnabled, tracer, monitor, logger)
-		defer dbClient.Close()
-		s = storage.NewStorage(dbClient, tracer, monitor, logger)
+	dbConfig := db.Config{
+		DSN:             specs.DSN,
+		MaxConns:        specs.DBMaxConns,
+		MinConns:        specs.DBMinConns,
+		MaxConnLifetime: specs.DBMaxConnLifetime,
+		MaxConnIdleTime: specs.DBMaxConnIdleTime,
+		TracingEnabled:  specs.TracingEnabled,
 	}
+	dbClient, err := db.NewDBClient(dbConfig, tracer, monitor, logger)
+	if err != nil {
+		return fmt.Errorf("failed to create database client: %v", err)
+	}
+	defer dbClient.Close()
+	s := storage.NewStorage(dbClient, tracer, monitor, logger)
 
 	var authorizer *authorization.Authorizer
 	if specs.AuthorizationEnabled {
