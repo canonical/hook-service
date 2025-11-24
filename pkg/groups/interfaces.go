@@ -19,11 +19,9 @@ type ServiceInterface interface {
 	AddUsersToGroup(context.Context, string, []string) error
 	ListUsersInGroup(context.Context, string) ([]string, error)
 	RemoveUsersFromGroup(context.Context, string, []string) error
-	RemoveAllUsersFromGroup(context.Context, string) error
 
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
-	RemoveGroupsForUser(context.Context, string) error
 }
 
 type DatabaseInterface interface {
@@ -36,11 +34,9 @@ type DatabaseInterface interface {
 	AddUsersToGroup(context.Context, string, []string) error
 	ListUsersInGroup(context.Context, string) ([]string, error)
 	RemoveUsersFromGroup(context.Context, string, []string) error
-	RemoveAllUsersFromGroup(context.Context, string) ([]string, error)
 
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
-	RemoveGroupsForUser(context.Context, string) ([]string, error)
 }
 
 type AuthorizerInterface interface {
