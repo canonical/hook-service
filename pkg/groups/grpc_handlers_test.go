@@ -127,10 +127,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
-			gType := types.GroupType(tt.input.Group.GetType())
-			if gType == "" {
-				gType = types.GroupTypeLocal
-			}
+			gType, _ := types.ParseGroupType(tt.input.Group.GetType())
 			g := &types.Group{
 				Name:        tt.input.Group.GetName(),
 				TenantId:    DefaultTenantID,
@@ -271,8 +268,8 @@ func TestGrpcHandler_ListGroups(t *testing.T) {
 			wantErr:   false,
 			wantResp: &v0_groups.ListGroupsResp{
 				Data: []*v0_groups.Group{
-					{Id: "group-1", Name: "Group 1", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
-					{Id: "group-2", Name: "Group 2", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-1", Name: "Group 1", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-2", Name: "Group 2", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 				},
 				Status:  http.StatusOK,
 				Message: func() *string { s := "Group list"; return &s }(),
@@ -414,7 +411,7 @@ func TestGrpcHandler_UpdateGroup(t *testing.T) {
 			expectResp: &types.Group{ID: "group-id", Name: "test-group", Description: "new description", CreatedAt: now, UpdatedAt: now},
 			wantErr:    false,
 			wantResp: &v0_groups.UpdateGroupResp{
-				Data:    []*v0_groups.Group{{Id: "group-id", Name: "test-group", Description: "new description", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}},
+				Data:    []*v0_groups.Group{{Id: "group-id", Name: "test-group", Description: "new description", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}},
 				Status:  http.StatusOK,
 				Message: func() *string { s := "Group updated"; return &s }(),
 			},
@@ -712,8 +709,8 @@ func TestGrpcHandler_ListUserGroups(t *testing.T) {
 			wantErr: false,
 			wantResp: &v0_groups.ListUserGroupsResp{
 				Data: []*v0_groups.Group{
-					{Id: "group-1", Name: "Group 1", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
-					{Id: "group-2", Name: "Group 2", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-1", Name: "Group 1", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-2", Name: "Group 2", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 				},
 				Status:  http.StatusOK,
 				Message: func() *string { s := "User group list"; return &s }(),
