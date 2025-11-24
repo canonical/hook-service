@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/exaring/otelpgx"
@@ -29,6 +30,15 @@ type LazyTxContextKey struct{}
 
 var txContextKey TxContextKey
 var lazyTxContextKey LazyTxContextKey
+
+type Config struct {
+	DSN             string
+	MaxConns        int32
+	MinConns        int32
+	MaxConnLifetime time.Duration
+	MaxConnIdleTime time.Duration
+	TracingEnabled  bool
+}
 
 // Offset calculates the offset for pagination based on the provided page parameter and page size.
 func Offset(pageParam int64, pageSize uint64) uint64 {
@@ -55,7 +65,7 @@ type lazyTx struct {
 }
 
 // get returns the transaction, creating it lazily on first call.
-func (lt *lazyTx) get(ctx context.Context) (TxInterface, error) {
+func (lt *lazyTx) get() (TxInterface, error) {
 	if lt.tx != nil {
 		return lt.tx, nil
 	}
@@ -94,7 +104,7 @@ type DBClient struct {
 func (d *DBClient) Statement(ctx context.Context) sq.StatementBuilderType {
 	// Check for lazy transaction first
 	if lazyTx := lazyTxFromContext(ctx); lazyTx != nil {
-		tx, err := lazyTx.get(ctx)
+		tx, err := lazyTx.get()
 		if err != nil {
 			// Log error but fall back to regular connection
 			d.logger.Errorf("failed to create lazy transaction: %v", err)
@@ -174,6 +184,7 @@ func (d *DBClient) WithTx(ctx context.Context, fn func(context.Context) error) e
 		logger: d.logger,
 	}
 	txCtx := contextWithLazyTx(ctx, lt)
+	// TODO: ADD TIMEOUT
 
 	defer func() {
 		// Only rollback if transaction was started and not committed
@@ -210,32 +221,38 @@ func (d *DBClient) Close() {
 }
 
 // NewDBClient creates a new DBClient instance with the provided DSN and configuration options.
-func NewDBClient(dsn string, tracingEnabled bool, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *DBClient {
-	config, err := pgxpool.ParseConfig(dsn)
+func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) (*DBClient, error) {
+	config, err := pgxpool.ParseConfig(cfg.DSN)
 	if err != nil {
 		logger.Fatalf("DSN validation failed, shutting down, err: %v", err)
 	}
 
-	if tracingEnabled {
+	if cfg.TracingEnabled {
 		// otelpgx.NewTracer will use default global TracerProvider, just like our tracer struct
 		config.ConnConfig.Tracer = otelpgx.NewTracer()
 	}
 
+	config.MaxConns = cfg.MaxConns
+	config.MinConns = cfg.MinConns
+	config.MaxConnLifetime = cfg.MaxConnLifetime
+	config.MaxConnLifetimeJitter = cfg.MaxConnLifetime / 10 // Add 10% jitter to avoid thundering herd
+	config.MaxConnIdleTime = cfg.MaxConnIdleTime
+
 	pool, err := pgxpool.NewWithConfig(context.Background(), config)
 	if err != nil {
-		logger.Fatalf("DB pool creation failed, shutting down, err: %v", err)
+		return nil, fmt.Errorf("failed to create db pool: %v", err)
 	}
 
-	if tracingEnabled {
+	if cfg.TracingEnabled {
 		// when tracing is enabled, also collect metrics
 		if err := otelpgx.RecordStats(pool); err != nil {
-			logger.Fatalf("unable to start metrics collection for database: %v", err)
+			return nil, fmt.Errorf("failed to start metrics collection for database: %v", err)
 		}
 	}
 
 	db := stdlib.OpenDBFromPool(pool)
 	if err := db.Ping(); err != nil {
-		logger.Fatalf("DB connection failed, shutting down, err: %v", err)
+		return nil, fmt.Errorf("failed to connect to the database: %v", err)
 	}
 
 	d := new(DBClient)
@@ -247,5 +264,5 @@ func NewDBClient(dsn string, tracingEnabled bool, tracer tracing.TracingInterfac
 	d.monitor = monitor
 	d.logger = logger
 
-	return d
+	return d, nil
 }
