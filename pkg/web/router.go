@@ -79,6 +79,7 @@ func NewRouter(
 
 	gRPCGatewayMux := runtime.NewServeMux(
 		runtime.WithForwardResponseRewriter(types.ForwardErrorResponseRewriter),
+		runtime.WithDisablePathLengthFallback(),
 		// Use proto field names (snake_case) in JSON output instead of lowerCamelCase.
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
 			MarshalOptions: protojson.MarshalOptions{
