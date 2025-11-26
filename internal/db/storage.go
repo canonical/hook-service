@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	defaultPage     uint64 = 1
-	defaultPageSize uint64 = 100
+	defaultPage      uint64 = 1
+	defaultPageSize  uint64 = 100
+	defaultTxTimeout        = time.Second * 60
 )
 
 type TxContextKey struct{}
@@ -62,6 +63,7 @@ type lazyTx struct {
 	tx        TxInterface
 	logger    logging.LoggerInterface
 	committed bool
+	cancel    context.CancelFunc
 }
 
 // get returns the transaction, creating it lazily on first call.
@@ -71,13 +73,17 @@ func (lt *lazyTx) get() (TxInterface, error) {
 	}
 
 	// Use background context to prevent transaction from being auto-rolled back
-	// when the request context is canceled
-	tx, err := lt.db.BeginTx(context.Background(), &sql.TxOptions{Isolation: sql.LevelReadCommitted, ReadOnly: false})
+	// when the request context is canceled.
+	// We add a timeout to ensure the transaction doesn't hang indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTxTimeout)
+	tx, err := lt.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted, ReadOnly: false})
 	if err != nil {
+		cancel()
 		return nil, err
 	}
 
 	lt.tx = tx
+	lt.cancel = cancel
 	return tx, nil
 }
 
@@ -184,14 +190,16 @@ func (d *DBClient) WithTx(ctx context.Context, fn func(context.Context) error) e
 		logger: d.logger,
 	}
 	txCtx := contextWithLazyTx(ctx, lt)
-	// TODO: ADD TIMEOUT
 
 	defer func() {
 		// Only rollback if transaction was started and not committed
 		if lt.isStarted() && !lt.committed {
-			if err := lt.tx.Rollback(); err != nil && errors.Is(err, sql.ErrTxDone) {
+			if err := lt.tx.Rollback(); err != nil && !errors.Is(err, sql.ErrTxDone) {
 				d.logger.Errorf("failed to rollback transaction: %v", err)
 			}
+		}
+		if lt.cancel != nil {
+			lt.cancel()
 		}
 	}()
 
