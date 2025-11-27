@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2025 Canonical Ltd
 // SPDX-License-Identifier: AGPL-3.0
 
 package authorization
@@ -170,6 +170,13 @@ func (a *Authorizer) RemoveAllAllowedAppsFromGroup(ctx context.Context, groupId 
 		cToken = r.ContinuationToken
 	}
 	return nil
+}
+
+func (a *Authorizer) DeleteGroup(ctx context.Context, group string) error {
+	ctx, span := a.tracer.Start(ctx, "authorization.Authorizer.DeleteGroup")
+	defer span.End()
+
+	return a.RemoveAllAllowedAppsFromGroup(ctx, group)
 }
 
 func NewAuthorizer(client AuthzClientInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Authorizer {
