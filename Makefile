@@ -7,6 +7,7 @@ UI_FOLDER?=
 MICROK8S_REGISTRY_FLAG?=SKAFFOLD_DEFAULT_REPO=localhost:32000
 SKAFFOLD?=skaffold
 CONFIGMAP?=deployments/kubectl/configMap.yaml
+DSN?=postgresql://groups:groups@localhost:5432/groups?sslmode=disable
 
 
 .EXPORT_ALL_VARIABLES:
@@ -39,3 +40,15 @@ build:
 
 dev:
 	./start.sh
+
+db-status:
+	$(GO) run . migrate --dsn $(DSN) status
+.PHONY: db-status
+
+db:
+	$(GO) run . migrate --dsn $(DSN) up
+.PHONY: db
+
+db-down:
+	$(GO) run . migrate --dsn $(DSN) down
+.PHONY: db-down

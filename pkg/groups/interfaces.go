@@ -5,40 +5,38 @@ package groups
 
 import (
 	"context"
+
+	"github.com/canonical/hook-service/internal/types"
 )
 
 type ServiceInterface interface {
-	ListGroups(context.Context) ([]*Group, error)
-	CreateGroup(context.Context, *Group) (*Group, error)
-	GetGroup(context.Context, string) (*Group, error)
-	UpdateGroup(context.Context, string, *Group) (*Group, error)
+	ListGroups(context.Context) ([]*types.Group, error)
+	CreateGroup(context.Context, *types.Group) (*types.Group, error)
+	GetGroup(context.Context, string) (*types.Group, error)
+	UpdateGroup(context.Context, string, *types.Group) (*types.Group, error)
 	DeleteGroup(context.Context, string) error
 
 	AddUsersToGroup(context.Context, string, []string) error
 	ListUsersInGroup(context.Context, string) ([]string, error)
 	RemoveUsersFromGroup(context.Context, string, []string) error
-	RemoveAllUsersFromGroup(context.Context, string) error
 
-	GetGroupsForUser(context.Context, string) ([]*Group, error)
+	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
-	RemoveGroupsForUser(context.Context, string) error
 }
 
 type DatabaseInterface interface {
-	ListGroups(context.Context) ([]*Group, error)
-	CreateGroup(context.Context, *Group) (*Group, error)
-	GetGroup(context.Context, string) (*Group, error)
-	UpdateGroup(context.Context, string, *Group) (*Group, error)
+	ListGroups(context.Context) ([]*types.Group, error)
+	CreateGroup(context.Context, *types.Group) (*types.Group, error)
+	GetGroup(context.Context, string) (*types.Group, error)
+	UpdateGroup(context.Context, string, *types.Group) (*types.Group, error)
 	DeleteGroup(context.Context, string) error
 
 	AddUsersToGroup(context.Context, string, []string) error
 	ListUsersInGroup(context.Context, string) ([]string, error)
 	RemoveUsersFromGroup(context.Context, string, []string) error
-	RemoveAllUsersFromGroup(context.Context, string) ([]string, error)
 
-	GetGroupsForUser(context.Context, string) ([]*Group, error)
+	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
-	RemoveGroupsForUser(context.Context, string) ([]string, error)
 }
 
 type AuthorizerInterface interface {

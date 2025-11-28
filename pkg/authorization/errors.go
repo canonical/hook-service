@@ -11,4 +11,5 @@ var (
 	ErrAppDoesNotExistInGroup  = errors.New("app does not exist in group")
 	ErrAppDoesNotExist         = errors.New("app does not exist")
 	ErrInternalServerError     = errors.New("internal server error")
+	ErrInvalidGroupID          = errors.New("invalid group id")
 )
