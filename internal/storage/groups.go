@@ -13,6 +13,7 @@ import (
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
+	"github.com/google/uuid"
 
 	"github.com/canonical/hook-service/internal/types"
 )
@@ -53,16 +54,20 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.CreateGroup")
 	defer span.End()
 
-	var id int64
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate uuid: %v", err)
+	}
+
 	var createdAt, updatedAt time.Time
 
-	err := s.db.Statement(ctx).
+	err = s.db.Statement(ctx).
 		Insert("groups").
-		Columns("name", "tenant_id", "description", "type").
-		Values(group.Name, group.TenantId, group.Description, group.Type).
-		Suffix("RETURNING id, created_at, updated_at").
+		Columns("id", "name", "tenant_id", "description", "type").
+		Values(id, group.Name, group.TenantId, group.Description, group.Type).
+		Suffix("RETURNING created_at, updated_at").
 		QueryRowContext(ctx).
-		Scan(&id, &createdAt, &updatedAt)
+		Scan(&createdAt, &updatedAt)
 	if err != nil {
 		if IsDuplicateKeyError(err) {
 			return nil, WrapDuplicateKeyError(err, "group name already exists")
@@ -71,7 +76,7 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 	}
 
 	return &types.Group{
-		ID:          fmt.Sprintf("%d", id),
+		ID:          id.String(),
 		Name:        group.Name,
 		TenantId:    group.TenantId,
 		Description: group.Description,
