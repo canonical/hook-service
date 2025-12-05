@@ -12,4 +12,6 @@ var (
 	ErrInvalidGroupType    = errors.New("invalid group type")
 	ErrInvalidTenant       = errors.New("invalid tenant")
 	ErrInternalServerError = errors.New("internal server error")
+	ErrUserAlreadyInGroup  = errors.New("user already in group")
+	ErrInvalidGroupID      = errors.New("invalid group id")
 )

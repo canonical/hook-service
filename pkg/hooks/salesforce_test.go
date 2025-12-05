@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package hooks
 
 import (
@@ -8,6 +11,7 @@ import (
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/salesforce"
+	"github.com/canonical/hook-service/internal/types"
 	trace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -29,7 +33,7 @@ func TestSalesforceFetchUserGroups(t *testing.T) {
 		user             User
 		mockedHttpClient func(*MockSalesforceInterface) salesforce.SalesforceInterface
 
-		expectedResult []string
+		expectedResult []*types.Group
 		expectedError  error
 	}{
 		{
@@ -41,7 +45,7 @@ func TestSalesforceFetchUserGroups(t *testing.T) {
 				c.EXPECT().Query(q, gomock.Any()).Times(1).Return(nil).SetArg(1, r)
 				return c
 			},
-			expectedResult: []string{"Charmers", "Identity"},
+			expectedResult: []*types.Group{{ID: "Charmers", Name: "Charmers"}, {ID: "Identity", Name: "Identity"}},
 		},
 		{
 			name: "user has no email",

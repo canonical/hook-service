@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canonical/hook-service/internal/types"
 	v0_groups "github.com/canonical/identity-platform-api/v0/authz_groups"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
@@ -29,7 +30,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 	tests := []struct {
 		name       string
 		input      *v0_groups.CreateGroupReq
-		expectResp *Group
+		expectResp *types.Group
 		expectErr  error
 		wantErr    bool
 		wantResp   *v0_groups.CreateGroupResp
@@ -43,12 +44,12 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 					Type:        strPtr("local"),
 				},
 			},
-			expectResp: &Group{
+			expectResp: &types.Group{
 				ID:          "group-id",
 				Name:        "test-group",
 				TenantId:    DefaultTenantID,
 				Description: "A test group",
-				Type:        GroupTypeLocal,
+				Type:        types.GroupTypeLocal,
 				CreatedAt:   now,
 				UpdatedAt:   now,
 			},
@@ -76,12 +77,12 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 					Description: strPtr("A test group"),
 				},
 			},
-			expectResp: &Group{
+			expectResp: &types.Group{
 				ID:          "group-id",
 				Name:        "test-group",
 				TenantId:    DefaultTenantID,
 				Description: "A test group",
-				Type:        GroupTypeLocal,
+				Type:        types.GroupTypeLocal,
 				CreatedAt:   now,
 				UpdatedAt:   now,
 			},
@@ -126,11 +127,8 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
-			gType := groupType(tt.input.Group.GetType())
-			if gType == "" {
-				gType = GroupTypeLocal
-			}
-			g := &Group{
+			gType, _ := types.ParseGroupType(tt.input.Group.GetType())
+			g := &types.Group{
 				Name:        tt.input.Group.GetName(),
 				TenantId:    DefaultTenantID,
 				Description: tt.input.Group.GetDescription(),
@@ -162,7 +160,7 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 	tests := []struct {
 		name       string
 		input      *v0_groups.GetGroupReq
-		expectResp *Group
+		expectResp *types.Group
 		expectErr  error
 		wantErr    bool
 		wantCode   codes.Code
@@ -171,12 +169,12 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 		{
 			name:  "Success",
 			input: &v0_groups.GetGroupReq{Id: "group-id"},
-			expectResp: &Group{
+			expectResp: &types.Group{
 				ID:          "group-id",
 				Name:        "test-group",
 				TenantId:    DefaultTenantID,
 				Description: "A test group",
-				Type:        GroupTypeLocal,
+				Type:        types.GroupTypeLocal,
 				CreatedAt:   now,
 				UpdatedAt:   now,
 			},
@@ -254,7 +252,7 @@ func TestGrpcHandler_ListGroups(t *testing.T) {
 	now := time.Now()
 	tests := []struct {
 		name       string
-		expectResp []*Group
+		expectResp []*types.Group
 		expectErr  error
 		wantErr    bool
 		wantCode   codes.Code
@@ -262,7 +260,7 @@ func TestGrpcHandler_ListGroups(t *testing.T) {
 	}{
 		{
 			name: "Success with groups",
-			expectResp: []*Group{
+			expectResp: []*types.Group{
 				{ID: "group-1", Name: "Group 1", CreatedAt: now, UpdatedAt: now},
 				{ID: "group-2", Name: "Group 2", CreatedAt: now, UpdatedAt: now},
 			},
@@ -270,8 +268,8 @@ func TestGrpcHandler_ListGroups(t *testing.T) {
 			wantErr:   false,
 			wantResp: &v0_groups.ListGroupsResp{
 				Data: []*v0_groups.Group{
-					{Id: "group-1", Name: "Group 1", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
-					{Id: "group-2", Name: "Group 2", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-1", Name: "Group 1", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-2", Name: "Group 2", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 				},
 				Status:  http.StatusOK,
 				Message: func() *string { s := "Group list"; return &s }(),
@@ -279,7 +277,7 @@ func TestGrpcHandler_ListGroups(t *testing.T) {
 		},
 		{
 			name:       "Success with no groups",
-			expectResp: []*Group{},
+			expectResp: []*types.Group{},
 			expectErr:  nil,
 			wantErr:    false,
 			wantResp:   &v0_groups.ListGroupsResp{Data: []*v0_groups.Group{}, Status: http.StatusOK, Message: func() *string { s := "Group list"; return &s }()},
@@ -401,7 +399,7 @@ func TestGrpcHandler_UpdateGroup(t *testing.T) {
 	tests := []struct {
 		name       string
 		input      *v0_groups.UpdateGroupReq
-		expectResp *Group
+		expectResp *types.Group
 		expectErr  error
 		wantErr    bool
 		wantCode   codes.Code
@@ -410,10 +408,10 @@ func TestGrpcHandler_UpdateGroup(t *testing.T) {
 		{
 			name:       "Success",
 			input:      &v0_groups.UpdateGroupReq{Id: "group-id", Group: &v0_groups.GroupInput{Description: strPtr("new description")}},
-			expectResp: &Group{ID: "group-id", Name: "test-group", Description: "new description", CreatedAt: now, UpdatedAt: now},
+			expectResp: &types.Group{ID: "group-id", Name: "test-group", Description: "new description", CreatedAt: now, UpdatedAt: now},
 			wantErr:    false,
 			wantResp: &v0_groups.UpdateGroupResp{
-				Data:    []*v0_groups.Group{{Id: "group-id", Name: "test-group", Description: "new description", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}},
+				Data:    []*v0_groups.Group{{Id: "group-id", Name: "test-group", Description: "new description", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}},
 				Status:  http.StatusOK,
 				Message: func() *string { s := "Group updated"; return &s }(),
 			},
@@ -695,7 +693,7 @@ func TestGrpcHandler_ListUserGroups(t *testing.T) {
 	tests := []struct {
 		name       string
 		input      *v0_groups.ListUserGroupsReq
-		expectResp []*Group
+		expectResp []*types.Group
 		expectErr  error
 		wantErr    bool
 		wantCode   codes.Code
@@ -704,15 +702,15 @@ func TestGrpcHandler_ListUserGroups(t *testing.T) {
 		{
 			name:  "Success with groups",
 			input: &v0_groups.ListUserGroupsReq{Id: "user-1"},
-			expectResp: []*Group{
+			expectResp: []*types.Group{
 				{ID: "group-1", Name: "Group 1", CreatedAt: now, UpdatedAt: now},
 				{ID: "group-2", Name: "Group 2", CreatedAt: now, UpdatedAt: now},
 			},
 			wantErr: false,
 			wantResp: &v0_groups.ListUserGroupsResp{
 				Data: []*v0_groups.Group{
-					{Id: "group-1", Name: "Group 1", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
-					{Id: "group-2", Name: "Group 2", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-1", Name: "Group 1", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
+					{Id: "group-2", Name: "Group 2", Type: "local", CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 				},
 				Status:  http.StatusOK,
 				Message: func() *string { s := "User group list"; return &s }(),
@@ -721,7 +719,7 @@ func TestGrpcHandler_ListUserGroups(t *testing.T) {
 		{
 			name:       "Success with no groups",
 			input:      &v0_groups.ListUserGroupsReq{Id: "user-2"},
-			expectResp: []*Group{},
+			expectResp: []*types.Group{},
 			wantErr:    false,
 			wantResp: &v0_groups.ListUserGroupsResp{
 				Data:    []*v0_groups.Group{},

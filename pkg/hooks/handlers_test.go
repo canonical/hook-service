@@ -1,3 +1,6 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package hooks
 
 import (
@@ -10,6 +13,7 @@ import (
 	reflect "reflect"
 	"testing"
 
+	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/fosite/handler/openid"
 	"github.com/ory/fosite/token/jwt"
@@ -41,17 +45,21 @@ func createHookRequest(clientId, userId string, grantTypes []string, aud []strin
 	return r
 }
 
-func createHookResponse(groups []string) *oauth2.TokenHookResponse {
+func createHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
 	r := oauth2.TokenHookResponse{
 		Session: *flow.NewConsentRequestSessionData(),
 	}
-	r.Session.AccessToken["groups"] = groups
+	groupIDs := make([]string, len(groups))
+	for i, g := range groups {
+		groupIDs[i] = g.ID
+	}
+	r.Session.AccessToken["groups"] = groupIDs
 	return &r
 }
 
 func TestHandleHydraHook(t *testing.T) {
 	type serviceResult struct {
-		r   []string
+		r   []*types.Group
 		err error
 	}
 	type authorizerResult struct {
@@ -59,7 +67,7 @@ func TestHandleHydraHook(t *testing.T) {
 		err     error
 	}
 
-	groups := []string{"group1", "group2"}
+	groups := []*types.Group{{ID: "group1", Name: "group1"}, {ID: "group2", Name: "group2"}}
 
 	tests := []struct {
 		name string

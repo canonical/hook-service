@@ -1,6 +1,12 @@
+// Copyright 2025 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0
+
 package config
 
-import "flag"
+import (
+	"flag"
+	"time"
+)
 
 // EnvSpec is the basic environment configuration setup needed for the app to start
 type EnvSpec struct {
@@ -28,6 +34,13 @@ type EnvSpec struct {
 
 	AuthorizationEnabled bool `envconfig:"authorization_enabled" default:"false"`
 	OpenFGAWorkersTotal  int  `envconfig:"openfga_workers_total" default:"150"`
+
+	DSN string `envconfig:"DSN" required:"true"`
+
+	DBMaxConns        int32         `envconfig:"db_max_conns" default:"25"`
+	DBMinConns        int32         `envconfig:"db_min_conns" default:"2"`
+	DBMaxConnLifetime time.Duration `envconfig:"db_max_conn_lifetime" default:"1h"`
+	DBMaxConnIdleTime time.Duration `envconfig:"db_max_conn_idle_time" default:"30m"`
 }
 
 type Flags struct {
