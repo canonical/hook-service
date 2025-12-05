@@ -1,6 +1,6 @@
 services:
   identity-platform-login-ui:
-    image: ghcr.io/canonical/identity-platform-login-ui:v0.23.0
+    image: ghcr.io/canonical/identity-platform-login-ui:v0.24.1
     environment:
       - KRATOS_PUBLIC_URL=http://kratos:4433
       - KRATOS_ADMIN_URL=http://kratos:4434
