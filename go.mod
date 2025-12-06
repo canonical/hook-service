@@ -2,7 +2,7 @@ module github.com/canonical/hook-service
 
 go 1.24.4
 
-toolchain go1.24.10
+toolchain go1.24.11
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
@@ -23,7 +23,7 @@ require (
 	github.com/ory/hydra/v2 v2.3.0
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/prometheus/client_golang v1.23.2
-	github.com/spf13/cobra v1.10.1
+	github.com/spf13/cobra v1.10.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.63.0
 	go.opentelemetry.io/contrib/propagators/jaeger v1.38.0
 	go.opentelemetry.io/otel v1.38.0
