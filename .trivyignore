@@ -1,0 +1,3 @@
+# Is fixed in go 1.25.5, but the snap is not released yet.
+# This vulnerability should not apply to our case regardless.
+CVE-2025-61729
