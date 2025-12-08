@@ -1,7 +1,7 @@
 name: hook-service
 base: bare
 build-base: ubuntu@22.04
-version: 1.0.1
+version: 1.0.2
 summary: Canonical Identity Platform Hook Service
 description: >
   This is the Canonical Identity Platform Hook Service used for handling Hydra
