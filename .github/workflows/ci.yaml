@@ -24,7 +24,6 @@ jobs:
     uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@f858d2dce01066546803a4279c3525f053ca7d0f # v1.9.2
     with:
       rock: "hook-service"
-      structure-tests-enabled: true
   scan:
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: gh-publish
