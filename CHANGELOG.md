@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.0.2](https://github.com/canonical/hook-service/compare/v1.0.1...v1.0.2) (2025-12-08)
+
+
+### Bug Fixes
+
+* add authorization API ([58dfdea](https://github.com/canonical/hook-service/commit/58dfdeabab30f7150e3b9aa5f6a375152cef7415))
+* add authorization API ([344ee39](https://github.com/canonical/hook-service/commit/344ee39f78d054289079529aeb613f9fd847f182))
+* add database client ([bc65ac1](https://github.com/canonical/hook-service/commit/bc65ac17387364c0c4b5955552900b2480ed6789))
+* add db transaction middleware ([bc2e1f4](https://github.com/canonical/hook-service/commit/bc2e1f40b60056abdbc44978f23d45b869a40e40))
+* add groups API ([112e87f](https://github.com/canonical/hook-service/commit/112e87f79b4cf2c9419ede4b381d7e572220b76e))
+* add migration actions ([98d73a1](https://github.com/canonical/hook-service/commit/98d73a1b6925245b0e4097a49427a34dd6fa068b))
+* add more logs ([dc69bda](https://github.com/canonical/hook-service/commit/dc69bda26b82d2065075573e97feb3144166e6aa))
+* add openfga integration ([ee29bae](https://github.com/canonical/hook-service/commit/ee29bae1686b4aa498597a0e698179553a7f1d83))
+* add storage implementation ([b51eb1a](https://github.com/canonical/hook-service/commit/b51eb1a4429af30085737dd4fc2f5ad597cde3f2))
+* add timeout to transaction context ([2367847](https://github.com/canonical/hook-service/commit/2367847c4defe7f8f9f3385edef78f76036b7023))
+* bump go version ([e22ddd4](https://github.com/canonical/hook-service/commit/e22ddd4c90513915c0bb87ce6a8bac440037c0f9))
+* **deps:** update go deps ([462232d](https://github.com/canonical/hook-service/commit/462232d71e25c2454444cd253fbc59a0e01b0dcb))
+* **deps:** update go deps ([a7a1224](https://github.com/canonical/hook-service/commit/a7a12245000f78321c9562e205152331dc80a7e3))
+* **deps:** update go deps ([c7d1433](https://github.com/canonical/hook-service/commit/c7d143358ea908b2bbb1386e057bc4b81bff10f2))
+* **deps:** update go deps (minor) ([#72](https://github.com/canonical/hook-service/issues/72)) ([e330545](https://github.com/canonical/hook-service/commit/e330545630e8427cad660d5611127fb7811bea74))
+* **deps:** update go deps (patch) ([f8d4e83](https://github.com/canonical/hook-service/commit/f8d4e837b6f18a9de9e6156b5d5a167e5a9d7cd6))
+* **deps:** update module github.com/spf13/cobra to v1.10.2 ([bf259df](https://github.com/canonical/hook-service/commit/bf259df998f915947cd32ba148c1551c4f41efd0))
+* **deps:** update module github.com/spf13/cobra to v1.10.2 ([#101](https://github.com/canonical/hook-service/issues/101)) ([9aeceac](https://github.com/canonical/hook-service/commit/9aeceacb0eb86abc2e63efc08b9902ff8dfd3973))
+* **deps:** update module go.uber.org/zap to v1.27.1 ([d12b53a](https://github.com/canonical/hook-service/commit/d12b53a0104bfa741f20466c6631aa9e7306f145))
+* **deps:** update module go.uber.org/zap to v1.27.1 ([#90](https://github.com/canonical/hook-service/issues/90)) ([18957a7](https://github.com/canonical/hook-service/commit/18957a746b5c048ac596f151e92f3cb9ef2e1be6))
+* disable path length fallback ([3264c9f](https://github.com/canonical/hook-service/commit/3264c9f8849434d0c4288e313e1476911b865064))
+* introduce hook authorizer ([589c240](https://github.com/canonical/hook-service/commit/589c24044d55ef2aa321ba9e04cf4774cdeb0bf0))
+* make db connection configurable ([3c4752d](https://github.com/canonical/hook-service/commit/3c4752da477f97364eeffe40a845ba2d5c042db1))
+* refactor UpdateGroupsForUser ([ca1f942](https://github.com/canonical/hook-service/commit/ca1f9421827e907fde73f758499270dff53f862e))
+* remove pool, add batch check ([76eb9f2](https://github.com/canonical/hook-service/commit/76eb9f20ad0a7c81bc232860d6b85142c9e50548))
+* remove statement cache ([9b648b0](https://github.com/canonical/hook-service/commit/9b648b0e7a834aaad422a323170b6becba7a26f2))
+* remove unused methods ([70fefcc](https://github.com/canonical/hook-service/commit/70fefccb1a372d88245f29f14beaa3ffcbe4a6e3))
+* rename organization to tenant ([c589162](https://github.com/canonical/hook-service/commit/c5891621c898bfed3f7268e6b5b32348686bee3b))
+* use grpc server ([4018d24](https://github.com/canonical/hook-service/commit/4018d244f8c220d68472ab2bbc091f3c6cbd72e9))
+* use grpc server instead of client ([54de6d0](https://github.com/canonical/hook-service/commit/54de6d09ff5742ceed72ac9cb162f86084afc968))
+* use smallint to store role and type in db ([711d12d](https://github.com/canonical/hook-service/commit/711d12d11e153ebe24d8c2dfe6e4739072361589))
+* use uuid for group PK ([6e0f4cc](https://github.com/canonical/hook-service/commit/6e0f4cc267ece5995d16e867858ed9b840831b68))
+* wire local groups authorization check ([8f51fcf](https://github.com/canonical/hook-service/commit/8f51fcfc021eb19fba05539cc0eace7b79d415ea))
+* wire up database and refactor services ([ef2085b](https://github.com/canonical/hook-service/commit/ef2085b3778b07eb78500b13cf406ffb2e20bb08))
+
 ## [1.0.1](https://github.com/canonical/hook-service/compare/v1.0.0...v1.0.1) (2025-10-15)
 
 
