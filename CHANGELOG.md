@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.0.3](https://github.com/canonical/hook-service/compare/v1.0.2...v1.0.3) (2025-12-16)
+
+
+### Bug Fixes
+
+* add create-fga-model command ([4af91ba](https://github.com/canonical/hook-service/commit/4af91ba2996c093acda55bdabc96639b9dbf62a8)), closes [#118](https://github.com/canonical/hook-service/issues/118)
+* **deps:** update go deps ([d2a2432](https://github.com/canonical/hook-service/commit/d2a243257b901f29d9c61ec4d2fe3cb2f99d77b9))
+* **deps:** update go deps ([6d540be](https://github.com/canonical/hook-service/commit/6d540beccccd7c0067e3d8c6ed8813a0159a7245))
+* **deps:** update go deps (minor) ([#109](https://github.com/canonical/hook-service/issues/109)) ([c95a96c](https://github.com/canonical/hook-service/commit/c95a96c384cd778498ee78567298baef82470b1d))
+* **deps:** update go deps (minor) ([#114](https://github.com/canonical/hook-service/issues/114)) ([7186c79](https://github.com/canonical/hook-service/commit/7186c79f566c5e294efe91317a2b8747149d4589))
+* **deps:** update go deps to v1.39.0 ([f1c208c](https://github.com/canonical/hook-service/commit/f1c208cd80d7be11a075541797df7cca701c975c))
+* **deps:** update module github.com/exaring/otelpgx to v0.9.4 ([9f8574d](https://github.com/canonical/hook-service/commit/9f8574d1f7f90d8d672d4eeb5b56eef7562ec1c8))
+* **deps:** update module github.com/exaring/otelpgx to v0.9.4 ([#110](https://github.com/canonical/hook-service/issues/110)) ([a620881](https://github.com/canonical/hook-service/commit/a62088192e743d2d4796b319a856111e03e91eaf))
+* **deps:** update module google.golang.org/protobuf to v1.36.11 ([02fe87d](https://github.com/canonical/hook-service/commit/02fe87d3308915126aabd04ddaf4e4b12cb04e3e))
+* **deps:** update module google.golang.org/protobuf to v1.36.11 ([#113](https://github.com/canonical/hook-service/issues/113)) ([651e798](https://github.com/canonical/hook-service/commit/651e7987823226efcf4a1ca4308bfb395b056868))
+
 ## [1.0.2](https://github.com/canonical/hook-service/compare/v1.0.1...v1.0.2) (2025-12-08)
 
 
