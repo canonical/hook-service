@@ -4,8 +4,8 @@
 set -e
 
 cleanup () {
-  docker compose -f ./docker-compose.dev.yml  down
-  docker stop oidc_client
+  docker compose -f ./docker-compose.dev.yml down > /dev/null
+  docker stop oidc_client > /dev/null
   exit
 }
 
@@ -18,7 +18,9 @@ BUILD_PID=$!
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 # Start dependencies
-docker compose -f ./docker-compose.dev.yml up  --wait --force-recreate --build --remove-orphans -d || true
+echo "Starting docker compose services..."
+docker compose -f ./docker-compose.dev.yml up --wait --force-recreate --build --remove-orphans -d 2>&1 | grep -E "(Creating|Starting|Waiting|Error|error)" || true
+echo "Docker compose services started successfully"
 
 # Start client app
 HYDRA_CONTAINER_ID=$(docker ps -aqf "name=hook-service-hydra-1")
@@ -37,8 +39,8 @@ CLIENT_RESULT=$(docker exec "$HYDRA_CONTAINER_ID" \
 CLIENT_ID=$(echo "$CLIENT_RESULT" | cut -d '"' -f4)
 CLIENT_SECRET=$(echo "$CLIENT_RESULT" | cut -d '"' -f12)
 
-docker stop oidc_client || true
-docker rm oidc_client || true
+docker stop oidc_client > /dev/null 2>&1  || true
+docker rm oidc_client > /dev/null 2>&1  || true
 docker run --network="host" -d --name=oidc_client --rm $HYDRA_IMAGE \
   exec hydra perform authorization-code \
   --endpoint http://localhost:4444 \
