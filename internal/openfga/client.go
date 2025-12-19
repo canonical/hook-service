@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"reflect"
 	"strings"
 	"time"
@@ -15,7 +14,6 @@ import (
 	openfga "github.com/openfga/go-sdk"
 	"github.com/openfga/go-sdk/client"
 	"github.com/openfga/go-sdk/credentials"
-	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -443,7 +441,6 @@ func NewClient(cfg *Config) *Client {
 			},
 			AuthorizationModelId: cfg.AuthModelID,
 			Debug:                cfg.Debug,
-			HTTPClient:           &http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)},
 		},
 	)
 	if err != nil {
