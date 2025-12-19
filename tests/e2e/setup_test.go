@@ -43,16 +43,11 @@ func TestMain(m *testing.M) {
 	testEnv, err = setupTestEnvironment()
 	if err != nil {
 		fmt.Printf("Failed to setup test environment: %v\n", err)
-		if testEnv != nil {
-			testEnv.Teardown()
-		}
 		os.Exit(1)
 	}
 
 	code := m.Run()
-
 	testEnv.Teardown()
-
 	os.Exit(code)
 }
 
