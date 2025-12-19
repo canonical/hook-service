@@ -33,8 +33,9 @@ var createFgaModelCmd = &cobra.Command{
 		apiToken, _ := cmd.Flags().GetString("fga-api-token")
 		storeId, _ := cmd.Flags().GetString("fga-store-id")
 		format, _ := cmd.Flags().GetString("format")
+		verbose, _ := cmd.Flags().GetBool("verbose")
 
-		modelId, finalStoreId, err := createModel(apiUrl, apiToken, storeId)
+		modelId, finalStoreId, err := createModel(apiUrl, apiToken, storeId, verbose)
 		if err != nil {
 			cmd.PrintErrln(err)
 			os.Exit(1)
@@ -68,11 +69,12 @@ func init() {
 	createFgaModelCmd.Flags().String("fga-api-token", "", "The openfga API token")
 	createFgaModelCmd.Flags().String("fga-store-id", "", "The openfga store to create the model in, if empty one will be created")
 	createFgaModelCmd.Flags().String("format", "text", "Output format (text or json)")
+	createFgaModelCmd.Flags().BoolP("verbose", "v", false, "Enable verbose logging")
 	createFgaModelCmd.MarkFlagRequired("fga-api-url")
 	createFgaModelCmd.MarkFlagRequired("fga-api-token")
 }
 
-func createModel(apiUrl, apiToken, storeId string) (string, string, error) {
+func createModel(apiUrl, apiToken, storeId string, verbose bool) (string, string, error) {
 	ctx := context.Background()
 
 	logger := logging.NewNoopLogger()
@@ -91,7 +93,7 @@ func createModel(apiUrl, apiToken, storeId string) (string, string, error) {
 		StoreID:     storeId,
 		ApiToken:    apiToken,
 		AuthModelID: "",
-		Debug:       false,
+		Debug:       verbose,
 		Tracer:      tracer,
 		Monitor:     monitor,
 		Logger:      logger,
