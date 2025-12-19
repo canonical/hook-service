@@ -133,6 +133,7 @@ services:
     environment:
       OPENFGA_DATASTORE_ENGINE: "postgres"
       OPENFGA_DATASTORE_URI: "postgresql://openfga:openfga@postgres/openfga?sslmode=disable"
+      OPENFGA_AUTHN_METHOD: "preshared"
       OPENFGA_AUTHN_PRESHARED_KEYS: "42"
     command: run
     ports:
