@@ -2,7 +2,10 @@ module github.com/canonical/hook-service/tests/e2e
 
 go 1.24.9
 
-require github.com/testcontainers/testcontainers-go/modules/compose v0.40.0
+require (
+	github.com/google/uuid v1.6.0
+	github.com/testcontainers/testcontainers-go/modules/compose v0.40.0
+)
 
 require (
 	dario.cat/mergo v1.0.2 // indirect
@@ -32,7 +35,7 @@ require (
 	github.com/compose-spec/compose-go/v2 v2.9.0 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.9.0 // indirect
-	github.com/containerd/containerd/v2 v2.1.4 // indirect
+	github.com/containerd/containerd/v2 v2.1.5 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
@@ -76,7 +79,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect
