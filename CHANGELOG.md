@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.0.4](https://github.com/canonical/hook-service/compare/v1.0.3...v1.0.4) (2025-12-27)
+
+
+### Bug Fixes
+
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0a764e5 ([8f76d02](https://github.com/canonical/hook-service/commit/8f76d02c62675de72b2b4eab42ed4b25475f2f1d))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0a764e5 ([#129](https://github.com/canonical/hook-service/issues/129)) ([44ab5f4](https://github.com/canonical/hook-service/commit/44ab5f48377860d27e08e26a78478f5d292176b1))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.0 ([e13b66b](https://github.com/canonical/hook-service/commit/e13b66b2fa2ed3a2360690e26ee153b5b2bb55a4))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.0 ([#128](https://github.com/canonical/hook-service/issues/128)) ([9fa9740](https://github.com/canonical/hook-service/commit/9fa9740e725576faaefb87daef94706c3599a535))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.1 ([678d4be](https://github.com/canonical/hook-service/commit/678d4be2f30dcef18e230e7c6fd63c1675ff705b))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.1 ([#131](https://github.com/canonical/hook-service/issues/131)) ([d980131](https://github.com/canonical/hook-service/commit/d980131920ac212dadecd51eed0c3aab81f02649))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.4 ([c015195](https://github.com/canonical/hook-service/commit/c0151951c3a144651833fa8ca258fcc3c9b1bc38))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.4 ([#132](https://github.com/canonical/hook-service/issues/132)) ([042c432](https://github.com/canonical/hook-service/commit/042c432e789e5a4009571bd59f2fe7aa9c75af98))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.8.0 ([4fd49ae](https://github.com/canonical/hook-service/commit/4fd49ae910dbe3e5b01ff55b1a5924ebfe9ea261))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.8.0 ([#133](https://github.com/canonical/hook-service/issues/133)) ([4831030](https://github.com/canonical/hook-service/commit/4831030f4d3be5b9dfc7d8dd9ae50ce69b12c2e2))
+* **deps:** update module google.golang.org/grpc to v1.78.0 ([a354b54](https://github.com/canonical/hook-service/commit/a354b541693bc6219fd7758c8f9fca8666d37ff3))
+* **deps:** update module google.golang.org/grpc to v1.78.0 ([#130](https://github.com/canonical/hook-service/issues/130)) ([c3ab0c6](https://github.com/canonical/hook-service/commit/c3ab0c65b02b2022f780e28c345baefd73bc89c6))
+* properly instantiate ofga client ([935dc2a](https://github.com/canonical/hook-service/commit/935dc2a15b110efdcc0aacf87118aa8826d24ca3))
+
 ## [1.0.3](https://github.com/canonical/hook-service/compare/v1.0.2...v1.0.3) (2025-12-16)
 
 
