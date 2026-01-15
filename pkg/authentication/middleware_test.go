@@ -5,10 +5,13 @@ package authentication
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"github.com/coreos/go-oidc/v3/oidc"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -18,63 +21,125 @@ import (
 //go:generate mockgen -build_flags=--mod=mod -package authentication -destination ./mock_tracer.go -source=../../internal/tracing/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package authentication -destination ./mock_verifier.go -source=./interfaces.go
 
-func TestMiddleware_Authenticate_Disabled(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mockTracer := NewMockTracingInterface(ctrl)
-	mockMonitor := NewMockMonitorInterface(ctrl)
-	mockLogger := NewMockLoggerInterface(ctrl)
-	mockVerifier := NewMockTokenVerifierInterface(ctrl)
-
-	// When auth is disabled, tracer is still called
-	ctx := context.Background()
-	mockTracer.EXPECT().Start(gomock.Any(), "authentication.Middleware.Authenticate").Return(ctx, trace.SpanFromContext(ctx))
-
-	config := &Config{Enabled: false}
-	middleware := NewMiddleware(config, mockVerifier, mockTracer, mockMonitor, mockLogger)
-
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("success"))
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	rr := httptest.NewRecorder()
-
-	middleware.Authenticate()(handler).ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Errorf("expected status OK, got %d", rr.Code)
+func TestMiddleware_Authenticate(t *testing.T) {
+	tests := []struct {
+		name               string
+		authEnabled        bool
+		authHeader         string
+		setupMocks         func(*gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error)
+		expectedStatusCode int
+		expectedBody       string
+	}{
+		{
+			name:        "Auth disabled - allows request",
+			authEnabled: false,
+			authHeader:  "",
+			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
+				mockVerifier := NewMockTokenVerifierInterface(ctrl)
+				return ctrl, mockVerifier, nil, nil
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedBody:       "success",
+		},
+		{
+			name:        "Missing token - rejects request",
+			authEnabled: true,
+			authHeader:  "",
+			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
+				mockVerifier := NewMockTokenVerifierInterface(ctrl)
+				return ctrl, mockVerifier, nil, nil
+			},
+			expectedStatusCode: http.StatusUnauthorized,
+		},
+		{
+			name:        "Invalid token format - rejects request",
+			authEnabled: true,
+			authHeader:  "InvalidToken",
+			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
+				mockVerifier := NewMockTokenVerifierInterface(ctrl)
+				return ctrl, mockVerifier, nil, nil
+			},
+			expectedStatusCode: http.StatusUnauthorized,
+		},
+		{
+			name:        "Token verification fails - rejects request",
+			authEnabled: true,
+			authHeader:  "Bearer invalid-token",
+			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
+				mockVerifier := NewMockTokenVerifierInterface(ctrl)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token").Return(nil, fmt.Errorf("invalid token"))
+				return ctrl, mockVerifier, nil, fmt.Errorf("invalid token")
+			},
+			expectedStatusCode: http.StatusUnauthorized,
+		},
+		{
+			name:        "Valid token but unauthorized - rejects request",
+			authEnabled: true,
+			authHeader:  "Bearer valid-token",
+			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
+				mockVerifier := NewMockTokenVerifierInterface(ctrl)
+				mockToken := &oidc.IDToken{}
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(mockToken, nil)
+				return ctrl, mockVerifier, mockToken, nil
+			},
+			expectedStatusCode: http.StatusUnauthorized,
+		},
 	}
-}
 
-func TestMiddleware_Authenticate_MissingToken(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
 
-	mockTracer := NewMockTracingInterface(ctrl)
-	mockMonitor := NewMockMonitorInterface(ctrl)
-	mockLogger := NewMockLoggerInterface(ctrl)
-	mockVerifier := NewMockTokenVerifierInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+			mockLogger := NewMockLoggerInterface(ctrl)
 
-	ctx := context.Background()
-	mockTracer.EXPECT().Start(gomock.Any(), "authentication.Middleware.Authenticate").Return(ctx, trace.SpanFromContext(ctx))
+			ctx := context.Background()
+			mockTracer.EXPECT().Start(gomock.Any(), "authentication.Middleware.Authenticate").Return(ctx, trace.SpanFromContext(ctx))
 
-	config := &Config{Enabled: true, AllowedSubjects: []string{"test-subject"}}
-	middleware := NewMiddleware(config, mockVerifier, mockTracer, mockMonitor, mockLogger)
+			_, mockVerifier, _, verifyErr := tt.setupMocks(ctrl)
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+			// Expect logger.Debugf for unauthorized cases
+			if tt.expectedStatusCode == http.StatusUnauthorized && verifyErr != nil {
+				mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any())
+			} else if tt.expectedStatusCode == http.StatusUnauthorized && tt.authEnabled && tt.authHeader != "" && !strings.HasPrefix(tt.authHeader, "Bearer ") {
+				// Invalid format - no logger call
+			} else if tt.expectedStatusCode == http.StatusUnauthorized && tt.authEnabled && tt.authHeader == "" {
+				// Missing token - no logger call
+			} else if tt.expectedStatusCode == http.StatusUnauthorized && tt.authHeader == "Bearer valid-token" {
+				// Unauthorized after successful verification - isAuthorized will fail to extract claims from mock token, then log auth failure
+				mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).Times(1)  // Failed to extract claims
+				mockLogger.EXPECT().Debugf(gomock.Any()).Times(1)                 // Authorization failed
+			}
 
-	req := httptest.NewRequest(http.MethodGet, "/test", nil)
-	rr := httptest.NewRecorder()
+			config := &Config{
+				Enabled:         tt.authEnabled,
+				AllowedSubjects: []string{"test-subject"},
+			}
+			middleware := NewMiddleware(config, mockVerifier, mockTracer, mockMonitor, mockLogger)
 
-	middleware.Authenticate()(handler).ServeHTTP(rr, req)
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("success"))
+			})
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Errorf("expected status Unauthorized, got %d", rr.Code)
+			req := httptest.NewRequest(http.MethodGet, "/test", nil)
+			if tt.authHeader != "" {
+				req.Header.Set("Authorization", tt.authHeader)
+			}
+			rr := httptest.NewRecorder()
+
+			middleware.Authenticate()(handler).ServeHTTP(rr, req)
+
+			if rr.Code != tt.expectedStatusCode {
+				t.Errorf("expected status %d, got %d", tt.expectedStatusCode, rr.Code)
+			}
+			
+			if tt.expectedBody != "" && rr.Body.String() != tt.expectedBody {
+				t.Errorf("expected body %q, got %q", tt.expectedBody, rr.Body.String())
+			}
+		})
 	}
 }
 
@@ -180,60 +245,4 @@ func TestConfig_NewConfig(t *testing.T) {
 			}
 		})
 	}
-}
-
-
-// TestMiddleware_Authorization tests the authorization logic with different token claims
-func TestMiddleware_Authorization(t *testing.T) {
-// Note: Testing isAuthorized directly is challenging because oidc.IDToken cannot be easily mocked.
-// The authorization logic is tested indirectly through the middleware tests and E2E tests.
-// The logic itself is straightforward:
-// 1. Check if subject is in AllowedSubjects
-// 2. Check if scope contains RequiredScope
-// 3. Deny if both checks fail
-
-// This test validates the configuration parsing which drives authorization
-tests := []struct {
-name            string
-allowedSubjects string
-requiredScope   string
-expectSubjects  int
-expectScope     string
-}{
-{
-name:            "Only subjects configured",
-allowedSubjects: "client-1,client-2",
-requiredScope:   "",
-expectSubjects:  2,
-expectScope:     "",
-},
-{
-name:            "Only scope configured",
-allowedSubjects: "",
-requiredScope:   "admin",
-expectSubjects:  0,
-expectScope:     "admin",
-},
-{
-name:            "Both configured",
-allowedSubjects: "client-1",
-requiredScope:   "admin",
-expectSubjects:  1,
-expectScope:     "admin",
-},
-}
-
-for _, tt := range tests {
-t.Run(tt.name, func(t *testing.T) {
-config := NewConfig(true, "https://issuer.example.com", tt.allowedSubjects, tt.requiredScope)
-
-if len(config.AllowedSubjects) != tt.expectSubjects {
-t.Errorf("expected %d allowed subjects, got %d", tt.expectSubjects, len(config.AllowedSubjects))
-}
-
-if config.RequiredScope != tt.expectScope {
-t.Errorf("expected required scope %q, got %q", tt.expectScope, config.RequiredScope)
-}
-})
-}
 }

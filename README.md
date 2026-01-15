@@ -80,8 +80,6 @@ A request is authorized if **either**:
 curl -H "Authorization: Bearer <jwt-token>" http://localhost:8080/api/v0/authz/groups
 ```
 
-**Note:** This is a stopgap authentication solution. The `aud` (audience) claim is intentionally not validated to avoid circular dependencies with Hydra.
-
 ## Development Setup
 
 ### Prerequisites

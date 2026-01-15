@@ -12,19 +12,17 @@ import (
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
-// SetupJWTAuthentication initializes JWT authentication based on configuration
-// Returns the middleware if successful, or nil if authentication should be disabled
-func SetupJWTAuthentication(
+// NewJWTAuthenticator initializes a JWT token verifier based on configuration
+// Returns the token verifier if successful, or nil if authentication should be disabled
+func NewJWTAuthenticator(
 	ctx context.Context,
 	enabled bool,
 	issuer string,
 	jwksURL string,
-	allowedSubjects string,
-	requiredScope string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
-) (*Middleware, error) {
+) (TokenVerifierInterface, error) {
 	if !enabled {
 		logger.Info("JWT authentication is disabled")
 		return nil, nil
@@ -33,8 +31,6 @@ func SetupJWTAuthentication(
 	if issuer == "" {
 		return nil, fmt.Errorf("AUTH_ENABLED is true but AUTH_ISSUER is not configured")
 	}
-
-	authConfig := NewConfig(enabled, issuer, allowedSubjects, requiredScope)
 
 	var verifier *JWTVerifier
 
@@ -58,6 +54,5 @@ func SetupJWTAuthentication(
 		logger.Info("JWT authentication is enabled with OIDC discovery")
 	}
 
-	middleware := NewMiddleware(authConfig, verifier, tracer, monitor, logger)
-	return middleware, nil
+	return verifier, nil
 }
