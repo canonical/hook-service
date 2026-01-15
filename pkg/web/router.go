@@ -22,6 +22,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/authentication"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
 	groups_api "github.com/canonical/hook-service/pkg/groups"
 	"github.com/canonical/hook-service/pkg/hooks"
@@ -35,6 +36,7 @@ func NewRouter(
 	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
+	jwtAuthMiddleware *authentication.Middleware,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -101,7 +103,15 @@ func NewRouter(
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
-	router.Mount("/api/v0/authz", gRPCGatewayMux)
+	// Apply JWT authentication middleware to /api/v0/authz routes if provided
+	if jwtAuthMiddleware != nil {
+		router.Route("/api/v0/authz", func(r chi.Router) {
+			r.Use(jwtAuthMiddleware.Authenticate())
+			r.Mount("/", gRPCGatewayMux)
+		})
+	} else {
+		router.Mount("/api/v0/authz", gRPCGatewayMux)
+	}
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }

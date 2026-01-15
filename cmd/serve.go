@@ -25,6 +25,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/authentication"
 	"github.com/canonical/hook-service/pkg/web"
 )
 
@@ -113,7 +114,31 @@ func serve() error {
 		)
 	}
 
-	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, tracer, monitor, logger)
+	var jwtAuthMiddleware *authentication.Middleware
+	if specs.AuthEnabled && specs.AuthIssuer != "" {
+		authConfig := authentication.NewConfig(
+			specs.AuthEnabled,
+			specs.AuthIssuer,
+			specs.AuthJwksURL,
+			specs.AuthAllowedSubjects,
+			specs.AuthRequiredScope,
+		)
+
+		ctx := context.Background()
+		provider, err := authentication.NewProvider(ctx, specs.AuthIssuer, specs.AuthJwksURL)
+		if err != nil {
+			logger.Errorf("Failed to create OIDC provider: %v", err)
+			logger.Info("JWT authentication will be disabled")
+		} else {
+			verifier := authentication.NewJWTVerifier(provider, specs.AuthIssuer, tracer, monitor, logger)
+			jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
+			logger.Info("JWT authentication is enabled")
+		}
+	} else {
+		logger.Info("JWT authentication is disabled")
+	}
+
+	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, jwtAuthMiddleware, tracer, monitor, logger)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{
