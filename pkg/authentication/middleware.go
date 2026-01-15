@@ -69,12 +69,12 @@ func (m *Middleware) getBearerToken(headers http.Header) (string, bool) {
 		return "", false
 	}
 
-	// Support both "Bearer <token>" and raw token
-	if strings.HasPrefix(bearer, "Bearer ") {
-		return strings.TrimPrefix(bearer, "Bearer "), true
+	// Only support "Bearer <token>" format (RFC 6750)
+	if !strings.HasPrefix(bearer, "Bearer ") {
+		return "", false
 	}
 
-	return bearer, true
+	return strings.TrimPrefix(bearer, "Bearer "), true
 }
 
 func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {

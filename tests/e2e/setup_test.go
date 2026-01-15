@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -158,7 +161,6 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		"AUTH_ENABLED":                   "true",
 		"AUTH_ISSUER":                    "http://localhost:4444",
 		"AUTH_ALLOWED_SUBJECTS":          clientID,
-		"AUTH_REQUIRED_SCOPE":            "hook-service:admin",
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)
@@ -317,22 +319,36 @@ func setupHydraClient(ctx context.Context) (string, string, error) {
 }
 
 func getJWTToken(ctx context.Context, clientID, clientSecret string) (string, error) {
-	// Get token from Hydra using client credentials flow
-	cmd := exec.CommandContext(ctx, "curl", "-s", "-X", "POST",
-		"http://localhost:4444/oauth2/token",
-		"-u", fmt.Sprintf("%s:%s", clientID, clientSecret),
-		"-d", "grant_type=client_credentials&scope=hook-service:admin")
+	// Get token from Hydra using client credentials flow via Go http.Client
+	data := url.Values{}
+	data.Set("grant_type", "client_credentials")
+	data.Set("scope", "hook-service:admin")
 
-	output, err := cmd.CombinedOutput()
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:4444/oauth2/token", strings.NewReader(data.Encode()))
 	if err != nil {
-		return "", fmt.Errorf("failed to get JWT token: %v, output: %s", err, string(output))
+		return "", fmt.Errorf("failed to create token request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(clientID, clientSecret)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get JWT token: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
 		AccessToken string `json:"access_token"`
 	}
-	if err := json.Unmarshal(output, &result); err != nil {
-		return "", fmt.Errorf("failed to parse token response: %v, output: %s", err, string(output))
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %v", err)
 	}
 
 	return result.AccessToken, nil

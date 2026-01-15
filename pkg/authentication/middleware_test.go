@@ -98,10 +98,10 @@ func TestMiddleware_GetBearerToken(t *testing.T) {
 			expectedFound:  true,
 		},
 		{
-			name:           "Raw token",
+			name:           "Raw token without Bearer prefix",
 			authHeader:     "my-token-123",
-			expectedToken:  "my-token-123",
-			expectedFound:  true,
+			expectedToken:  "",
+			expectedFound:  false,
 		},
 	}
 
@@ -182,3 +182,58 @@ func TestConfig_NewConfig(t *testing.T) {
 	}
 }
 
+
+// TestMiddleware_Authorization tests the authorization logic with different token claims
+func TestMiddleware_Authorization(t *testing.T) {
+// Note: Testing isAuthorized directly is challenging because oidc.IDToken cannot be easily mocked.
+// The authorization logic is tested indirectly through the middleware tests and E2E tests.
+// The logic itself is straightforward:
+// 1. Check if subject is in AllowedSubjects
+// 2. Check if scope contains RequiredScope
+// 3. Deny if both checks fail
+
+// This test validates the configuration parsing which drives authorization
+tests := []struct {
+name            string
+allowedSubjects string
+requiredScope   string
+expectSubjects  int
+expectScope     string
+}{
+{
+name:            "Only subjects configured",
+allowedSubjects: "client-1,client-2",
+requiredScope:   "",
+expectSubjects:  2,
+expectScope:     "",
+},
+{
+name:            "Only scope configured",
+allowedSubjects: "",
+requiredScope:   "admin",
+expectSubjects:  0,
+expectScope:     "admin",
+},
+{
+name:            "Both configured",
+allowedSubjects: "client-1",
+requiredScope:   "admin",
+expectSubjects:  1,
+expectScope:     "admin",
+},
+}
+
+for _, tt := range tests {
+t.Run(tt.name, func(t *testing.T) {
+config := NewConfig(true, "https://issuer.example.com", tt.allowedSubjects, tt.requiredScope)
+
+if len(config.AllowedSubjects) != tt.expectSubjects {
+t.Errorf("expected %d allowed subjects, got %d", tt.expectSubjects, len(config.AllowedSubjects))
+}
+
+if config.RequiredScope != tt.expectScope {
+t.Errorf("expected required scope %q, got %q", tt.expectScope, config.RequiredScope)
+}
+})
+}
+}

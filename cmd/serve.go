@@ -115,48 +115,19 @@ func serve() error {
 	}
 
 	var jwtAuthMiddleware *authentication.Middleware
-	if specs.AuthEnabled {
-		if specs.AuthIssuer == "" {
-			logger.Warnf("AUTH_ENABLED is true but AUTH_ISSUER is not configured - JWT authentication will be disabled")
-		} else {
-			authConfig := authentication.NewConfig(
-				specs.AuthEnabled,
-				specs.AuthIssuer,
-				specs.AuthAllowedSubjects,
-				specs.AuthRequiredScope,
-			)
-
-			ctx := context.Background()
-			
-			var verifier *authentication.JWTVerifier
-			if specs.AuthJwksURL != "" {
-				// Use manual JWKS URL
-				logger.Infof("Using manual JWKS URL: %s", specs.AuthJwksURL)
-				_, idTokenVerifier, err := authentication.NewProviderWithJWKS(ctx, specs.AuthIssuer, specs.AuthJwksURL)
-				if err != nil {
-					logger.Errorf("Failed to create JWKS verifier: %v", err)
-					logger.Info("JWT authentication will be disabled")
-				} else {
-					verifier = authentication.NewJWTVerifierDirect(idTokenVerifier, tracer, monitor, logger)
-					jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
-					logger.Info("JWT authentication is enabled with manual JWKS URL")
-				}
-			} else {
-				// Use OIDC discovery
-				logger.Infof("Using OIDC discovery for issuer: %s", specs.AuthIssuer)
-				provider, err := authentication.NewProvider(ctx, specs.AuthIssuer)
-				if err != nil {
-					logger.Errorf("Failed to create OIDC provider: %v", err)
-					logger.Info("JWT authentication will be disabled")
-				} else {
-					verifier = authentication.NewJWTVerifier(provider, specs.AuthIssuer, tracer, monitor, logger)
-					jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
-					logger.Info("JWT authentication is enabled with OIDC discovery")
-				}
-			}
-		}
-	} else {
-		logger.Info("JWT authentication is disabled")
+	jwtAuthMiddleware, err = authentication.SetupJWTAuthentication(
+		context.Background(),
+		specs.AuthEnabled,
+		specs.AuthIssuer,
+		specs.AuthJwksURL,
+		specs.AuthAllowedSubjects,
+		specs.AuthRequiredScope,
+		tracer,
+		monitor,
+		logger,
+	)
+	if err != nil {
+		logger.Warnf("JWT authentication setup failed: %v - will be disabled", err)
 	}
 
 	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, jwtAuthMiddleware, tracer, monitor, logger)
