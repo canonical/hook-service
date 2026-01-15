@@ -37,6 +37,7 @@ type EnvSpec struct {
 
 	AuthEnabled         bool   `envconfig:"auth_enabled" default:"true"`
 	AuthIssuer          string `envconfig:"auth_issuer"`
+	AuthJwksURL         string `envconfig:"auth_jwks_url"`
 	AuthAllowedSubjects string `envconfig:"auth_allowed_subjects"`
 	AuthRequiredScope   string `envconfig:"auth_required_scope"`
 

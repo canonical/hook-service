@@ -127,14 +127,32 @@ func serve() error {
 			)
 
 			ctx := context.Background()
-			provider, err := authentication.NewProvider(ctx, specs.AuthIssuer)
-			if err != nil {
-				logger.Errorf("Failed to create OIDC provider: %v", err)
-				logger.Info("JWT authentication will be disabled")
+			
+			var verifier *authentication.JWTVerifier
+			if specs.AuthJwksURL != "" {
+				// Use manual JWKS URL
+				logger.Infof("Using manual JWKS URL: %s", specs.AuthJwksURL)
+				_, idTokenVerifier, err := authentication.NewProviderWithJWKS(ctx, specs.AuthIssuer, specs.AuthJwksURL)
+				if err != nil {
+					logger.Errorf("Failed to create JWKS verifier: %v", err)
+					logger.Info("JWT authentication will be disabled")
+				} else {
+					verifier = authentication.NewJWTVerifierDirect(idTokenVerifier, tracer, monitor, logger)
+					jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
+					logger.Info("JWT authentication is enabled with manual JWKS URL")
+				}
 			} else {
-				verifier := authentication.NewJWTVerifier(provider, specs.AuthIssuer, tracer, monitor, logger)
-				jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
-				logger.Info("JWT authentication is enabled")
+				// Use OIDC discovery
+				logger.Infof("Using OIDC discovery for issuer: %s", specs.AuthIssuer)
+				provider, err := authentication.NewProvider(ctx, specs.AuthIssuer)
+				if err != nil {
+					logger.Errorf("Failed to create OIDC provider: %v", err)
+					logger.Info("JWT authentication will be disabled")
+				} else {
+					verifier = authentication.NewJWTVerifier(provider, specs.AuthIssuer, tracer, monitor, logger)
+					jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
+					logger.Info("JWT authentication is enabled with OIDC discovery")
+				}
 			}
 		}
 	} else {

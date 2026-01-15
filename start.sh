@@ -39,6 +39,18 @@ CLIENT_RESULT=$(docker exec "$HYDRA_CONTAINER_ID" \
 CLIENT_ID=$(echo "$CLIENT_RESULT" | cut -d '"' -f4)
 CLIENT_SECRET=$(echo "$CLIENT_RESULT" | cut -d '"' -f12)
 
+# Create a client credentials client for JWT authentication
+AUTH_CLIENT_RESULT=$(docker exec "$HYDRA_CONTAINER_ID" \
+  hydra create client \
+    --endpoint http://127.0.0.1:4445 \
+    --name "Hook Service Auth Client" \
+    --grant-type client_credentials \
+    --format json \
+    --scope hook-service:admin)
+
+AUTH_CLIENT_ID=$(echo "$AUTH_CLIENT_RESULT" | cut -d '"' -f4)
+AUTH_CLIENT_SECRET=$(echo "$AUTH_CLIENT_RESULT" | cut -d '"' -f12)
+
 docker stop oidc_client > /dev/null 2>&1  || true
 docker rm oidc_client > /dev/null 2>&1  || true
 docker run --network="host" -d --name=oidc_client --rm $HYDRA_IMAGE \
@@ -67,13 +79,11 @@ export SALESFORCE_ENABLED="false"
 export AUTHORIZATION_ENABLED="true"
 export DSN="postgres://groups:groups@127.0.0.1:5432/groups"
 
-# JWT Authentication configuration (disabled by default for local dev)
-export AUTH_ENABLED="false"
-# Uncomment and configure the following for testing JWT authentication:
-# export AUTH_ENABLED="true"
-# export AUTH_ISSUER="http://localhost:4444"
-# export AUTH_ALLOWED_SUBJECTS="test-subject-1,test-subject-2"
-# export AUTH_REQUIRED_SCOPE="hook-service:admin"
+# JWT Authentication configuration (enabled by default with Hydra)
+export AUTH_ENABLED="true"
+export AUTH_ISSUER="http://localhost:4444"
+export AUTH_ALLOWED_SUBJECTS="$AUTH_CLIENT_ID"
+export AUTH_REQUIRED_SCOPE="hook-service:admin"
 
 echo "Running database migrations..."
 ./app migrate --dsn $DSN up
@@ -81,8 +91,15 @@ echo "Running database migrations..."
 echo
 echo "==============================================="
 echo "Client ID: $CLIENT_ID"
+echo "Auth Client ID: $AUTH_CLIENT_ID"
+echo "Auth Client Secret: $AUTH_CLIENT_SECRET"
 echo "Store ID: $OPENFGA_STORE_ID"
 echo "Model ID: $OPENFGA_AUTHORIZATION_MODEL_ID"
+echo "==============================================="
+echo "To get a JWT token, run:"
+echo "curl -X POST http://localhost:4444/oauth2/token \\"
+echo "  -u \"$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET\" \\"
+echo "  -d 'grant_type=client_credentials&scope=hook-service:admin'"
 echo "==============================================="
 echo
 

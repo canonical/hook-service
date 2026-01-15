@@ -20,7 +20,10 @@ const (
 )
 
 var (
-	testEnv *TestEnvironment
+	testEnv         *TestEnvironment
+	jwtToken        string
+	authClientID    string
+	authClientSecret string
 )
 
 type TestEnvironment struct {
@@ -119,6 +122,25 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		return nil, fmt.Errorf("failed to setup openfga: %w", err)
 	}
 
+	// Setup Hydra client for JWT authentication
+	clientID, clientSecret, err := setupHydraClient(ctx)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to setup hydra client: %w", err)
+	}
+
+	// Store credentials globally for E2E client
+	authClientID = clientID
+	authClientSecret = clientSecret
+
+	// Get JWT token
+	token, err := getJWTToken(ctx, clientID, clientSecret)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to get JWT token: %w", err)
+	}
+	jwtToken = token
+
 	// Start Hook Service
 	envVars := map[string]string{
 		"DSN":                            dsn,
@@ -133,7 +155,10 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		"LOG_LEVEL":                      "debug",
 		"TRACING_ENABLED":                "false",
 		"API_TOKEN":                      "test-token",
-		"AUTH_ENABLED":                   "false", // Disable JWT auth for E2E tests
+		"AUTH_ENABLED":                   "true",
+		"AUTH_ISSUER":                    "http://localhost:4444",
+		"AUTH_ALLOWED_SUBJECTS":          clientID,
+		"AUTH_REQUIRED_SCOPE":            "hook-service:admin",
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)
@@ -257,6 +282,60 @@ func setupOpenFGA(ctx context.Context, binPath, apiURL string) (string, string, 
 	}
 
 	return result.StoreID, result.ModelID, nil
+}
+
+func setupHydraClient(ctx context.Context) (string, string, error) {
+	// Wait for Hydra to be ready
+	hydraAdminURL := "http://localhost:4445"
+	if err := waitForHTTP(ctx, hydraAdminURL+"/health/ready"); err != nil {
+		return "", "", fmt.Errorf("hydra not ready: %w", err)
+	}
+
+	// Create a client credentials client for JWT authentication
+	cmd := exec.CommandContext(ctx, "docker", "exec", "hook-service-hydra-1",
+		"hydra", "create", "client",
+		"--endpoint", "http://127.0.0.1:4445",
+		"--name", "E2E Test Client",
+		"--grant-type", "client_credentials",
+		"--format", "json",
+		"--scope", "hook-service:admin")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create hydra client: %v, output: %s", err, string(output))
+	}
+
+	var result struct {
+		ClientID     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", "", fmt.Errorf("failed to parse hydra client output: %v, output: %s", err, string(output))
+	}
+
+	return result.ClientID, result.ClientSecret, nil
+}
+
+func getJWTToken(ctx context.Context, clientID, clientSecret string) (string, error) {
+	// Get token from Hydra using client credentials flow
+	cmd := exec.CommandContext(ctx, "curl", "-s", "-X", "POST",
+		"http://localhost:4444/oauth2/token",
+		"-u", fmt.Sprintf("%s:%s", clientID, clientSecret),
+		"-d", "grant_type=client_credentials&scope=hook-service:admin")
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to get JWT token: %v, output: %s", err, string(output))
+	}
+
+	var result struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %v, output: %s", err, string(output))
+	}
+
+	return result.AccessToken, nil
 }
 
 func buildApp(rootDir string) (string, error) {

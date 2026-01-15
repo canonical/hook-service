@@ -54,7 +54,11 @@ func (c *E2EClient) Request(method, path string, body interface{}) (int, []byte)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if token := os.Getenv("API_TOKEN"); token != "" {
+	
+	// Use JWT token if available for /api/v0/authz routes
+	if jwtToken != "" {
+		req.Header.Set("Authorization", "Bearer "+jwtToken)
+	} else if token := os.Getenv("API_TOKEN"); token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 

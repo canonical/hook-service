@@ -50,3 +50,14 @@ func NewJWTVerifier(provider ProviderInterface, issuer string, tracer tracing.Tr
 
 	return v
 }
+
+// NewJWTVerifierDirect creates a JWT verifier with a pre-configured IDTokenVerifier
+// This is used when JWKS URL is provided manually instead of OIDC discovery
+func NewJWTVerifierDirect(verifier *oidc.IDTokenVerifier, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *JWTVerifier {
+	return &JWTVerifier{
+		verifier: verifier,
+		tracer:   tracer,
+		monitor:  monitor,
+		logger:   logger,
+	}
+}
