@@ -133,6 +133,7 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		"LOG_LEVEL":                      "debug",
 		"TRACING_ENABLED":                "false",
 		"API_TOKEN":                      "test-token",
+		"AUTH_ENABLED":                   "false", // Disable JWT auth for E2E tests
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)

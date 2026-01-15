@@ -67,6 +67,14 @@ export SALESFORCE_ENABLED="false"
 export AUTHORIZATION_ENABLED="true"
 export DSN="postgres://groups:groups@127.0.0.1:5432/groups"
 
+# JWT Authentication configuration (disabled by default for local dev)
+export AUTH_ENABLED="false"
+# Uncomment and configure the following for testing JWT authentication:
+# export AUTH_ENABLED="true"
+# export AUTH_ISSUER="http://localhost:4444"
+# export AUTH_ALLOWED_SUBJECTS="test-subject-1,test-subject-2"
+# export AUTH_REQUIRED_SCOPE="hook-service:admin"
+
 echo "Running database migrations..."
 ./app migrate --dsn $DSN up
 

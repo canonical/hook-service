@@ -34,11 +34,45 @@ The application is configured via environment variables.
 | `SALESFORCE_CONSUMER_SECRET` | Salesforce consumer secret | |
 | `AUTHORIZATION_ENABLED` | Enable authorization middleware | `false` |
 | `OPENFGA_WORKERS_TOTAL` | Total OpenFGA workers | `150` |
+| `AUTH_ENABLED` | Enable JWT authentication for Groups/Authz APIs | `true` |
+| `AUTH_ISSUER` | Expected JWT issuer (e.g., `https://auth.example.com`) | |
+| `AUTH_JWKS_URL` | Optional explicit JWKS URL (overrides OIDC discovery) | |
+| `AUTH_ALLOWED_SUBJECTS` | Comma-separated list of allowed JWT subjects | |
+| `AUTH_REQUIRED_SCOPE` | Required scope for access (e.g., `hook-service:admin`) | |
 | `DSN` | Database connection string (Required) | |
 | `DB_MAX_CONNS` | Max DB connections | `25` |
 | `DB_MIN_CONNS` | Min DB connections | `2` |
 | `DB_MAX_CONN_LIFETIME` | Max DB connection lifetime | `1h` |
 | `DB_MAX_CONN_IDLE_TIME` | Max DB connection idle time | `30m` |
+
+## Features
+
+### JWT Authentication
+
+The Groups and Authorization APIs (`/api/v0/authz`) are protected by JWT authentication middleware. When enabled, all requests to these endpoints must include a valid JWT token in the `Authorization` header.
+
+**Configuration:**
+
+- `AUTH_ENABLED`: Set to `true` to enable JWT authentication (default: `true`)
+- `AUTH_ISSUER`: The expected JWT issuer URL. Used for OIDC metadata discovery to fetch JWKS
+- `AUTH_JWKS_URL`: (Optional) Explicit JWKS URL. If set, overrides OIDC metadata discovery
+- `AUTH_ALLOWED_SUBJECTS`: Comma-separated list of allowed JWT `sub` claims
+- `AUTH_REQUIRED_SCOPE`: (Optional) A specific scope that grants access (e.g., `hook-service:admin`)
+
+**Authorization Logic:**
+
+A request is authorized if **either**:
+1. The JWT's `sub` claim matches one of the `AUTH_ALLOWED_SUBJECTS`, OR
+2. The JWT's `scope` or `scp` claim contains the `AUTH_REQUIRED_SCOPE`
+
+**Usage:**
+
+```bash
+# Include JWT token in Authorization header
+curl -H "Authorization: Bearer <jwt-token>" http://localhost:8080/api/v0/authz/groups
+```
+
+**Note:** This is a stopgap authentication solution. The `aud` (audience) claim is intentionally not validated to avoid circular dependencies with Hydra.
 
 ## Development Setup
 
