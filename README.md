@@ -36,7 +36,6 @@ The application is configured via environment variables.
 | `OPENFGA_WORKERS_TOTAL` | Total OpenFGA workers | `150` |
 | `AUTH_ENABLED` | Enable JWT authentication for Groups/Authz APIs | `true` |
 | `AUTH_ISSUER` | Expected JWT issuer (e.g., `https://auth.example.com`) | |
-| `AUTH_JWKS_URL` | Optional explicit JWKS URL (overrides OIDC discovery) | |
 | `AUTH_ALLOWED_SUBJECTS` | Comma-separated list of allowed JWT subjects | |
 | `AUTH_REQUIRED_SCOPE` | Required scope for access (e.g., `hook-service:admin`) | |
 | `DSN` | Database connection string (Required) | |
@@ -55,7 +54,6 @@ The Groups and Authorization APIs (`/api/v0/authz`) are protected by JWT authent
 
 - `AUTH_ENABLED`: Set to `true` to enable JWT authentication (default: `true`)
 - `AUTH_ISSUER`: The expected JWT issuer URL. Used for OIDC metadata discovery to fetch JWKS
-- `AUTH_JWKS_URL`: (Optional) Explicit JWKS URL. If set, overrides OIDC metadata discovery
 - `AUTH_ALLOWED_SUBJECTS`: Comma-separated list of allowed JWT `sub` claims
 - `AUTH_REQUIRED_SCOPE`: (Optional) A specific scope that grants access (e.g., `hook-service:admin`)
 

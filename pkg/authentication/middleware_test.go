@@ -78,9 +78,6 @@ func TestMiddleware_Authenticate_MissingToken(t *testing.T) {
 	}
 }
 
-// noopSpan implements trace.Span interface for testing - not needed anymore
-
-
 func TestMiddleware_GetBearerToken(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -172,7 +169,7 @@ func TestConfig_NewConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config := NewConfig(true, "https://issuer.example.com", "", test.allowedSubjects, "")
+			config := NewConfig(true, "https://issuer.example.com", test.allowedSubjects, "")
 
 			if len(config.AllowedSubjects) != test.expectedSubjectsLen {
 				t.Errorf("expected %d subjects, got %d", test.expectedSubjectsLen, len(config.AllowedSubjects))

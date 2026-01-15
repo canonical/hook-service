@@ -119,13 +119,12 @@ func serve() error {
 		authConfig := authentication.NewConfig(
 			specs.AuthEnabled,
 			specs.AuthIssuer,
-			specs.AuthJwksURL,
 			specs.AuthAllowedSubjects,
 			specs.AuthRequiredScope,
 		)
 
 		ctx := context.Background()
-		provider, err := authentication.NewProvider(ctx, specs.AuthIssuer, specs.AuthJwksURL)
+		provider, err := authentication.NewProvider(ctx, specs.AuthIssuer)
 		if err != nil {
 			logger.Errorf("Failed to create OIDC provider: %v", err)
 			logger.Info("JWT authentication will be disabled")

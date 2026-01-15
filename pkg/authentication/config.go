@@ -10,16 +10,14 @@ import (
 type Config struct {
 	Enabled         bool
 	Issuer          string
-	JwksURL         string
 	AllowedSubjects []string
 	RequiredScope   string
 }
 
-func NewConfig(enabled bool, issuer, jwksURL, allowedSubjects, requiredScope string) *Config {
+func NewConfig(enabled bool, issuer, allowedSubjects, requiredScope string) *Config {
 	c := &Config{
 		Enabled:       enabled,
 		Issuer:        issuer,
-		JwksURL:       jwksURL,
 		RequiredScope: requiredScope,
 	}
 

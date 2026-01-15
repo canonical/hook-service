@@ -125,10 +125,12 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 func (m *Middleware) unauthorizedResponse(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  http.StatusUnauthorized,
 		"message": message,
-	})
+	}); err != nil {
+		m.logger.Errorf("failed to encode unauthorized response: %v", err)
+	}
 }
 
 func NewMiddleware(config *Config, verifier TokenVerifierInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Middleware {
