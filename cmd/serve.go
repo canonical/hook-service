@@ -115,23 +115,27 @@ func serve() error {
 	}
 
 	var jwtAuthMiddleware *authentication.Middleware
-	if specs.AuthEnabled && specs.AuthIssuer != "" {
-		authConfig := authentication.NewConfig(
-			specs.AuthEnabled,
-			specs.AuthIssuer,
-			specs.AuthAllowedSubjects,
-			specs.AuthRequiredScope,
-		)
-
-		ctx := context.Background()
-		provider, err := authentication.NewProvider(ctx, specs.AuthIssuer)
-		if err != nil {
-			logger.Errorf("Failed to create OIDC provider: %v", err)
-			logger.Info("JWT authentication will be disabled")
+	if specs.AuthEnabled {
+		if specs.AuthIssuer == "" {
+			logger.Warnf("AUTH_ENABLED is true but AUTH_ISSUER is not configured - JWT authentication will be disabled")
 		} else {
-			verifier := authentication.NewJWTVerifier(provider, specs.AuthIssuer, tracer, monitor, logger)
-			jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
-			logger.Info("JWT authentication is enabled")
+			authConfig := authentication.NewConfig(
+				specs.AuthEnabled,
+				specs.AuthIssuer,
+				specs.AuthAllowedSubjects,
+				specs.AuthRequiredScope,
+			)
+
+			ctx := context.Background()
+			provider, err := authentication.NewProvider(ctx, specs.AuthIssuer)
+			if err != nil {
+				logger.Errorf("Failed to create OIDC provider: %v", err)
+				logger.Info("JWT authentication will be disabled")
+			} else {
+				verifier := authentication.NewJWTVerifier(provider, specs.AuthIssuer, tracer, monitor, logger)
+				jwtAuthMiddleware = authentication.NewMiddleware(authConfig, verifier, tracer, monitor, logger)
+				logger.Info("JWT authentication is enabled")
+			}
 		}
 	} else {
 		logger.Info("JWT authentication is disabled")

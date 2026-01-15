@@ -101,9 +101,9 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 
 	// Check if required scope is present
 	if m.config.RequiredScope != "" {
-		// Check space-separated scope string
+		// Check space-separated scope string using Fields to handle multiple spaces
 		if claims.Scope != "" {
-			scopes := strings.Split(claims.Scope, " ")
+			scopes := strings.Fields(claims.Scope)
 			for _, scope := range scopes {
 				if scope == m.config.RequiredScope {
 					return true
@@ -117,6 +117,12 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 				return true
 			}
 		}
+	}
+
+	// If both authorization methods are empty, deny access for security
+	if len(m.config.AllowedSubjects) == 0 && m.config.RequiredScope == "" {
+		m.logger.Debugf("No authorization criteria configured")
+		return false
 	}
 
 	return false
