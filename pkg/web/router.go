@@ -36,7 +36,11 @@ func NewRouter(
 	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
-	jwtAuthMiddleware *authentication.Middleware,
+	jwtVerifier authentication.TokenVerifierInterface,
+	authEnabled bool,
+	authIssuer string,
+	authAllowedSubjects string,
+	authRequiredScope string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -103,8 +107,16 @@ func NewRouter(
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
-	// Apply JWT authentication middleware to /api/v0/authz routes if provided
-	if jwtAuthMiddleware != nil {
+	// Apply JWT authentication middleware to /api/v0/authz routes if verifier provided
+	var jwtAuthMiddleware *authentication.Middleware
+	if jwtVerifier != nil {
+		authConfig := authentication.NewConfig(
+			authEnabled,
+			authIssuer,
+			authAllowedSubjects,
+			authRequiredScope,
+		)
+		jwtAuthMiddleware = authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
 		router.Route("/api/v0/authz", func(r chi.Router) {
 			r.Use(jwtAuthMiddleware.Authenticate())
 			r.Mount("/", gRPCGatewayMux)
@@ -115,3 +127,4 @@ func NewRouter(
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }
+

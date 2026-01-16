@@ -33,14 +33,11 @@ func NewProvider(ctx context.Context, issuer string) (*oidc.Provider, error) {
 // If jwksURL is provided, it creates a RemoteKeySet directly and wraps it
 // If jwksURL is empty, it uses the standard OIDC discovery
 func NewProviderWithJWKS(ctx context.Context, issuer, jwksURL string) (*oidc.Provider, *oidc.IDTokenVerifier, error) {
-	// Use otel-instrumented HTTP client
 	ctx = oidc.ClientContext(ctx, &otelHTTPClient)
 
 	if jwksURL != "" {
-		// Create a remote key set directly from the JWKS URL
 		keySet := oidc.NewRemoteKeySet(ctx, jwksURL)
 		
-		// Create a verifier with the custom key set
 		verifier := oidc.NewVerifier(issuer, keySet, &oidc.Config{
 			SkipClientIDCheck: true,
 			SkipIssuerCheck:   false,
@@ -49,7 +46,6 @@ func NewProviderWithJWKS(ctx context.Context, issuer, jwksURL string) (*oidc.Pro
 		return nil, verifier, nil
 	}
 
-	// Use standard OIDC discovery
 	provider, err := oidc.NewProvider(ctx, issuer)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create OIDC provider: %v", err)

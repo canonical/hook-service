@@ -55,11 +55,9 @@ func (c *E2EClient) Request(method, path string, body interface{}) (int, []byte)
 
 	req.Header.Set("Content-Type", "application/json")
 	
-	// Use JWT token if available for /api/v0/authz routes
+	// Use JWT token for /api/v0/authz routes
 	if jwtToken != "" {
 		req.Header.Set("Authorization", "Bearer "+jwtToken)
-	} else if token := os.Getenv("API_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
 	resp, err := c.client.Do(req)
@@ -375,19 +373,17 @@ func TestAppAuthorization(t *testing.T) {
 }
 
 func TestJWTAuthentication(t *testing.T) {
-client := NewE2EClient(t)
-
-t.Run("Valid JWT Token Allowed", func(t *testing.T) {
-// This test verifies that requests with valid JWT tokens from the configured client are allowed
-status, _ := client.Request(http.MethodGet, "/groups", nil)
-if status != http.StatusOK {
-t.Errorf("expected status OK with valid JWT, got %d", status)
-}
-})
-
-t.Run("No JWT Token Rejected", func(t *testing.T) {
-// Create a request without the JWT token
-req, err := http.NewRequest(http.MethodGet, defaultBaseURL+"/groups", nil)
+	client := NewE2EClient(t)
+	
+	t.Run("Valid JWT Token Allowed", func(t *testing.T) {
+		status, _ := client.Request(http.MethodGet, "/groups", nil)
+		if status != http.StatusOK {
+			t.Errorf("expected status OK with valid JWT, got %d", status)
+		}
+	})
+	
+	t.Run("No JWT Token Rejected", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, defaultBaseURL+"/groups", nil)
 if err != nil {
 t.Fatalf("failed to create request: %v", err)
 }
@@ -427,10 +423,36 @@ t.Errorf("expected status Unauthorized with invalid JWT, got %d", resp.StatusCod
 }
 })
 
-t.Run("Wrong Subject Rejected", func(t *testing.T) {
-// If we had a token with wrong subject, it should be rejected
-// For now, this is tested by the "Invalid JWT Token Rejected" test
-// In a more complete test, we would create a valid JWT with wrong subject
-t.Skip("Requires creating a valid JWT with wrong subject - covered by invalid token test")
-})
+	t.Run("Wrong Subject Rejected", func(t *testing.T) {
+		// Create another Hydra client with different client_id
+		wrongClientID, wrongClientSecret, err := setupHydraClient(context.Background(), "Wrong Subject Client")
+		if err != nil {
+			t.Fatalf("failed to create wrong subject client: %v", err)
+		}
+		
+		// Get JWT token for the wrong client
+		wrongToken, err := getJWTToken(context.Background(), wrongClientID, wrongClientSecret)
+		if err != nil {
+			t.Fatalf("failed to get JWT token for wrong client: %v", err)
+		}
+		
+		// Try to access with wrong subject token
+		req, err := http.NewRequest(http.MethodGet, defaultBaseURL+"/groups", nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+wrongToken)
+		
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to execute request: %v", err)
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected status Unauthorized with wrong subject, got %d", resp.StatusCode)
+		}
+	})
 }

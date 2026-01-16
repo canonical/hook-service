@@ -54,6 +54,15 @@ func (m *Middleware) Authenticate() func(http.Handler) http.Handler {
 			// Check authorization (subject or scope)
 			if !m.isAuthorized(idToken) {
 				m.logger.Debugf("Authorization failed for token")
+				
+				// Extract subject for security logging
+				var claims struct {
+					Subject string `json:"sub"`
+				}
+				if err := idToken.Claims(&claims); err == nil {
+					m.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
+				}
+				
 				m.unauthorizedResponse(w, "unauthorized")
 				return
 			}

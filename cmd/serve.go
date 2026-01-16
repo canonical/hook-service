@@ -114,8 +114,7 @@ func serve() error {
 		)
 	}
 
-	// Setup JWT authentication
-	var jwtAuthMiddleware *authentication.Middleware
+	// Setup JWT authentication verifier
 	jwtVerifier, err := authentication.NewJWTAuthenticator(
 		context.Background(),
 		specs.AuthEnabled,
@@ -128,17 +127,22 @@ func serve() error {
 	if err != nil {
 		logger.Warnf("JWT authenticator setup failed: %v - will be disabled", err)
 	}
-	if jwtVerifier != nil {
-		authConfig := authentication.NewConfig(
-			specs.AuthEnabled,
-			specs.AuthIssuer,
-			specs.AuthAllowedSubjects,
-			specs.AuthRequiredScope,
-		)
-		jwtAuthMiddleware = authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
-	}
 
-	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, jwtAuthMiddleware, tracer, monitor, logger)
+	router := web.NewRouter(
+		specs.ApiToken,
+		s,
+		dbClient,
+		sf,
+		authorizer,
+		jwtVerifier,
+		specs.AuthEnabled,
+		specs.AuthIssuer,
+		specs.AuthAllowedSubjects,
+		specs.AuthRequiredScope,
+		tracer,
+		monitor,
+		logger,
+	)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{

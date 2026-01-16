@@ -126,7 +126,7 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 	}
 
 	// Setup Hydra client for JWT authentication
-	clientID, clientSecret, err := setupHydraClient(ctx)
+	clientID, clientSecret, err := setupHydraClient(ctx, "E2E Test Client")
 	if err != nil {
 		cleanup()
 		return nil, fmt.Errorf("failed to setup hydra client: %w", err)
@@ -286,7 +286,7 @@ func setupOpenFGA(ctx context.Context, binPath, apiURL string) (string, string, 
 	return result.StoreID, result.ModelID, nil
 }
 
-func setupHydraClient(ctx context.Context) (string, string, error) {
+func setupHydraClient(ctx context.Context, clientName string) (string, string, error) {
 	// Wait for Hydra to be ready
 	hydraAdminURL := "http://localhost:4445"
 	if err := waitForHTTP(ctx, hydraAdminURL+"/health/ready"); err != nil {
@@ -297,7 +297,7 @@ func setupHydraClient(ctx context.Context) (string, string, error) {
 	cmd := exec.CommandContext(ctx, "docker", "exec", "hook-service-hydra-1",
 		"hydra", "create", "client",
 		"--endpoint", "http://127.0.0.1:4445",
-		"--name", "E2E Test Client",
+		"--name", clientName,
 		"--grant-type", "client_credentials",
 		"--format", "json",
 		"--scope", "hook-service:admin")
