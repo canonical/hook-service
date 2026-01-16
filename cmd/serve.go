@@ -135,7 +135,6 @@ func serve() error {
 		sf,
 		authorizer,
 		jwtVerifier,
-		specs.AuthEnabled,
 		specs.AuthIssuer,
 		specs.AuthAllowedSubjects,
 		specs.AuthRequiredScope,

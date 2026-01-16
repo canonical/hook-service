@@ -23,27 +23,14 @@ import (
 func TestMiddleware_Authenticate(t *testing.T) {
 	tests := []struct {
 		name               string
-		authEnabled        bool
 		authHeader         string
 		setupMocks         func(*gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error)
 		expectedStatusCode int
 		expectedBody       string
 	}{
 		{
-			name:        "Auth disabled - allows request",
-			authEnabled: false,
-			authHeader:  "",
-			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
-				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				return ctrl, mockVerifier, nil, nil
-			},
-			expectedStatusCode: http.StatusOK,
-			expectedBody:       "success",
-		},
-		{
-			name:        "Missing token - rejects request",
-			authEnabled: true,
-			authHeader:  "",
+			name:       "Missing token - rejects request",
+			authHeader: "",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
 				return ctrl, mockVerifier, nil, nil
@@ -51,9 +38,8 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			expectedStatusCode: http.StatusUnauthorized,
 		},
 		{
-			name:        "Invalid token format - rejects request",
-			authEnabled: true,
-			authHeader:  "InvalidToken",
+			name:       "Invalid token format - rejects request",
+			authHeader: "InvalidToken",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
 				return ctrl, mockVerifier, nil, nil
@@ -61,9 +47,8 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			expectedStatusCode: http.StatusUnauthorized,
 		},
 		{
-			name:        "Token verification fails - rejects request",
-			authEnabled: true,
-			authHeader:  "Bearer invalid-token",
+			name:       "Token verification fails - rejects request",
+			authHeader: "Bearer invalid-token",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
 				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token").Return(nil, fmt.Errorf("invalid token"))
@@ -72,9 +57,8 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			expectedStatusCode: http.StatusUnauthorized,
 		},
 		{
-			name:        "Valid token but unauthorized - rejects request",
-			authEnabled: true,
-			authHeader:  "Bearer valid-token",
+			name:       "Valid token but unauthorized - rejects request",
+			authHeader: "Bearer valid-token",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
 				mockToken := &oidc.IDToken{}
@@ -83,9 +67,6 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			},
 			expectedStatusCode: http.StatusUnauthorized,
 		},
-		// Note: Testing successful authorization with mocked IDToken.Claims() is challenging
-		// because oidc.IDToken is a concrete type without an interface. The authorization
-		// logic is thoroughly tested through E2E tests with real tokens.
 	}
 
 	for _, tt := range tests {
@@ -102,21 +83,17 @@ func TestMiddleware_Authenticate(t *testing.T) {
 
 			_, mockVerifier, _, verifyErr := tt.setupMocks(ctrl)
 
-			// Expect logger.Debugf for unauthorized cases - simplified to use Any
 			if tt.expectedStatusCode == http.StatusUnauthorized && verifyErr != nil {
 				mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
 			} else if tt.expectedStatusCode == http.StatusUnauthorized && tt.authHeader == "Bearer valid-token" {
-				// Unauthorized after successful verification
 				mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
 				mockLogger.EXPECT().Debugf(gomock.Any()).AnyTimes()
-				// Expect security log
 				mockSecurityLogger := NewMockSecurityLoggerInterface(ctrl)
 				mockLogger.EXPECT().Security().Return(mockSecurityLogger).AnyTimes()
 				mockSecurityLogger.EXPECT().AuthzFailure(gomock.Any(), gomock.Any()).AnyTimes()
 			}
 
 			config := &Config{
-				Enabled:         tt.authEnabled,
 				AllowedSubjects: []string{"test-subject"},
 			}
 			middleware := NewMiddleware(config, mockVerifier, mockTracer, mockMonitor, mockLogger)
@@ -182,7 +159,7 @@ func TestMiddleware_GetBearerToken(t *testing.T) {
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockVerifier := NewMockTokenVerifierInterface(ctrl)
 
-			config := &Config{Enabled: true}
+			config := &Config{}
 			middleware := NewMiddleware(config, mockVerifier, mockTracer, mockMonitor, mockLogger)
 
 			headers := http.Header{}
@@ -236,7 +213,7 @@ func TestConfig_NewConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			config := NewConfig(true, "https://issuer.example.com", test.allowedSubjects, "")
+			config := NewConfig("https://issuer.example.com", test.allowedSubjects, "")
 
 			if len(config.AllowedSubjects) != test.expectedSubjectsLen {
 				t.Errorf("expected %d subjects, got %d", test.expectedSubjectsLen, len(config.AllowedSubjects))

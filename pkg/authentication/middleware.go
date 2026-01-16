@@ -30,20 +30,12 @@ func (m *Middleware) Authenticate() func(http.Handler) http.Handler {
 			ctx, span := m.tracer.Start(r.Context(), "authentication.Middleware.Authenticate")
 			defer span.End()
 
-			// If authentication is disabled, pass through
-			if !m.config.Enabled {
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-
-			// Extract bearer token
 			token, found := m.getBearerToken(r.Header)
 			if !found {
 				m.unauthorizedResponse(w, "missing authorization header")
 				return
 			}
 
-			// Verify JWT signature and claims
 			idToken, err := m.verifier.VerifyToken(ctx, token)
 			if err != nil {
 				m.logger.Debugf("JWT verification failed: %v", err)
@@ -51,18 +43,7 @@ func (m *Middleware) Authenticate() func(http.Handler) http.Handler {
 				return
 			}
 
-			// Check authorization (subject or scope)
 			if !m.isAuthorized(idToken) {
-				m.logger.Debugf("Authorization failed for token")
-				
-				// Extract subject for security logging
-				var claims struct {
-					Subject string `json:"sub"`
-				}
-				if err := idToken.Claims(&claims); err == nil {
-					m.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
-				}
-				
 				m.unauthorizedResponse(w, "unauthorized")
 				return
 			}
@@ -87,7 +68,6 @@ func (m *Middleware) getBearerToken(headers http.Header) (string, bool) {
 }
 
 func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
-	// Extract claims
 	var claims struct {
 		Subject string   `json:"sub"`
 		Scope   string   `json:"scope"`
@@ -99,7 +79,6 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 		return false
 	}
 
-	// Check if subject is in allowed list
 	if len(m.config.AllowedSubjects) > 0 {
 		for _, allowedSub := range m.config.AllowedSubjects {
 			if claims.Subject == allowedSub {
@@ -108,9 +87,7 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 		}
 	}
 
-	// Check if required scope is present
 	if m.config.RequiredScope != "" {
-		// Check space-separated scope string using Fields to handle multiple spaces
 		if claims.Scope != "" {
 			scopes := strings.Fields(claims.Scope)
 			for _, scope := range scopes {
@@ -120,7 +97,6 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 			}
 		}
 
-		// Check scp array claim
 		for _, scope := range claims.Scopes {
 			if scope == m.config.RequiredScope {
 				return true
@@ -128,12 +104,13 @@ func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
 		}
 	}
 
-	// If both authorization methods are empty, deny access for security
 	if len(m.config.AllowedSubjects) == 0 && m.config.RequiredScope == "" {
 		m.logger.Debugf("No authorization criteria configured")
+		m.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
 		return false
 	}
 
+	m.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
 	return false
 }
 

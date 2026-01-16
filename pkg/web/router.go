@@ -37,7 +37,6 @@ func NewRouter(
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
 	jwtVerifier authentication.TokenVerifierInterface,
-	authEnabled bool,
 	authIssuer string,
 	authAllowedSubjects string,
 	authRequiredScope string,
@@ -107,23 +106,18 @@ func NewRouter(
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
-	// Apply JWT authentication middleware to /api/v0/authz routes if verifier provided
-	var jwtAuthMiddleware *authentication.Middleware
-	if jwtVerifier != nil {
-		authConfig := authentication.NewConfig(
-			authEnabled,
-			authIssuer,
-			authAllowedSubjects,
-			authRequiredScope,
-		)
-		jwtAuthMiddleware = authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
-		router.Route("/api/v0/authz", func(r chi.Router) {
+	router.Route("/api/v0/authz", func(r chi.Router) {
+		if jwtVerifier != nil {
+			authConfig := authentication.NewConfig(
+				authIssuer,
+				authAllowedSubjects,
+				authRequiredScope,
+			)
+			jwtAuthMiddleware := authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
 			r.Use(jwtAuthMiddleware.Authenticate())
-			r.Mount("/", gRPCGatewayMux)
-		})
-	} else {
-		router.Mount("/api/v0/authz", gRPCGatewayMux)
-	}
+		}
+		r.Mount("/", gRPCGatewayMux)
+	})
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }
