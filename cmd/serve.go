@@ -114,7 +114,6 @@ func serve() error {
 		)
 	}
 
-	// Setup JWT authentication verifier
 	jwtVerifier, err := authentication.NewJWTAuthenticator(
 		context.Background(),
 		specs.AuthEnabled,
@@ -125,7 +124,7 @@ func serve() error {
 		logger,
 	)
 	if err != nil {
-		logger.Warnf("JWT authenticator setup failed: %v - will be disabled", err)
+		return fmt.Errorf("failed to setup JWT authenticator: %v", err)
 	}
 
 	router := web.NewRouter(

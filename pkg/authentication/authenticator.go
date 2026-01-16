@@ -12,8 +12,8 @@ import (
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
-// NewJWTAuthenticator initializes a JWT token verifier based on configuration
-// Returns the token verifier if successful, or nil if authentication should be disabled
+// NewJWTAuthenticator initializes a JWT token verifier based on configuration.
+// Returns a noop verifier if disabled, or a real verifier if enabled.
 func NewJWTAuthenticator(
 	ctx context.Context,
 	enabled bool,
@@ -25,7 +25,7 @@ func NewJWTAuthenticator(
 ) (TokenVerifierInterface, error) {
 	if !enabled {
 		logger.Info("JWT authentication is disabled")
-		return nil, nil
+		return NewNoopVerifier(), nil
 	}
 
 	if issuer == "" {
@@ -35,7 +35,6 @@ func NewJWTAuthenticator(
 	var verifier *JWTVerifier
 
 	if jwksURL != "" {
-		// Use manual JWKS URL
 		logger.Infof("Using manual JWKS URL: %s", jwksURL)
 		_, idTokenVerifier, err := NewProviderWithJWKS(ctx, issuer, jwksURL)
 		if err != nil {
@@ -44,7 +43,6 @@ func NewJWTAuthenticator(
 		verifier = NewJWTVerifierDirect(idTokenVerifier, tracer, monitor, logger)
 		logger.Info("JWT authentication is enabled with manual JWKS URL")
 	} else {
-		// Use OIDC discovery
 		logger.Infof("Using OIDC discovery for issuer: %s", issuer)
 		provider, err := NewProvider(ctx, issuer)
 		if err != nil {

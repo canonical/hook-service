@@ -134,13 +134,13 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		"OPENFGA_STORE_ID":               storeID,
 		"OPENFGA_AUTHORIZATION_MODEL_ID": modelID,
 		"OPENFGA_API_TOKEN":              fgaAPIToken,
-		"AUTHORIZATION_ENABLED":          "false", // Disable OpenFGA authz initially to avoid checks during client creation
+		"AUTHORIZATION_ENABLED":          "true",
 		"SALESFORCE_ENABLED":             "false",
 		"PORT":                           "8000",
 		"LOG_LEVEL":                      "debug",
 		"TRACING_ENABLED":                "false",
-		"API_TOKEN":                      "secret_api_key", // Must match Hydra's token_hook.auth.config.value
-		"AUTH_ENABLED":                   "false",          // Disable JWT auth initially - no client created yet
+		"API_TOKEN":                      "secret_api_key",
+		"AUTH_ENABLED":                   "false", // Disable JWT auth initially - will enable after client is created
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)
@@ -158,7 +158,7 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		return nil, fmt.Errorf("server not ready: %w", err)
 	}
 
-	// Now create Hydra client (token hook will be called and succeed)
+	// Now create Hydra client (token hook will be called)
 	clientID, clientSecret, err := setupHydraClient(ctx, "E2E Test Client")
 	if err != nil {
 		if cmd.Process != nil {
@@ -183,13 +183,12 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 	}
 	jwtToken = token
 
-	// Restart server with both JWT auth and OpenFGA authorization enabled
+	// Restart server with JWT auth enabled
 	if cmd.Process != nil {
 		cmd.Process.Kill()
-		cmd.Wait() // Wait for process to exit
+		cmd.Wait()
 	}
 
-	envVars["AUTHORIZATION_ENABLED"] = "true" // Enable OpenFGA authorization
 	envVars["AUTH_ENABLED"] = "true"
 	envVars["AUTH_ISSUER"] = "http://localhost:4444"
 	envVars["AUTH_ALLOWED_SUBJECTS"] = clientID

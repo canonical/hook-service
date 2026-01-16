@@ -106,18 +106,18 @@ func NewRouter(
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
-	router.Route("/api/v0/authz", func(r chi.Router) {
-		if jwtVerifier != nil {
-			authConfig := authentication.NewConfig(
-				authIssuer,
-				authAllowedSubjects,
-				authRequiredScope,
-			)
-			jwtAuthMiddleware := authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
-			r.Use(jwtAuthMiddleware.Authenticate())
-		}
-		r.Mount("/", gRPCGatewayMux)
-	})
+	authzRouter := chi.NewRouter()
+	if _, isNoop := jwtVerifier.(*authentication.NoopVerifier); !isNoop {
+		authConfig := authentication.NewConfig(
+			authIssuer,
+			authAllowedSubjects,
+			authRequiredScope,
+		)
+		jwtAuthMiddleware := authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
+		authzRouter.Use(jwtAuthMiddleware.Authenticate())
+	}
+	authzRouter.Mount("/", gRPCGatewayMux)
+	router.Mount("/api/v0/authz", authzRouter)
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }
