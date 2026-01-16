@@ -51,7 +51,7 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			authHeader: "Bearer invalid-token",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token").Return(nil, fmt.Errorf("invalid token"))
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token", gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("invalid token"))
 				return ctrl, mockVerifier, nil, fmt.Errorf("invalid token")
 			},
 			expectedStatusCode: http.StatusUnauthorized,
@@ -61,9 +61,8 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			authHeader: "Bearer valid-token",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockToken := &oidc.IDToken{}
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(mockToken, nil)
-				return ctrl, mockVerifier, mockToken, nil
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token", gomock.Any(), gomock.Any()).Return(false, nil)
+				return ctrl, mockVerifier, nil, nil
 			},
 			expectedStatusCode: http.StatusUnauthorized,
 		},

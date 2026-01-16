@@ -5,8 +5,6 @@ package authentication
 
 import (
 	"context"
-
-	"github.com/coreos/go-oidc/v3/oidc"
 )
 
 type NoopVerifier struct{}
@@ -16,7 +14,7 @@ func NewNoopVerifier() *NoopVerifier {
 	return &NoopVerifier{}
 }
 
-// VerifyToken always returns nil, nil (allowing all requests).
-func (n *NoopVerifier) VerifyToken(ctx context.Context, rawIDToken string) (*oidc.IDToken, error) {
-	return nil, nil
+// VerifyToken always returns true, nil (allowing all requests).
+func (n *NoopVerifier) VerifyToken(ctx context.Context, rawIDToken string, allowedSubjects []string, requiredScope string) (bool, error) {
+	return true, nil
 }

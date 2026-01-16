@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/coreos/go-oidc/v3/oidc"
-
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
@@ -36,14 +34,14 @@ func (m *Middleware) Authenticate() func(http.Handler) http.Handler {
 				return
 			}
 
-			idToken, err := m.verifier.VerifyToken(ctx, token)
+			authorized, err := m.verifier.VerifyToken(ctx, token, m.config.AllowedSubjects, m.config.RequiredScope)
 			if err != nil {
 				m.logger.Debugf("JWT verification failed: %v", err)
 				m.unauthorizedResponse(w, "invalid token")
 				return
 			}
 
-			if !m.isAuthorized(idToken) {
+			if !authorized {
 				m.unauthorizedResponse(w, "unauthorized")
 				return
 			}
@@ -65,53 +63,6 @@ func (m *Middleware) getBearerToken(headers http.Header) (string, bool) {
 	}
 
 	return strings.TrimPrefix(bearer, "Bearer "), true
-}
-
-func (m *Middleware) isAuthorized(token *oidc.IDToken) bool {
-	var claims struct {
-		Subject string   `json:"sub"`
-		Scope   string   `json:"scope"`
-		Scopes  []string `json:"scp"`
-	}
-
-	if err := token.Claims(&claims); err != nil {
-		m.logger.Debugf("Failed to extract claims: %v", err)
-		return false
-	}
-
-	if len(m.config.AllowedSubjects) > 0 {
-		for _, allowedSub := range m.config.AllowedSubjects {
-			if claims.Subject == allowedSub {
-				return true
-			}
-		}
-	}
-
-	if m.config.RequiredScope != "" {
-		if claims.Scope != "" {
-			scopes := strings.Fields(claims.Scope)
-			for _, scope := range scopes {
-				if scope == m.config.RequiredScope {
-					return true
-				}
-			}
-		}
-
-		for _, scope := range claims.Scopes {
-			if scope == m.config.RequiredScope {
-				return true
-			}
-		}
-	}
-
-	if len(m.config.AllowedSubjects) == 0 && m.config.RequiredScope == "" {
-		m.logger.Debugf("No authorization criteria configured")
-		m.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
-		return false
-	}
-
-	m.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
-	return false
 }
 
 func (m *Middleware) unauthorizedResponse(w http.ResponseWriter, message string) {

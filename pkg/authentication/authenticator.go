@@ -12,24 +12,17 @@ import (
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
-// NewJWTAuthenticator initializes a JWT token verifier based on configuration.
-// Returns a noop verifier if disabled, or a real verifier if enabled.
+// NewJWTAuthenticator initializes a JWT token verifier.
 func NewJWTAuthenticator(
 	ctx context.Context,
-	enabled bool,
 	issuer string,
 	jwksURL string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
 ) (TokenVerifierInterface, error) {
-	if !enabled {
-		logger.Info("JWT authentication is disabled")
-		return NewNoopVerifier(), nil
-	}
-
 	if issuer == "" {
-		return nil, fmt.Errorf("AUTH_ENABLED is true but AUTH_ISSUER is not configured")
+		return nil, fmt.Errorf("issuer is required for JWT authentication")
 	}
 
 	var verifier *JWTVerifier

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	hydra "github.com/ory/hydra-client-go/v2"
 	tc "github.com/testcontainers/testcontainers-go/modules/compose"
 )
 
@@ -125,8 +126,27 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		return nil, fmt.Errorf("failed to setup openfga: %w", err)
 	}
 
-	// Start Hook Service FIRST (before creating Hydra client)
-	// This is needed because Hydra will call the token hook when creating the client
+	// Create Hydra client FIRST (before starting hook-service)
+	// This avoids the circular dependency issue
+	clientID, clientSecret, err := setupHydraClient(ctx, "E2E Test Client")
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to setup hydra client: %w", err)
+	}
+
+	// Store credentials globally for E2E client
+	authClientID = clientID
+	authClientSecret = clientSecret
+
+	// Get JWT token
+	token, err := getJWTToken(ctx, clientID, clientSecret)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to get JWT token: %w", err)
+	}
+	jwtToken = token
+
+	// Now start the service with authentication enabled
 	envVars := map[string]string{
 		"DSN":                            dsn,
 		"OPENFGA_API_SCHEME":             "http",
@@ -140,7 +160,9 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		"LOG_LEVEL":                      "debug",
 		"TRACING_ENABLED":                "false",
 		"API_TOKEN":                      "secret_api_key",
-		"AUTH_ENABLED":                   "false", // Disable JWT auth initially - will enable after client is created
+		"AUTH_ENABLED":                   "true",
+		"AUTH_ISSUER":                    "http://localhost:4444",
+		"AUTH_ALLOWED_SUBJECTS":          clientID,
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)
@@ -150,56 +172,6 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 	}
 
 	// Wait for Server
-	if err := waitForHTTP(ctx, "http://localhost:8000/api/v0/status"); err != nil {
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		cleanup()
-		return nil, fmt.Errorf("server not ready: %w", err)
-	}
-
-	// Now create Hydra client (token hook will be called)
-	clientID, clientSecret, err := setupHydraClient(ctx, "E2E Test Client")
-	if err != nil {
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		cleanup()
-		return nil, fmt.Errorf("failed to setup hydra client: %w", err)
-	}
-
-	// Store credentials globally for E2E client
-	authClientID = clientID
-	authClientSecret = clientSecret
-
-	// Get JWT token
-	token, err := getJWTToken(ctx, clientID, clientSecret)
-	if err != nil {
-		if cmd.Process != nil {
-			cmd.Process.Kill()
-		}
-		cleanup()
-		return nil, fmt.Errorf("failed to get JWT token: %w", err)
-	}
-	jwtToken = token
-
-	// Restart server with JWT auth enabled
-	if cmd.Process != nil {
-		cmd.Process.Kill()
-		cmd.Wait()
-	}
-
-	envVars["AUTH_ENABLED"] = "true"
-	envVars["AUTH_ISSUER"] = "http://localhost:4444"
-	envVars["AUTH_ALLOWED_SUBJECTS"] = clientID
-
-	cmd, err = startServer(ctx, binPath, envVars)
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("failed to restart server with auth: %w", err)
-	}
-
-	// Wait for Server to be ready again
 	baseURL := "http://localhost:8000/api/v0/authz"
 	if err := waitForHTTP(ctx, "http://localhost:8000/api/v0/status"); err != nil {
 		if cmd.Process != nil {
@@ -316,21 +288,6 @@ func setupOpenFGA(ctx context.Context, binPath, apiURL string) (string, string, 
 	return result.StoreID, result.ModelID, nil
 }
 
-func getHydraContainerName(ctx context.Context) (string, error) {
-	cmd := exec.CommandContext(ctx, "docker", "ps", "--filter", "name=hydra-1", "--format", "{{.Names}}")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("failed to list containers: %v", err)
-	}
-	
-	containerName := strings.TrimSpace(string(output))
-	if containerName == "" {
-		return "", fmt.Errorf("hydra container not found")
-	}
-	
-	return containerName, nil
-}
-
 func setupHydraClient(ctx context.Context, clientName string) (string, string, error) {
 	// Wait for Hydra to be ready
 	hydraAdminURL := "http://localhost:4445"
@@ -338,35 +295,34 @@ func setupHydraClient(ctx context.Context, clientName string) (string, string, e
 		return "", "", fmt.Errorf("hydra not ready: %w", err)
 	}
 
-	// Find Hydra container name dynamically
-	hydraContainer, err := getHydraContainerName(ctx)
+	// Create Hydra admin client using SDK
+	configuration := hydra.NewConfiguration()
+	configuration.Servers = []hydra.ServerConfiguration{
+		{
+			URL: hydraAdminURL,
+		},
+	}
+	apiClient := hydra.NewAPIClient(configuration)
+
+	// Create OAuth2 client for client credentials flow
+	grantTypes := []string{"client_credentials"}
+	scopes := "hook-service:admin"
+	
+	client := hydra.NewOAuth2Client()
+	client.SetClientName(clientName)
+	client.SetGrantTypes(grantTypes)
+	client.SetScope(scopes)
+
+	createdClient, _, err := apiClient.OAuth2API.CreateOAuth2Client(ctx).OAuth2Client(*client).Execute()
 	if err != nil {
-		return "", "", fmt.Errorf("failed to find hydra container: %w", err)
+		return "", "", fmt.Errorf("failed to create hydra client via SDK: %w", err)
 	}
 
-	// Create a client credentials client for JWT authentication
-	cmd := exec.CommandContext(ctx, "docker", "exec", hydraContainer,
-		"hydra", "create", "client",
-		"--endpoint", "http://127.0.0.1:4445",
-		"--name", clientName,
-		"--grant-type", "client_credentials",
-		"--format", "json",
-		"--scope", "hook-service:admin")
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to create hydra client: %v, output: %s", err, string(output))
+	if createdClient.ClientId == nil || createdClient.ClientSecret == nil {
+		return "", "", fmt.Errorf("hydra client creation succeeded but missing credentials")
 	}
 
-	var result struct {
-		ClientID     string `json:"client_id"`
-		ClientSecret string `json:"client_secret"`
-	}
-	if err := json.Unmarshal(output, &result); err != nil {
-		return "", "", fmt.Errorf("failed to parse hydra client output: %v, output: %s", err, string(output))
-	}
-
-	return result.ClientID, result.ClientSecret, nil
+	return *createdClient.ClientId, *createdClient.ClientSecret, nil
 }
 
 func getJWTToken(ctx context.Context, clientID, clientSecret string) (string, error) {
