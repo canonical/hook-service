@@ -125,9 +125,45 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		return nil, fmt.Errorf("failed to setup openfga: %w", err)
 	}
 
-	// Setup Hydra client for JWT authentication
+	// Start Hook Service FIRST (before creating Hydra client)
+	// This is needed because Hydra will call the token hook when creating the client
+	envVars := map[string]string{
+		"DSN":                            dsn,
+		"OPENFGA_API_SCHEME":             "http",
+		"OPENFGA_API_HOST":               "localhost:8080",
+		"OPENFGA_STORE_ID":               storeID,
+		"OPENFGA_AUTHORIZATION_MODEL_ID": modelID,
+		"OPENFGA_API_TOKEN":              fgaAPIToken,
+		"AUTHORIZATION_ENABLED":          "false", // Disable OpenFGA authz initially to avoid checks during client creation
+		"SALESFORCE_ENABLED":             "false",
+		"PORT":                           "8000",
+		"LOG_LEVEL":                      "debug",
+		"TRACING_ENABLED":                "false",
+		"API_TOKEN":                      "secret_api_key", // Must match Hydra's token_hook.auth.config.value
+		"AUTH_ENABLED":                   "false",          // Disable JWT auth initially - no client created yet
+	}
+
+	cmd, err := startServer(ctx, binPath, envVars)
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to start server: %w", err)
+	}
+
+	// Wait for Server
+	if err := waitForHTTP(ctx, "http://localhost:8000/api/v0/status"); err != nil {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
+		cleanup()
+		return nil, fmt.Errorf("server not ready: %w", err)
+	}
+
+	// Now create Hydra client (token hook will be called and succeed)
 	clientID, clientSecret, err := setupHydraClient(ctx, "E2E Test Client")
 	if err != nil {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
 		cleanup()
 		return nil, fmt.Errorf("failed to setup hydra client: %w", err)
 	}
@@ -139,44 +175,39 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 	// Get JWT token
 	token, err := getJWTToken(ctx, clientID, clientSecret)
 	if err != nil {
+		if cmd.Process != nil {
+			cmd.Process.Kill()
+		}
 		cleanup()
 		return nil, fmt.Errorf("failed to get JWT token: %w", err)
 	}
 	jwtToken = token
 
-	// Start Hook Service
-	envVars := map[string]string{
-		"DSN":                            dsn,
-		"OPENFGA_API_SCHEME":             "http",
-		"OPENFGA_API_HOST":               "localhost:8080",
-		"OPENFGA_STORE_ID":               storeID,
-		"OPENFGA_AUTHORIZATION_MODEL_ID": modelID,
-		"OPENFGA_API_TOKEN":              fgaAPIToken,
-		"AUTHORIZATION_ENABLED":          "true",
-		"SALESFORCE_ENABLED":             "false", // Disable SF for now as we don't have a mock/container for it in compose
-		"PORT":                           "8001",  // Use a different port than default 8000 to avoid conflict if running locally? Or just 8000.
-		"LOG_LEVEL":                      "debug",
-		"TRACING_ENABLED":                "false",
-		"API_TOKEN":                      "test-token",
-		"AUTH_ENABLED":                   "true",
-		"AUTH_ISSUER":                    "http://localhost:4444",
-		"AUTH_ALLOWED_SUBJECTS":          clientID,
+	// Restart server with both JWT auth and OpenFGA authorization enabled
+	if cmd.Process != nil {
+		cmd.Process.Kill()
+		cmd.Wait() // Wait for process to exit
 	}
 
-	cmd, err := startServer(ctx, binPath, envVars)
+	envVars["AUTHORIZATION_ENABLED"] = "true" // Enable OpenFGA authorization
+	envVars["AUTH_ENABLED"] = "true"
+	envVars["AUTH_ISSUER"] = "http://localhost:4444"
+	envVars["AUTH_ALLOWED_SUBJECTS"] = clientID
+
+	cmd, err = startServer(ctx, binPath, envVars)
 	if err != nil {
 		cleanup()
-		return nil, fmt.Errorf("failed to start server: %w", err)
+		return nil, fmt.Errorf("failed to restart server with auth: %w", err)
 	}
 
-	// Wait for Server
-	baseURL := "http://localhost:8001/api/v0/authz"
-	if err := waitForHTTP(ctx, "http://localhost:8001/api/v0/status"); err != nil {
+	// Wait for Server to be ready again
+	baseURL := "http://localhost:8000/api/v0/authz"
+	if err := waitForHTTP(ctx, "http://localhost:8000/api/v0/status"); err != nil {
 		if cmd.Process != nil {
 			cmd.Process.Kill()
 		}
 		cleanup()
-		return nil, fmt.Errorf("server not ready: %w", err)
+		return nil, fmt.Errorf("server not ready after restart: %w", err)
 	}
 
 	return &TestEnvironment{
@@ -286,6 +317,21 @@ func setupOpenFGA(ctx context.Context, binPath, apiURL string) (string, string, 
 	return result.StoreID, result.ModelID, nil
 }
 
+func getHydraContainerName(ctx context.Context) (string, error) {
+	cmd := exec.CommandContext(ctx, "docker", "ps", "--filter", "name=hydra-1", "--format", "{{.Names}}")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("failed to list containers: %v", err)
+	}
+	
+	containerName := strings.TrimSpace(string(output))
+	if containerName == "" {
+		return "", fmt.Errorf("hydra container not found")
+	}
+	
+	return containerName, nil
+}
+
 func setupHydraClient(ctx context.Context, clientName string) (string, string, error) {
 	// Wait for Hydra to be ready
 	hydraAdminURL := "http://localhost:4445"
@@ -293,8 +339,14 @@ func setupHydraClient(ctx context.Context, clientName string) (string, string, e
 		return "", "", fmt.Errorf("hydra not ready: %w", err)
 	}
 
+	// Find Hydra container name dynamically
+	hydraContainer, err := getHydraContainerName(ctx)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to find hydra container: %w", err)
+	}
+
 	// Create a client credentials client for JWT authentication
-	cmd := exec.CommandContext(ctx, "docker", "exec", "hook-service-hydra-1",
+	cmd := exec.CommandContext(ctx, "docker", "exec", hydraContainer,
 		"hydra", "create", "client",
 		"--endpoint", "http://127.0.0.1:4445",
 		"--name", clientName,
