@@ -25,6 +25,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/authentication"
 	"github.com/canonical/hook-service/pkg/web"
 )
 
@@ -113,7 +114,39 @@ func serve() error {
 		)
 	}
 
-	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, tracer, monitor, logger)
+	var jwtVerifier authentication.TokenVerifierInterface
+	if specs.AuthEnabled {
+		var err error
+		jwtVerifier, err = authentication.NewJWTAuthenticator(
+			context.Background(),
+			specs.AuthIssuer,
+			specs.AuthJwksURL,
+			tracer,
+			monitor,
+			logger,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to setup JWT authenticator: %v", err)
+		}
+	} else {
+		logger.Info("JWT authentication is disabled")
+		jwtVerifier = authentication.NewNoopVerifier()
+	}
+
+	router := web.NewRouter(
+		specs.ApiToken,
+		s,
+		dbClient,
+		sf,
+		authorizer,
+		jwtVerifier,
+		specs.AuthIssuer,
+		specs.AuthAllowedSubjects,
+		specs.AuthRequiredScope,
+		tracer,
+		monitor,
+		logger,
+	)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{

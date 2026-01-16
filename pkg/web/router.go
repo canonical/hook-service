@@ -22,6 +22,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/authentication"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
 	groups_api "github.com/canonical/hook-service/pkg/groups"
 	"github.com/canonical/hook-service/pkg/hooks"
@@ -35,6 +36,10 @@ func NewRouter(
 	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
+	jwtVerifier authentication.TokenVerifierInterface,
+	authIssuer string,
+	authAllowedSubjects string,
+	authRequiredScope string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -101,7 +106,19 @@ func NewRouter(
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
-	router.Mount("/api/v0/authz", gRPCGatewayMux)
+	authzRouter := chi.NewRouter()
+	if _, isNoop := jwtVerifier.(*authentication.NoopVerifier); !isNoop {
+		authConfig := authentication.NewConfig(
+			authIssuer,
+			authAllowedSubjects,
+			authRequiredScope,
+		)
+		jwtAuthMiddleware := authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
+		authzRouter.Use(jwtAuthMiddleware.Authenticate())
+	}
+	authzRouter.Mount("/", gRPCGatewayMux)
+	router.Mount("/api/v0/authz", authzRouter)
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }
+

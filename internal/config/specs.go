@@ -35,6 +35,12 @@ type EnvSpec struct {
 	AuthorizationEnabled bool `envconfig:"authorization_enabled" default:"false"`
 	OpenFGAWorkersTotal  int  `envconfig:"openfga_workers_total" default:"150"`
 
+	AuthEnabled         bool   `envconfig:"auth_enabled" default:"true"`
+	AuthIssuer          string `envconfig:"auth_issuer"`
+	AuthJwksURL         string `envconfig:"auth_jwks_url"`
+	AuthAllowedSubjects string `envconfig:"auth_allowed_subjects"`
+	AuthRequiredScope   string `envconfig:"auth_required_scope"`
+
 	DSN string `envconfig:"DSN" required:"true"`
 
 	DBMaxConns        int32         `envconfig:"db_max_conns" default:"25"`
