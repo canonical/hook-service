@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.5](https://github.com/canonical/hook-service/compare/v1.0.4...v1.0.5) (2026-01-17)
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([87ea177](https://github.com/canonical/hook-service/commit/87ea17795559326248e34230e3b798b68e74657e))
+* **deps:** update go deps (minor) ([#137](https://github.com/canonical/hook-service/issues/137)) ([8258530](https://github.com/canonical/hook-service/commit/825853096386bc5b4bd93c606dd8088d62cae286))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 3f89685 ([811bc9a](https://github.com/canonical/hook-service/commit/811bc9ac63d3e76ef680b5950287cef2009429ef))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 3f89685 ([#141](https://github.com/canonical/hook-service/issues/141)) ([14b7d6e](https://github.com/canonical/hook-service/commit/14b7d6ed0bb59357e47155053e7297a4d56c034a))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 99fd39f ([925c102](https://github.com/canonical/hook-service/commit/925c102b9e3e631b7bca47adf5e8e12225fa254b))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 99fd39f ([#139](https://github.com/canonical/hook-service/issues/139)) ([5bd9754](https://github.com/canonical/hook-service/commit/5bd9754795ff90e43ef00b35e5fe2c7a612cf3cb))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.2.4 ([c26ac48](https://github.com/canonical/hook-service/commit/c26ac480e75c8573db730a8891b8538b0d51905c))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.2.4 ([#142](https://github.com/canonical/hook-service/issues/142)) ([699ed92](https://github.com/canonical/hook-service/commit/699ed923213ead63494757a5b2dcc6318f7b28f9))
+
 ## [1.0.4](https://github.com/canonical/hook-service/compare/v1.0.3...v1.0.4) (2025-12-27)
 
 
