@@ -19,7 +19,6 @@ import (
 	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
-	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
@@ -33,7 +32,6 @@ func NewRouter(
 	token string,
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
-	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
@@ -69,12 +67,8 @@ func NewRouter(
 	authzService := authz_api.NewService(s, authz, tracer, monitor, logger)
 	groupService := groups_api.NewService(s, authz, tracer, monitor, logger)
 
-	groupClients := []hooks.ClientInterface{}
-	if salesforceClient != nil {
-		groupClients = append(groupClients, hooks.NewSalesforceClient(salesforceClient, tracer, monitor, logger))
-	}
-	if s != nil {
-		groupClients = append(groupClients, hooks.NewLocalStorageClient(s, tracer, monitor, logger))
+	groupClients := []hooks.ClientInterface{
+		hooks.NewLocalStorageClient(s, tracer, monitor, logger),
 	}
 
 	gRPCGatewayMux := runtime.NewServeMux(
@@ -92,6 +86,7 @@ func NewRouter(
 
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
 	v0_groups.RegisterAuthzGroupsServiceHandlerServer(context.Background(), gRPCGatewayMux, groups_api.NewGrpcServer(groupService, tracer, monitor, logger))
+	
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		authMiddleware,

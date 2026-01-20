@@ -27,11 +27,6 @@ type EnvSpec struct {
 	OpenfgaStoreId   string `envconfig:"openfga_store_id"`
 	OpenfgaModelId   string `envconfig:"openfga_authorization_model_id" default:""`
 
-	SalesforceEnabled        bool   `envconfig:"salesforce_enabled" default:"true"`
-	SalesforceDomain         string `envconfig:"salesforce_domain"`
-	SalesforceConsumerKey    string `envconfig:"salesforce_consumer_key"`
-	SalesforceConsumerSecret string `envconfig:"salesforce_consumer_secret"`
-
 	AuthorizationEnabled bool `envconfig:"authorization_enabled" default:"false"`
 	OpenFGAWorkersTotal  int  `envconfig:"openfga_workers_total" default:"150"`
 

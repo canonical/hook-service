@@ -42,3 +42,7 @@ type DatabaseInterface interface {
 type AuthorizerInterface interface {
 	DeleteGroup(context.Context, string) error
 }
+
+type SalesforceClientInterface interface {
+	Query(string, any) error
+}
