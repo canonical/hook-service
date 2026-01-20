@@ -46,9 +46,3 @@ type AuthorizerInterface interface {
 type SalesforceClientInterface interface {
 	Query(string, any) error
 }
-
-type SalesforceTeamMember struct {
-	Email      string `mapstructure:"fHCM2__Email__c"`
-	Department string `mapstructure:"Department2__c"`
-	Team       string `mapstructure:"fHCM2__Team__c"`
-}
