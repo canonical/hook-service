@@ -19,7 +19,6 @@ import (
 	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
-	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
@@ -33,7 +32,6 @@ func NewRouter(
 	token string,
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
-	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
@@ -88,12 +86,6 @@ func NewRouter(
 
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
 	v0_groups.RegisterAuthzGroupsServiceHandlerServer(context.Background(), gRPCGatewayMux, groups_api.NewGrpcServer(groupService, tracer, monitor, logger))
-	
-	// Register Salesforce import endpoint if client is provided
-	if salesforceClient != nil {
-		importHandler := groups_api.NewImportHandler(groupService, salesforceClient, tracer, monitor, logger)
-		router.Post("/api/v0/authz/groups/import/salesforce", importHandler.HandleSalesforceImport)
-	}
 	
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),

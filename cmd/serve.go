@@ -22,7 +22,6 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
-	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/web"
@@ -104,17 +103,7 @@ func serve() error {
 		logger.Info("Using noop authorizer")
 	}
 
-	var sf salesforce.SalesforceInterface
-	if specs.SalesforceImportEnabled {
-		sf = salesforce.NewClient(
-			specs.SalesforceDomain,
-			specs.SalesforceConsumerKey,
-			specs.SalesforceConsumerSecret,
-		)
-		logger.Info("Salesforce import endpoint enabled")
-	}
-
-	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, tracer, monitor, logger)
+	router := web.NewRouter(specs.ApiToken, s, dbClient, authorizer, tracer, monitor, logger)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{
