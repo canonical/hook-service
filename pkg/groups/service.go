@@ -157,15 +157,19 @@ func (s *Service) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	return nil
 }
 
+const (
+	salesforceImportQuery       = "SELECT fHCM2__Email__c, Department2__c, fHCM2__Team__c FROM fHCM2__Team_Member__c WHERE fHCM2__Email__c != null"
+	salesforceImportDescription = "Imported from Salesforce"
+)
+
 func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient SalesforceClientInterface) (int, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.ImportUserGroupsFromSalesforce")
 	defer span.End()
 
 	// Query all team members from Salesforce
-	query := "SELECT fHCM2__Email__c, Department2__c, fHCM2__Team__c FROM fHCM2__Team_Member__c WHERE fHCM2__Email__c != null"
 	var members []SalesforceTeamMember
 	
-	if err := sfClient.Query(query, &members); err != nil {
+	if err := sfClient.Query(salesforceImportQuery, &members); err != nil {
 		return 0, fmt.Errorf("failed to query salesforce: %v", err)
 	}
 
@@ -184,7 +188,7 @@ func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient S
 				groupsMap[member.Department] = &types.Group{
 					Name:        member.Department,
 					TenantId:    DefaultTenantID,
-					Description: "Imported from Salesforce",
+					Description: salesforceImportDescription,
 					Type:        types.GroupTypeExternal,
 				}
 			}
@@ -197,7 +201,7 @@ func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient S
 				groupsMap[member.Team] = &types.Group{
 					Name:        member.Team,
 					TenantId:    DefaultTenantID,
-					Description: "Imported from Salesforce",
+					Description: salesforceImportDescription,
 					Type:        types.GroupTypeExternal,
 				}
 			}
