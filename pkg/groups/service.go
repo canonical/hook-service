@@ -157,6 +157,99 @@ func (s *Service) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	return nil
 }
 
+func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient SalesforceClientInterface) (int, error) {
+	ctx, span := s.tracer.Start(ctx, "groups.Service.ImportUserGroupsFromSalesforce")
+	defer span.End()
+
+	// Query all team members from Salesforce
+	query := "SELECT fHCM2__Email__c, Department2__c, fHCM2__Team__c FROM fHCM2__Team_Member__c WHERE fHCM2__Email__c != null"
+	var members []SalesforceTeamMember
+	
+	if err := sfClient.Query(query, &members); err != nil {
+		return 0, fmt.Errorf("failed to query salesforce: %v", err)
+	}
+
+	// Track groups and user memberships
+	groupsMap := make(map[string]*types.Group)
+	userGroupsMap := make(map[string][]string) // user_id -> group_ids
+	
+	for _, member := range members {
+		if member.Email == "" {
+			continue
+		}
+		
+		// Add department group if present
+		if member.Department != "" {
+			if _, exists := groupsMap[member.Department]; !exists {
+				groupsMap[member.Department] = &types.Group{
+					Name:        member.Department,
+					TenantId:    "default",
+					Description: "Imported from Salesforce",
+					Type:        types.GroupTypeExternal,
+				}
+			}
+			userGroupsMap[member.Email] = append(userGroupsMap[member.Email], member.Department)
+		}
+		
+		// Add team group if present
+		if member.Team != "" {
+			if _, exists := groupsMap[member.Team]; !exists {
+				groupsMap[member.Team] = &types.Group{
+					Name:        member.Team,
+					TenantId:    "default",
+					Description: "Imported from Salesforce",
+					Type:        types.GroupTypeExternal,
+				}
+			}
+			userGroupsMap[member.Email] = append(userGroupsMap[member.Email], member.Team)
+		}
+	}
+
+	// Create all groups (ignore duplicates)
+	createdGroupsMap := make(map[string]string) // group_name -> group_id
+	for _, group := range groupsMap {
+		createdGroup, err := s.db.CreateGroup(ctx, group)
+		if err != nil {
+			if errors.Is(err, storage.ErrDuplicateKey) {
+				// Group already exists, fetch it to get the ID
+				existingGroup, fetchErr := s.db.ListGroups(ctx)
+				if fetchErr == nil {
+					for _, g := range existingGroup {
+						if g.Name == group.Name {
+							createdGroupsMap[group.Name] = g.ID
+							break
+						}
+					}
+				}
+				continue
+			}
+			return 0, fmt.Errorf("failed to create group %s: %v", group.Name, err)
+		}
+		createdGroupsMap[group.Name] = createdGroup.ID
+	}
+
+	// Add users to groups
+	processedUsers := 0
+	for userID, groupNames := range userGroupsMap {
+		groupIDs := make([]string, 0, len(groupNames))
+		for _, groupName := range groupNames {
+			if groupID, exists := createdGroupsMap[groupName]; exists {
+				groupIDs = append(groupIDs, groupID)
+			}
+		}
+		
+		if len(groupIDs) > 0 {
+			if err := s.db.UpdateGroupsForUser(ctx, userID, groupIDs); err != nil {
+				s.logger.Warnf("Failed to update groups for user %s: %v", userID, err)
+				continue
+			}
+			processedUsers++
+		}
+	}
+
+	return processedUsers, nil
+}
+
 func NewService(
 	db DatabaseInterface,
 	authz AuthorizerInterface,

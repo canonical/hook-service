@@ -22,6 +22,8 @@ type ServiceInterface interface {
 
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
+
+	ImportUserGroupsFromSalesforce(context.Context, SalesforceClientInterface) (int, error)
 }
 
 type DatabaseInterface interface {
@@ -41,4 +43,14 @@ type DatabaseInterface interface {
 
 type AuthorizerInterface interface {
 	DeleteGroup(context.Context, string) error
+}
+
+type SalesforceClientInterface interface {
+	Query(string, any) error
+}
+
+type SalesforceTeamMember struct {
+	Email      string `mapstructure:"fHCM2__Email__c"`
+	Department string `mapstructure:"Department2__c"`
+	Team       string `mapstructure:"fHCM2__Team__c"`
 }

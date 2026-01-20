@@ -69,12 +69,8 @@ func NewRouter(
 	authzService := authz_api.NewService(s, authz, tracer, monitor, logger)
 	groupService := groups_api.NewService(s, authz, tracer, monitor, logger)
 
-	groupClients := []hooks.ClientInterface{}
-	if salesforceClient != nil {
-		groupClients = append(groupClients, hooks.NewSalesforceClient(salesforceClient, tracer, monitor, logger))
-	}
-	if s != nil {
-		groupClients = append(groupClients, hooks.NewLocalStorageClient(s, tracer, monitor, logger))
+	groupClients := []hooks.ClientInterface{
+		hooks.NewLocalStorageClient(s, tracer, monitor, logger),
 	}
 
 	gRPCGatewayMux := runtime.NewServeMux(
@@ -92,6 +88,13 @@ func NewRouter(
 
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
 	v0_groups.RegisterAuthzGroupsServiceHandlerServer(context.Background(), gRPCGatewayMux, groups_api.NewGrpcServer(groupService, tracer, monitor, logger))
+	
+	// Register Salesforce import endpoint if client is provided
+	if salesforceClient != nil {
+		importHandler := groups_api.NewImportHandler(groupService, salesforceClient, tracer, monitor, logger)
+		router.Post("/api/v0/authz/groups/import/salesforce", importHandler.HandleSalesforceImport)
+	}
+	
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		authMiddleware,

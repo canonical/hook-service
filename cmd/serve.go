@@ -105,12 +105,13 @@ func serve() error {
 	}
 
 	var sf salesforce.SalesforceInterface
-	if specs.SalesforceEnabled {
+	if specs.SalesforceImportEnabled {
 		sf = salesforce.NewClient(
 			specs.SalesforceDomain,
 			specs.SalesforceConsumerKey,
 			specs.SalesforceConsumerSecret,
 		)
+		logger.Info("Salesforce import endpoint enabled")
 	}
 
 	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, tracer, monitor, logger)

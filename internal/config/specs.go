@@ -27,7 +27,7 @@ type EnvSpec struct {
 	OpenfgaStoreId   string `envconfig:"openfga_store_id"`
 	OpenfgaModelId   string `envconfig:"openfga_authorization_model_id" default:""`
 
-	SalesforceEnabled        bool   `envconfig:"salesforce_enabled" default:"true"`
+	SalesforceImportEnabled  bool   `envconfig:"salesforce_import_enabled" default:"false"`
 	SalesforceDomain         string `envconfig:"salesforce_domain"`
 	SalesforceConsumerKey    string `envconfig:"salesforce_consumer_key"`
 	SalesforceConsumerSecret string `envconfig:"salesforce_consumer_secret"`
