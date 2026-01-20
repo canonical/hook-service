@@ -91,31 +91,13 @@ func importFromSalesforce(ctx context.Context, sfDomain, sfConsumerKey, sfConsum
 
 	s := storage.NewStorage(dbClient, tracer, monitor, logger)
 
-	// Initialize authorization (using noop if not enabled)
-	var authorizer *authorization.Authorizer
-	if specs.AuthorizationEnabled {
-		ofga := openfga.NewClient(
-			openfga.NewConfig(
-				specs.OpenfgaApiScheme,
-				specs.OpenfgaApiHost,
-				specs.OpenfgaStoreId,
-				specs.OpenfgaApiToken,
-				specs.OpenfgaModelId,
-				specs.Debug,
-				tracer,
-				monitor,
-				logger,
-			),
-		)
-		authorizer = authorization.NewAuthorizer(ofga, tracer, monitor, logger)
-	} else {
-		authorizer = authorization.NewAuthorizer(
-			openfga.NewNoopClient(tracer, monitor, logger),
-			tracer,
-			monitor,
-			logger,
-		)
-	}
+	// Initialize authorization with NoOp client (no authorization checks needed for import)
+	authorizer := authorization.NewAuthorizer(
+		openfga.NewNoopClient(tracer, monitor, logger),
+		tracer,
+		monitor,
+		logger,
+	)
 
 	// Initialize Salesforce client
 	sfClient := salesforce.NewClient(sfDomain, sfConsumerKey, sfConsumerSecret)
