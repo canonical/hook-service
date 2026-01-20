@@ -116,11 +116,11 @@ func serve() error {
 	}
 
 	var jwtVerifier authentication.TokenVerifierInterface
-	if specs.AuthEnabled {
+	if specs.AuthenticationEnabled {
 		// Parse allowed subjects from comma-separated string
 		var allowedSubjects []string
-		if specs.AuthAllowedSubjects != "" {
-			subjects := strings.Split(specs.AuthAllowedSubjects, ",")
+		if specs.AuthenticationAllowedSubjects != "" {
+			subjects := strings.Split(specs.AuthenticationAllowedSubjects, ",")
 			for _, s := range subjects {
 				trimmed := strings.TrimSpace(s)
 				if trimmed != "" {
@@ -132,10 +132,10 @@ func serve() error {
 		var err error
 		jwtVerifier, err = authentication.NewJWTAuthenticator(
 			context.Background(),
-			specs.AuthIssuer,
-			specs.AuthJwksURL,
+			specs.AuthenticationIssuer,
+			specs.AuthenticationJwksURL,
 			allowedSubjects,
-			specs.AuthRequiredScope,
+			specs.AuthenticationRequiredScope,
 			tracer,
 			monitor,
 			logger,

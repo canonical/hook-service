@@ -160,9 +160,9 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		"LOG_LEVEL":                      "debug",
 		"TRACING_ENABLED":                "false",
 		"API_TOKEN":                      "secret_api_key",
-		"AUTH_ENABLED":                   "true",
-		"AUTH_ISSUER":                    "http://localhost:4444",
-		"AUTH_ALLOWED_SUBJECTS":          clientID,
+		"AUTHENTICATION_ENABLED":         "true",
+		"AUTHENTICATION_ISSUER":          "http://localhost:4444",
+		"AUTHENTICATION_ALLOWED_SUBJECTS": clientID,
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)

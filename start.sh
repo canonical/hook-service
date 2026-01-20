@@ -80,10 +80,10 @@ export AUTHORIZATION_ENABLED="true"
 export DSN="postgres://groups:groups@127.0.0.1:5432/groups"
 
 # JWT Authentication configuration (enabled by default with Hydra)
-export AUTH_ENABLED="true"
-export AUTH_ISSUER="http://localhost:4444"
-export AUTH_ALLOWED_SUBJECTS="$AUTH_CLIENT_ID"
-export AUTH_REQUIRED_SCOPE="hook-service:admin"
+export AUTHENTICATION_ENABLED="true"
+export AUTHENTICATION_ISSUER="http://localhost:4444"
+export AUTHENTICATION_ALLOWED_SUBJECTS="$AUTH_CLIENT_ID"
+export AUTHENTICATION_REQUIRED_SCOPE="hook-service:admin"
 
 echo "Running database migrations..."
 ./app migrate --dsn $DSN up
