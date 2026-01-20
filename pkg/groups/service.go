@@ -183,7 +183,7 @@ func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient S
 			if _, exists := groupsMap[member.Department]; !exists {
 				groupsMap[member.Department] = &types.Group{
 					Name:        member.Department,
-					TenantId:    "default",
+					TenantId:    DefaultTenantID,
 					Description: "Imported from Salesforce",
 					Type:        types.GroupTypeExternal,
 				}
@@ -196,7 +196,7 @@ func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient S
 			if _, exists := groupsMap[member.Team]; !exists {
 				groupsMap[member.Team] = &types.Group{
 					Name:        member.Team,
-					TenantId:    "default",
+					TenantId:    DefaultTenantID,
 					Description: "Imported from Salesforce",
 					Type:        types.GroupTypeExternal,
 				}
@@ -207,25 +207,31 @@ func (s *Service) ImportUserGroupsFromSalesforce(ctx context.Context, sfClient S
 
 	// Create all groups (ignore duplicates)
 	createdGroupsMap := make(map[string]string) // group_name -> group_id
-	for _, group := range groupsMap {
+	for groupName, group := range groupsMap {
 		createdGroup, err := s.db.CreateGroup(ctx, group)
 		if err != nil {
 			if errors.Is(err, storage.ErrDuplicateKey) {
-				// Group already exists, fetch it to get the ID
-				existingGroup, fetchErr := s.db.ListGroups(ctx)
-				if fetchErr == nil {
-					for _, g := range existingGroup {
-						if g.Name == group.Name {
-							createdGroupsMap[group.Name] = g.ID
-							break
-						}
-					}
-				}
+				// Group already exists - we'll handle this by fetching existing group memberships
+				// and merging with new data during UpdateGroupsForUser
+				s.logger.Infof("Group %s already exists, will merge memberships", groupName)
 				continue
 			}
-			return 0, fmt.Errorf("failed to create group %s: %v", group.Name, err)
+			return 0, fmt.Errorf("failed to create group %s: %v", groupName, err)
 		}
-		createdGroupsMap[group.Name] = createdGroup.ID
+		createdGroupsMap[groupName] = createdGroup.ID
+	}
+
+	// For existing groups, we need to fetch them to get their IDs
+	if len(createdGroupsMap) < len(groupsMap) {
+		allGroups, err := s.db.ListGroups(ctx)
+		if err != nil {
+			return 0, fmt.Errorf("failed to fetch existing groups: %v", err)
+		}
+		for _, g := range allGroups {
+			if _, exists := groupsMap[g.Name]; exists {
+				createdGroupsMap[g.Name] = g.ID
+			}
+		}
 	}
 
 	// Add users to groups

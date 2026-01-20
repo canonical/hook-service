@@ -870,9 +870,12 @@ return nil
 
 // First group already exists
 mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).Return(nil, storage.ErrDuplicateKey)
-mockStorage.EXPECT().ListGroups(gomock.Any()).Return([]*types.Group{
-{ID: "eng-id", Name: "Engineering"},
-}, nil)
+				mockLogger.EXPECT().Infof("Group %s already exists, will merge memberships", "Engineering")
+				// Fetch existing groups to get IDs
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return([]*types.Group{
+					{ID: "eng-id", Name: "Engineering"},
+					{ID: "backend-id", Name: "Backend"},
+				}, nil)
 
 // Second group created successfully
 mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
