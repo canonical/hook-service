@@ -13,12 +13,12 @@ import (
 
 	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
+	"github.com/canonical/hook-service/internal/importer"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
-	"github.com/canonical/hook-service/pkg/groups"
 )
 
 // importCmd imports users and groups from Salesforce
@@ -93,11 +93,11 @@ func importFromSalesforce(ctx context.Context, sfDomain, sfConsumerKey, sfConsum
 	sfClient := salesforce.NewClient(sfDomain, sfConsumerKey, sfConsumerSecret)
 
 	// Initialize Salesforce importer with storage layer
-	importer := groups.NewSalesforceImporter(s, tracer, monitor, logger)
+	imp := importer.NewSalesforceImporter(s, tracer, monitor, logger)
 
 	// Perform import
 	logger.Info("Starting Salesforce import...")
-	processedUsers, err := importer.ImportUserGroups(ctx, sfClient)
+	processedUsers, err := imp.ImportUserGroups(ctx, sfClient)
 	if err != nil {
 		return fmt.Errorf("import failed: %v", err)
 	}
