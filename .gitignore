@@ -61,6 +61,7 @@ test_source.json
 
 # gomocks auto-generated
 **/mock_*.go
+**/gomock_reflect_*/
 
 # go binary name
 app
