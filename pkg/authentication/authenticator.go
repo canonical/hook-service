@@ -17,6 +17,8 @@ func NewJWTAuthenticator(
 	ctx context.Context,
 	issuer string,
 	jwksURL string,
+	allowedSubjects []string,
+	requiredScope string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -33,7 +35,7 @@ func NewJWTAuthenticator(
 		if err != nil {
 			return nil, fmt.Errorf("failed to create JWKS verifier: %v", err)
 		}
-		verifier = NewJWTVerifierDirect(idTokenVerifier, tracer, monitor, logger)
+		verifier = NewJWTVerifierDirect(idTokenVerifier, allowedSubjects, requiredScope, tracer, monitor, logger)
 		logger.Info("JWT authentication is enabled with manual JWKS URL")
 	} else {
 		logger.Infof("Using OIDC discovery for issuer: %s", issuer)
@@ -41,7 +43,7 @@ func NewJWTAuthenticator(
 		if err != nil {
 			return nil, fmt.Errorf("failed to create OIDC provider: %v", err)
 		}
-		verifier = NewJWTVerifier(provider, issuer, tracer, monitor, logger)
+		verifier = NewJWTVerifier(provider, issuer, allowedSubjects, requiredScope, tracer, monitor, logger)
 		logger.Info("JWT authentication is enabled with OIDC discovery")
 	}
 

@@ -15,6 +15,6 @@ func NewNoopVerifier() *NoopVerifier {
 }
 
 // VerifyToken always returns true, nil (allowing all requests).
-func (n *NoopVerifier) VerifyToken(ctx context.Context, rawIDToken string, allowedSubjects []string, requiredScope string) (bool, error) {
+func (n *NoopVerifier) VerifyToken(ctx context.Context, rawIDToken string) (bool, error) {
 	return true, nil
 }

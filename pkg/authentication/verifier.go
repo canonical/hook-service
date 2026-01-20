@@ -15,14 +15,16 @@ import (
 )
 
 type JWTVerifier struct {
-	verifier *oidc.IDTokenVerifier
+	verifier        *oidc.IDTokenVerifier
+	allowedSubjects []string
+	requiredScope   string
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
 	logger  logging.LoggerInterface
 }
 
-func (v *JWTVerifier) VerifyToken(ctx context.Context, rawToken string, allowedSubjects []string, requiredScope string) (bool, error) {
+func (v *JWTVerifier) VerifyToken(ctx context.Context, rawToken string) (bool, error) {
 	ctx, span := v.tracer.Start(ctx, "authentication.JWTVerifier.VerifyToken")
 	defer span.End()
 
@@ -42,32 +44,32 @@ func (v *JWTVerifier) VerifyToken(ctx context.Context, rawToken string, allowedS
 		return false, err
 	}
 
-	if len(allowedSubjects) > 0 {
-		for _, allowedSub := range allowedSubjects {
+	if len(v.allowedSubjects) > 0 {
+		for _, allowedSub := range v.allowedSubjects {
 			if claims.Subject == allowedSub {
 				return true, nil
 			}
 		}
 	}
 
-	if requiredScope != "" {
+	if v.requiredScope != "" {
 		if claims.Scope != "" {
 			scopes := strings.Fields(claims.Scope)
 			for _, scope := range scopes {
-				if scope == requiredScope {
+				if scope == v.requiredScope {
 					return true, nil
 				}
 			}
 		}
 
 		for _, scope := range claims.Scopes {
-			if scope == requiredScope {
+			if scope == v.requiredScope {
 				return true, nil
 			}
 		}
 	}
 
-	if len(allowedSubjects) == 0 && requiredScope == "" {
+	if len(v.allowedSubjects) == 0 && v.requiredScope == "" {
 		v.logger.Debugf("No authorization criteria configured")
 		v.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
 		return false, nil
@@ -77,14 +79,15 @@ func (v *JWTVerifier) VerifyToken(ctx context.Context, rawToken string, allowedS
 	return false, nil
 }
 
-func NewJWTVerifier(provider ProviderInterface, issuer string, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *JWTVerifier {
+func NewJWTVerifier(provider ProviderInterface, issuer string, allowedSubjects []string, requiredScope string, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *JWTVerifier {
 	v := &JWTVerifier{
-		tracer:  tracer,
-		monitor: monitor,
-		logger:  logger,
+		allowedSubjects: allowedSubjects,
+		requiredScope:   requiredScope,
+		tracer:          tracer,
+		monitor:         monitor,
+		logger:          logger,
 	}
 
-	// Create verifier config - skip audience validation as per requirements
 	config := &oidc.Config{
 		SkipClientIDCheck: true,
 		SkipIssuerCheck:   false,
@@ -95,13 +98,13 @@ func NewJWTVerifier(provider ProviderInterface, issuer string, tracer tracing.Tr
 	return v
 }
 
-// NewJWTVerifierDirect creates a JWT verifier with a pre-configured IDTokenVerifier
-// This is used when JWKS URL is provided manually instead of OIDC discovery
-func NewJWTVerifierDirect(verifier *oidc.IDTokenVerifier, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *JWTVerifier {
+func NewJWTVerifierDirect(verifier *oidc.IDTokenVerifier, allowedSubjects []string, requiredScope string, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *JWTVerifier {
 	return &JWTVerifier{
-		verifier: verifier,
-		tracer:   tracer,
-		monitor:  monitor,
-		logger:   logger,
+		verifier:        verifier,
+		allowedSubjects: allowedSubjects,
+		requiredScope:   requiredScope,
+		tracer:          tracer,
+		monitor:         monitor,
+		logger:          logger,
 	}
 }

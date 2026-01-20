@@ -17,5 +17,5 @@ type ProviderInterface interface {
 type TokenVerifierInterface interface {
 	// VerifyToken verifies a raw JWT string and validates authorization claims
 	// Returns true if the token is valid and authorized, false otherwise
-	VerifyToken(ctx context.Context, rawToken string, allowedSubjects []string, requiredScope string) (bool, error)
+	VerifyToken(ctx context.Context, rawToken string) (bool, error)
 }

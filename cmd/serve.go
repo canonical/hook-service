@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -116,11 +117,25 @@ func serve() error {
 
 	var jwtVerifier authentication.TokenVerifierInterface
 	if specs.AuthEnabled {
+		// Parse allowed subjects from comma-separated string
+		var allowedSubjects []string
+		if specs.AuthAllowedSubjects != "" {
+			subjects := strings.Split(specs.AuthAllowedSubjects, ",")
+			for _, s := range subjects {
+				trimmed := strings.TrimSpace(s)
+				if trimmed != "" {
+					allowedSubjects = append(allowedSubjects, trimmed)
+				}
+			}
+		}
+
 		var err error
 		jwtVerifier, err = authentication.NewJWTAuthenticator(
 			context.Background(),
 			specs.AuthIssuer,
 			specs.AuthJwksURL,
+			allowedSubjects,
+			specs.AuthRequiredScope,
 			tracer,
 			monitor,
 			logger,
@@ -140,9 +155,6 @@ func serve() error {
 		sf,
 		authorizer,
 		jwtVerifier,
-		specs.AuthIssuer,
-		specs.AuthAllowedSubjects,
-		specs.AuthRequiredScope,
 		tracer,
 		monitor,
 		logger,

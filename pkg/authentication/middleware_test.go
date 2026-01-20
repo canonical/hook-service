@@ -51,7 +51,7 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			authHeader: "Bearer invalid-token",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token", gomock.Any(), gomock.Any()).Return(false, fmt.Errorf("invalid token"))
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token").Return(false, fmt.Errorf("invalid token"))
 				return ctrl, mockVerifier, nil, fmt.Errorf("invalid token")
 			},
 			expectedStatusCode: http.StatusUnauthorized,
@@ -61,7 +61,7 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			authHeader: "Bearer valid-token",
 			setupMocks: func(ctrl *gomock.Controller) (*gomock.Controller, TokenVerifierInterface, *oidc.IDToken, error) {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token", gomock.Any(), gomock.Any()).Return(false, nil)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(false, nil)
 				return ctrl, mockVerifier, nil, nil
 			},
 			expectedStatusCode: http.StatusUnauthorized,
@@ -92,10 +92,7 @@ func TestMiddleware_Authenticate(t *testing.T) {
 				mockSecurityLogger.EXPECT().AuthzFailure(gomock.Any(), gomock.Any()).AnyTimes()
 			}
 
-			config := &Config{
-				AllowedSubjects: []string{"test-subject"},
-			}
-			middleware := NewMiddleware(config, mockVerifier, mockTracer, mockMonitor, mockLogger)
+			middleware := NewMiddleware(mockVerifier, mockTracer, mockMonitor, mockLogger)
 
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.WriteHeader(http.StatusOK)

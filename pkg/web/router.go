@@ -37,9 +37,6 @@ func NewRouter(
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
 	jwtVerifier authentication.TokenVerifierInterface,
-	authIssuer string,
-	authAllowedSubjects string,
-	authRequiredScope string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -108,12 +105,7 @@ func NewRouter(
 
 	authzRouter := chi.NewRouter()
 	if _, isNoop := jwtVerifier.(*authentication.NoopVerifier); !isNoop {
-		authConfig := authentication.NewConfig(
-			authIssuer,
-			authAllowedSubjects,
-			authRequiredScope,
-		)
-		jwtAuthMiddleware := authentication.NewMiddleware(authConfig, jwtVerifier, tracer, monitor, logger)
+		jwtAuthMiddleware := authentication.NewMiddleware(jwtVerifier, tracer, monitor, logger)
 		authzRouter.Use(jwtAuthMiddleware.Authenticate())
 	}
 	authzRouter.Mount("/", gRPCGatewayMux)

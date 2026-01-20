@@ -14,7 +14,6 @@ import (
 )
 
 type Middleware struct {
-	config   *Config
 	verifier TokenVerifierInterface
 
 	tracer  tracing.TracingInterface
@@ -34,7 +33,7 @@ func (m *Middleware) Authenticate() func(http.Handler) http.Handler {
 				return
 			}
 
-			authorized, err := m.verifier.VerifyToken(ctx, token, m.config.AllowedSubjects, m.config.RequiredScope)
+			authorized, err := m.verifier.VerifyToken(ctx, token)
 			if err != nil {
 				m.logger.Debugf("JWT verification failed: %v", err)
 				m.unauthorizedResponse(w, "invalid token")
@@ -76,9 +75,8 @@ func (m *Middleware) unauthorizedResponse(w http.ResponseWriter, message string)
 	}
 }
 
-func NewMiddleware(config *Config, verifier TokenVerifierInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Middleware {
+func NewMiddleware(verifier TokenVerifierInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Middleware {
 	return &Middleware{
-		config:   config,
 		verifier: verifier,
 		tracer:   tracer,
 		monitor:  monitor,
