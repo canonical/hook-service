@@ -22,8 +22,6 @@ type ServiceInterface interface {
 
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
-
-	ImportUserGroupsFromSalesforce(context.Context, SalesforceClientInterface) (int, error)
 }
 
 type DatabaseInterface interface {

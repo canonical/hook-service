@@ -11,12 +11,10 @@ import (
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/cobra"
 
-	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
-	"github.com/canonical/hook-service/internal/openfga"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
@@ -91,23 +89,15 @@ func importFromSalesforce(ctx context.Context, sfDomain, sfConsumerKey, sfConsum
 
 	s := storage.NewStorage(dbClient, tracer, monitor, logger)
 
-	// Initialize authorization with NoOp client (no authorization checks needed for import)
-	authorizer := authorization.NewAuthorizer(
-		openfga.NewNoopClient(tracer, monitor, logger),
-		tracer,
-		monitor,
-		logger,
-	)
-
 	// Initialize Salesforce client
 	sfClient := salesforce.NewClient(sfDomain, sfConsumerKey, sfConsumerSecret)
 
-	// Initialize groups service
-	groupService := groups.NewService(s, authorizer, tracer, monitor, logger)
+	// Initialize Salesforce importer with storage layer
+	importer := groups.NewSalesforceImporter(s, tracer, monitor, logger)
 
 	// Perform import
 	logger.Info("Starting Salesforce import...")
-	processedUsers, err := groupService.ImportUserGroupsFromSalesforce(ctx, sfClient)
+	processedUsers, err := importer.ImportUserGroups(ctx, sfClient)
 	if err != nil {
 		return fmt.Errorf("import failed: %v", err)
 	}
