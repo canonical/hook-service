@@ -14,6 +14,7 @@ import (
 	openfga "github.com/openfga/go-sdk"
 	"github.com/openfga/go-sdk/client"
 	"github.com/openfga/go-sdk/credentials"
+	"github.com/openfga/go-sdk/telemetry"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -441,6 +442,7 @@ func NewClient(cfg *Config) *Client {
 			},
 			AuthorizationModelId: cfg.AuthModelID,
 			Debug:                cfg.Debug,
+			Telemetry:            telemetry.DefaultTelemetryConfiguration(),
 		},
 	)
 	if err != nil {
