@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	hydra "github.com/ory/hydra-client-go/v2"
 	tc "github.com/testcontainers/testcontainers-go/modules/compose"
 )
 
@@ -20,7 +24,9 @@ const (
 )
 
 var (
-	testEnv *TestEnvironment
+	testEnv      *TestEnvironment
+	clientId     string
+	clientSecret string
 )
 
 type TestEnvironment struct {
@@ -119,20 +125,29 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 		return nil, fmt.Errorf("failed to setup openfga: %w", err)
 	}
 
-	// Start Hook Service
+	clientId, clientSecret, err = setupHydraClient(ctx, "E2E Test Client")
+	if err != nil {
+		cleanup()
+		return nil, fmt.Errorf("failed to setup hydra client: %w", err)
+	}
+
+	// Now start the service with authentication enabled
 	envVars := map[string]string{
-		"DSN":                            dsn,
-		"OPENFGA_API_SCHEME":             "http",
-		"OPENFGA_API_HOST":               "localhost:8080",
-		"OPENFGA_STORE_ID":               storeID,
-		"OPENFGA_AUTHORIZATION_MODEL_ID": modelID,
-		"OPENFGA_API_TOKEN":              fgaAPIToken,
-		"AUTHORIZATION_ENABLED":          "true",
-		"SALESFORCE_ENABLED":             "false", // Disable SF for now as we don't have a mock/container for it in compose
-		"PORT":                           "8001",  // Use a different port than default 8000 to avoid conflict if running locally? Or just 8000.
-		"LOG_LEVEL":                      "debug",
-		"TRACING_ENABLED":                "false",
-		"API_TOKEN":                      "test-token",
+		"DSN":                             dsn,
+		"OPENFGA_API_SCHEME":              "http",
+		"OPENFGA_API_HOST":                "localhost:8080",
+		"OPENFGA_STORE_ID":                storeID,
+		"OPENFGA_AUTHORIZATION_MODEL_ID":  modelID,
+		"OPENFGA_API_TOKEN":               fgaAPIToken,
+		"AUTHORIZATION_ENABLED":           "true",
+		"SALESFORCE_ENABLED":              "false",
+		"PORT":                            "8000",
+		"LOG_LEVEL":                       "debug",
+		"TRACING_ENABLED":                 "false",
+		"API_TOKEN":                       "secret_api_key",
+		"AUTHENTICATION_ENABLED":          "true",
+		"AUTHENTICATION_ISSUER":           "http://localhost:4444",
+		"AUTHENTICATION_ALLOWED_SUBJECTS": clientId,
 	}
 
 	cmd, err := startServer(ctx, binPath, envVars)
@@ -142,13 +157,13 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 	}
 
 	// Wait for Server
-	baseURL := "http://localhost:8001/api/v0/authz"
-	if err := waitForHTTP(ctx, "http://localhost:8001/api/v0/status"); err != nil {
+	baseURL := "http://localhost:8000/api/v0/authz"
+	if err := waitForHTTP(ctx, "http://localhost:8000/api/v0/status"); err != nil {
 		if cmd.Process != nil {
 			cmd.Process.Kill()
 		}
 		cleanup()
-		return nil, fmt.Errorf("server not ready: %w", err)
+		return nil, fmt.Errorf("server not ready after restart: %w", err)
 	}
 
 	return &TestEnvironment{
@@ -256,6 +271,76 @@ func setupOpenFGA(ctx context.Context, binPath, apiURL string) (string, string, 
 	}
 
 	return result.StoreID, result.ModelID, nil
+}
+
+func setupHydraClient(ctx context.Context, clientName string) (string, string, error) {
+	// Wait for Hydra to be ready
+	hydraAdminURL := "http://localhost:4445"
+	if err := waitForHTTP(ctx, hydraAdminURL+"/health/ready"); err != nil {
+		return "", "", fmt.Errorf("hydra not ready: %w", err)
+	}
+
+	// Create Hydra admin client using SDK
+	configuration := hydra.NewConfiguration()
+	configuration.Servers = []hydra.ServerConfiguration{
+		{
+			URL: hydraAdminURL,
+		},
+	}
+	apiClient := hydra.NewAPIClient(configuration)
+
+	// Create OAuth2 client for client credentials flow
+	grantTypes := []string{"client_credentials"}
+
+	client := hydra.NewOAuth2Client()
+	client.SetClientName(clientName)
+	client.SetGrantTypes(grantTypes)
+
+	createdClient, _, err := apiClient.OAuth2API.CreateOAuth2Client(ctx).OAuth2Client(*client).Execute()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create hydra client via SDK: %w", err)
+	}
+
+	if createdClient.ClientId == nil || createdClient.ClientSecret == nil {
+		return "", "", fmt.Errorf("hydra client creation succeeded but missing credentials")
+	}
+
+	return *createdClient.ClientId, *createdClient.ClientSecret, nil
+}
+
+func getJWTToken(ctx context.Context, clientID, clientSecret string) (string, error) {
+	// Get token from Hydra using client credentials flow via Go http.Client
+	data := url.Values{}
+	data.Set("grant_type", "client_credentials")
+
+	req, err := http.NewRequestWithContext(ctx, "POST", "http://localhost:4444/oauth2/token", strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to create token request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(clientID, clientSecret)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get JWT token: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("token request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %v", err)
+	}
+
+	return result.AccessToken, nil
 }
 
 func buildApp(rootDir string) (string, error) {
