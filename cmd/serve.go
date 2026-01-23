@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/authentication"
 	"github.com/canonical/hook-service/pkg/web"
 )
 
@@ -113,7 +115,50 @@ func serve() error {
 		)
 	}
 
-	router := web.NewRouter(specs.ApiToken, s, dbClient, sf, authorizer, tracer, monitor, logger)
+	var jwtVerifier authentication.TokenVerifierInterface
+	if specs.AuthenticationEnabled {
+		// Parse allowed subjects from comma-separated string
+		var allowedSubjects []string
+		if specs.AuthenticationAllowedSubjects != "" {
+			subjects := strings.Split(specs.AuthenticationAllowedSubjects, ",")
+			for _, s := range subjects {
+				trimmed := strings.TrimSpace(s)
+				if trimmed != "" {
+					allowedSubjects = append(allowedSubjects, trimmed)
+				}
+			}
+		}
+
+		var err error
+		jwtVerifier, err = authentication.NewJWTAuthenticator(
+			context.Background(),
+			specs.AuthenticationIssuer,
+			specs.AuthenticationJwksURL,
+			allowedSubjects,
+			specs.AuthenticationRequiredScope,
+			tracer,
+			monitor,
+			logger,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to setup JWT authenticator: %v", err)
+		}
+	} else {
+		logger.Info("JWT authentication is disabled")
+		jwtVerifier = authentication.NewNoopVerifier()
+	}
+
+	router := web.NewRouter(
+		specs.ApiToken,
+		s,
+		dbClient,
+		sf,
+		authorizer,
+		jwtVerifier,
+		tracer,
+		monitor,
+		logger,
+	)
 	logger.Infof("Starting server on port %v", specs.Port)
 
 	srv := &http.Server{

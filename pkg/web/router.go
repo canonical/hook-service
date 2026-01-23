@@ -22,6 +22,7 @@ import (
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/authentication"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
 	groups_api "github.com/canonical/hook-service/pkg/groups"
 	"github.com/canonical/hook-service/pkg/hooks"
@@ -35,6 +36,7 @@ func NewRouter(
 	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
+	jwtVerifier authentication.TokenVerifierInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -90,8 +92,17 @@ func NewRouter(
 
 	router.Use(middlewares...)
 
+	// Register gRPC Gateway handlers
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(context.Background(), gRPCGatewayMux, authz_api.NewGrpcServer(authzService, tracer, monitor, logger))
 	v0_groups.RegisterAuthzGroupsServiceHandlerServer(context.Background(), gRPCGatewayMux, groups_api.NewGrpcServer(groupService, tracer, monitor, logger))
+
+	// Mount gRPC Gateway under /api/v0/ and protect with JWT auth middleware
+	authzRouter := chi.NewRouter()
+	jwtAuthMiddleware := authentication.NewMiddleware(jwtVerifier, tracer, monitor, logger)
+	authzRouter.Use(jwtAuthMiddleware.Authenticate())
+	authzRouter.Mount("/", gRPCGatewayMux)
+
+	// Register unprottected HTTP handlers
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		authMiddleware,
@@ -101,7 +112,7 @@ func NewRouter(
 	metrics.NewAPI(logger).RegisterEndpoints(router)
 	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
 
-	router.Mount("/api/v0/authz", gRPCGatewayMux)
+	router.Mount("/api/v0/authz", authzRouter)
 
 	return tracing.NewMiddleware(monitor, logger).OpenTelemetry(router)
 }
