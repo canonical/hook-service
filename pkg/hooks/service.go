@@ -82,12 +82,15 @@ func (s *Service) AuthorizeRequest(
 	if !isServiceAcct {
 		allowed, err = s.authz.CanAccess(ctx, user.GetUserId(), req.Request.ClientID, groupIDs)
 		span.SetAttributes(attribute.String("authorization.type", "user_access"))
-	} else {
+	} else if len(req.Request.GrantedAudience) > 0 {
 		allowed, err = s.authz.BatchCanAccess(ctx, user.GetUserId(), req.Request.GrantedAudience, groupIDs)
 		span.SetAttributes(
 			attribute.String("authorization.type", "batch_access"),
 			attribute.StringSlice("granted_audience", req.Request.GrantedAudience),
 		)
+	} else {
+		s.logger.Debugf("Allowed, because empty granted audience in request for service account: %#v", user)
+		allowed = true
 	}
 
 	if err != nil {
