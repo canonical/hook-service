@@ -29,6 +29,10 @@ oauth2:
         name: Authorization
         value: secret_api_key
         in: header
+  # Allow groups to be a top-level claim in access tokens instead of nested under ext
+  allowed_top_level_claims:
+    - groups
+  mirror_top_level_claims: false
 
 strategies:
   access_token: jwt

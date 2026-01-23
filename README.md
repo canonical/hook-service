@@ -96,6 +96,19 @@ make dev
 
 This starts Kratos, Hydra, OpenFGA, Postgres, and Mailslurper using `docker-compose.dev.yml`.
 
+## Token Claims Configuration
+
+The service adds user groups to OAuth2/OIDC tokens via the Hydra token hook. By default, Hydra would nest custom claims under an `ext` namespace. To ensure groups appear as a top-level claim in access tokens, the Hydra configuration includes:
+
+```yaml
+oauth2:
+  allowed_top_level_claims:
+    - groups
+  mirror_top_level_claims: false
+```
+
+This configuration is set in `docker/hydra/hydra.yml` for local development. For production deployments, ensure your Hydra instance is configured with these settings to make the `groups` claim accessible at the top level of the token payload.
+
 ## Security
 
 Please see [SECURITY.md](https://github.com/canonical/hook-service/blob/main/SECURITY.md) for guidelines on reporting security issues.
