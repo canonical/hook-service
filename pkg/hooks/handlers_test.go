@@ -5,6 +5,7 @@ package hooks
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"github.com/ory/fosite/token/jwt"
 	"github.com/ory/hydra/v2/flow"
 	"github.com/ory/hydra/v2/oauth2"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
 
@@ -150,6 +152,9 @@ func TestHandleHydraHook(t *testing.T) {
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockService := NewMockServiceInterface(ctrl)
+
+			// Mock tracer Start call
+			mockTracer.EXPECT().Start(gomock.Any(), "hooks.API.handleHydraHook").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 
 			if test.fetchUsersResult != nil {
 				mockService.EXPECT().FetchUserGroups(gomock.Any(), gomock.Any()).Times(1).Return(test.fetchUsersResult.r, test.fetchUsersResult.err)

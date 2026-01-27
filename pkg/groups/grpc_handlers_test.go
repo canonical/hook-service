@@ -13,6 +13,7 @@ import (
 
 	"github.com/canonical/hook-service/internal/types"
 	v0_groups "github.com/canonical/identity-platform-api/v0/authz_groups"
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -136,6 +137,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 			}
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.CreateGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().CreateGroup(gomock.Any(), g).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.CreateGroup(context.Background(), tt.input)
@@ -225,6 +227,7 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.GetGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().GetGroup(gomock.Any(), tt.input.Id).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.GetGroup(context.Background(), tt.input)
@@ -304,6 +307,7 @@ func TestGrpcHandler_ListGroups(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.ListGroups").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().ListGroups(gomock.Any()).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.ListGroups(context.Background(), &v0_groups.ListGroupsReq{})
@@ -370,6 +374,7 @@ func TestGrpcHandler_RemoveGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.RemoveGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().DeleteGroup(gomock.Any(), tt.input.Id).Return(tt.expectErr)
 
 			resp, err := server.RemoveGroup(context.Background(), tt.input)
@@ -451,6 +456,7 @@ func TestGrpcHandler_UpdateGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.UpdateGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().UpdateGroup(gomock.Any(), gomock.Any(), gomock.Any()).Return(tt.expectResp, tt.expectErr).AnyTimes()
 
 			resp, err := server.UpdateGroup(context.Background(), tt.input)
@@ -535,6 +541,7 @@ func TestGrpcHandler_ListUsersInGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.ListUsersInGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().ListUsersInGroup(gomock.Any(), tt.input.Id).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.ListUsersInGroup(context.Background(), tt.input)
@@ -600,6 +607,7 @@ func TestGrpcHandler_AddUsersToGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.AddUsersToGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().AddUsersToGroup(gomock.Any(), tt.input.Id, tt.input.UserIds).Return(tt.expectErr)
 
 			resp, err := server.AddUsersToGroup(context.Background(), tt.input)
@@ -665,6 +673,7 @@ func TestGrpcHandler_RemoveUserFromGroup(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.RemoveUserFromGroup").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().RemoveUsersFromGroup(gomock.Any(), tt.input.Id, []string{tt.input.UserId}).Return(tt.expectErr)
 
 			resp, err := server.RemoveUserFromGroup(context.Background(), tt.input)
@@ -749,6 +758,7 @@ func TestGrpcHandler_ListUserGroups(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.ListUserGroups").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().GetGroupsForUser(gomock.Any(), tt.input.Id).Return(tt.expectResp, tt.expectErr)
 
 			resp, err := server.ListUserGroups(context.Background(), tt.input)
@@ -814,6 +824,7 @@ func TestGrpcHandler_AddUserToGroups(t *testing.T) {
 			server := NewGrpcServer(mockSvc, mockTracer, mockMonitor, mockLogger)
 
 			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes()
+			mockTracer.EXPECT().Start(gomock.Any(), "groups.GrpcServer.AddUserToGroups").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
 			mockSvc.EXPECT().UpdateGroupsForUser(gomock.Any(), tt.input.Id, tt.input.GroupIds).Return(tt.expectErr)
 
 			resp, err := server.AddUserToGroups(context.Background(), tt.input)

@@ -9,6 +9,8 @@ import (
 	"net/http"
 
 	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
+	"go.opentelemetry.io/otel/attribute"
+	otelcodes "go.opentelemetry.io/otel/codes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -35,18 +37,28 @@ func (g *GrpcServer) GetAllowedAppsInGroup(ctx context.Context, req *v0_authz.Ge
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.GetAllowedAppsInGroup")
 	defer span.End()
 
+	span.SetAttributes(attribute.String("group.id", req.GetGroupId()))
+
 	if req.GetGroupId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
+		err := status.Errorf(codes.InvalidArgument, "group id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	g.logger.Debugf("GetAllowedAppsInGroup request for group: %s", req.GetGroupId())
 
 	apps, err := g.svc.GetAllowedAppsInGroup(ctx, req.GroupId)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "get allowed apps in group failed")
 		return nil, g.mapErrorToStatus(err, "get allowed apps in group")
 	}
 
 	respApps := appsToProto(apps)
+
+	span.SetAttributes(attribute.Int("apps.count", len(apps)))
+	span.SetStatus(otelcodes.Ok, "allowed apps retrieved successfully")
 
 	return &v0_authz.GetAllowedAppsInGroupResp{
 		Data:    respApps,
@@ -61,20 +73,35 @@ func (g *GrpcServer) AddAllowedAppToGroup(ctx context.Context, req *v0_authz.Add
 	defer span.End()
 
 	app := req.GetApp()
+	span.SetAttributes(
+		attribute.String("group.id", req.GetGroupId()),
+		attribute.String("app.client_id", app.GetClientId()),
+	)
+
 	if app == nil || app.GetClientId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "app is empty")
+		err := status.Errorf(codes.InvalidArgument, "app is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	if req.GetGroupId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
+		err := status.Errorf(codes.InvalidArgument, "group id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	g.logger.Debugf("AddAllowedAppToGroup request for group: %s, app: %s", req.GetGroupId(), app.GetClientId())
 
 	err := g.svc.AddAllowedAppToGroup(ctx, req.GroupId, app.GetClientId())
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "add allowed app to group failed")
 		return nil, g.mapErrorToStatus(err, "add allowed app to group")
 	}
+
+	span.SetStatus(otelcodes.Ok, "app added to allowed list successfully")
 
 	return &v0_authz.AddAllowedAppToGroupResp{
 		Status:  http.StatusOK,
@@ -87,19 +114,34 @@ func (g *GrpcServer) RemoveAllowedAppFromGroup(ctx context.Context, req *v0_auth
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.RemoveAllowedAppFromGroup")
 	defer span.End()
 
+	span.SetAttributes(
+		attribute.String("group.id", req.GetGroupId()),
+		attribute.String("app.id", req.GetAppId()),
+	)
+
 	if req.GetGroupId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
+		err := status.Errorf(codes.InvalidArgument, "group id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 	if req.GetAppId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "app id is empty")
+		err := status.Errorf(codes.InvalidArgument, "app id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	g.logger.Debugf("RemoveAllowedAppFromGroup request for group: %s, app: %s", req.GetGroupId(), req.GetAppId())
 
 	err := g.svc.RemoveAllowedAppFromGroup(ctx, req.GroupId, req.AppId)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "remove allowed app from group failed")
 		return nil, g.mapErrorToStatus(err, "remove allowed app from group")
 	}
+
+	span.SetStatus(otelcodes.Ok, "app removed from allowed list successfully")
 
 	return &v0_authz.RemoveAllowedAppFromGroupResp{
 		Status:  http.StatusOK,
@@ -112,16 +154,25 @@ func (g *GrpcServer) RemoveAllowedAppsFromGroup(ctx context.Context, req *v0_aut
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.RemoveAllowedAppsFromGroup")
 	defer span.End()
 
+	span.SetAttributes(attribute.String("group.id", req.GetGroupId()))
+
 	if req.GetGroupId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "group id is empty")
+		err := status.Errorf(codes.InvalidArgument, "group id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	g.logger.Debugf("RemoveAllowedAppsFromGroup request for group: %s", req.GetGroupId())
 
 	err := g.svc.RemoveAllAllowedAppsFromGroup(ctx, req.GroupId)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "remove allowed apps from group failed")
 		return nil, g.mapErrorToStatus(err, "remove allowed apps from group")
 	}
+
+	span.SetStatus(otelcodes.Ok, "all apps removed from allowed list successfully")
 
 	return &v0_authz.RemoveAllowedAppsFromGroupResp{
 		Status:  http.StatusOK,
@@ -134,18 +185,28 @@ func (g *GrpcServer) GetAllowedGroupsForApp(ctx context.Context, req *v0_authz.G
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.GetAllowedGroupsForApp")
 	defer span.End()
 
+	span.SetAttributes(attribute.String("app.id", req.GetAppId()))
+
 	if req.GetAppId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "app id is empty")
+		err := status.Errorf(codes.InvalidArgument, "app id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	g.logger.Debugf("GetAllowedGroupsForApp request for app: %s", req.GetAppId())
 
 	groups, err := g.svc.GetAllowedGroupsForApp(ctx, req.AppId)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "get allowed groups for app failed")
 		return nil, g.mapErrorToStatus(err, "get allowed groups for app")
 	}
 
 	gg := groupsToProto(groups)
+
+	span.SetAttributes(attribute.Int("groups.count", len(groups)))
+	span.SetStatus(otelcodes.Ok, "allowed groups retrieved successfully")
 
 	return &v0_authz.GetAllowedGroupsForAppResp{
 		Data:    gg,
@@ -159,16 +220,25 @@ func (g *GrpcServer) RemoveAllowedGroupsForApp(ctx context.Context, req *v0_auth
 	ctx, span := g.tracer.Start(ctx, "groups.GrpcHandler.RemoveAllowedGroupsForApp")
 	defer span.End()
 
+	span.SetAttributes(attribute.String("app.id", req.GetAppId()))
+
 	if req.GetAppId() == "" {
-		return nil, status.Errorf(codes.InvalidArgument, "app id is empty")
+		err := status.Errorf(codes.InvalidArgument, "app id is empty")
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "invalid argument")
+		return nil, err
 	}
 
 	g.logger.Debugf("RemoveAllowedGroupsForApp request for app: %s", req.GetAppId())
 
 	err := g.svc.RemoveAllAllowedGroupsForApp(ctx, req.AppId)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(otelcodes.Error, "remove allowed groups for app failed")
 		return nil, g.mapErrorToStatus(err, "remove allowed groups for app")
 	}
+
+	span.SetStatus(otelcodes.Ok, "all groups removed from allowed list successfully")
 
 	return &v0_authz.RemoveAllowedGroupsForAppResp{
 		Status:  http.StatusOK,

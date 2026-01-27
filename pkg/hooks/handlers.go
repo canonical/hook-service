@@ -17,6 +17,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/hydra/v2/flow"
 	"github.com/ory/hydra/v2/oauth2"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const (
@@ -40,12 +42,21 @@ func (a *API) RegisterEndpoints(mux *chi.Mux) {
 	mux.Post("/api/v0/hook/hydra", a.handleHydraHook)
 }
 
+// handleHydraHook processes OAuth token hook requests from Hydra.
+// It enriches tokens with user groups and enforces authorization policies.
+// Span attributes include user.id, client.id, grant_types, groups.count,
+// authorization.allowed, and http.status_code for observability.
 func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
+	ctx, span := a.tracer.Start(r.Context(), "hooks.API.handleHydraHook")
+	defer span.End()
 
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		a.logger.Errorf("failed to read request body: %v", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to read request body")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusBadRequest))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -54,33 +65,58 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 	err = json.Unmarshal(body, req)
 	if err != nil {
 		a.logger.Errorf("failed to parse request: %v", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to parse request")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusBadRequest))
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	user := NewUserFromHookRequest(req, a.logger)
 
-	groups, err := a.service.FetchUserGroups(r.Context(), *user)
+	span.SetAttributes(
+		attribute.String("user.id", user.GetUserId()),
+		attribute.String("client.id", req.Request.ClientID),
+		attribute.StringSlice("grant_types", req.Request.GrantTypes),
+		attribute.StringSlice("granted_audience", req.Request.GrantedAudience),
+	)
+
+	groups, err := a.service.FetchUserGroups(ctx, *user)
 	if err != nil {
 		a.logger.Errorf("failed to fetch user groups: %v", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to fetch user groups")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 
-	allowed, err := a.service.AuthorizeRequest(r.Context(), *user, *req, groups)
+	span.SetAttributes(attribute.Int("groups.count", len(groups)))
+
+	allowed, err := a.service.AuthorizeRequest(ctx, *user, *req, groups)
 	if err != nil {
 		a.logger.Errorf("failed to authorize request: %v", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to authorize request")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
+
+	span.SetAttributes(attribute.Bool("authorization.allowed", allowed))
+
 	if !allowed {
 		a.logger.Infof("unauthorized request, user %s tried to access %s", user.GetUserId(), req.Request.ClientID)
+		span.SetStatus(codes.Error, "authorization denied")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
 
 	resp := a.newHookResponse(groups)
 
+	span.SetAttributes(attribute.Int("http.status_code", http.StatusOK))
+	span.SetStatus(codes.Ok, "request successful")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(resp)
 
