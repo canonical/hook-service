@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,6 +18,10 @@ type E2EClient struct {
 	t       *testing.T
 	baseURL string
 	client  *http.Client
+
+	clientID     string
+	clientSecret string
+	jwtToken     string
 }
 
 func NewE2EClient(t *testing.T) *E2EClient {
@@ -29,12 +34,24 @@ func NewE2EClient(t *testing.T) *E2EClient {
 		}
 	}
 
+	cID := os.Getenv("AUTH_CLIENT_ID")
+	if cID == "" {
+		cID = clientId
+	}
+	cSecret := os.Getenv("AUTH_CLIENT_SECRET")
+	if cSecret == "" {
+		cSecret = clientSecret
+	}
+
 	return &E2EClient{
 		t:       t,
 		baseURL: baseURL,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
+		clientID:     cID,
+		clientSecret: cSecret,
+		jwtToken:     os.Getenv("JWT_TOKEN"),
 	}
 }
 
@@ -54,7 +71,15 @@ func (c *E2EClient) Request(method, path string, body interface{}) (int, []byte)
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if token := os.Getenv("API_TOKEN"); token != "" {
+
+	// Use JWT token for /api/v0/authz routes
+	if c.jwtToken != "" {
+		req.Header.Set("Authorization", "Bearer "+c.jwtToken)
+	} else if c.clientID != "" && c.clientSecret != "" {
+		token, err := getJWTToken(context.Background(), c.clientID, c.clientSecret)
+		if err != nil {
+			c.t.Fatalf("failed to get JWT token: %v", err)
+		}
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
@@ -366,6 +391,89 @@ func TestAppAuthorization(t *testing.T) {
 			if a.ClientID == appID {
 				t.Error("app still found in group after removal")
 			}
+		}
+	})
+}
+
+func TestJWTAuthentication(t *testing.T) {
+	client := NewE2EClient(t)
+
+	t.Run("Valid JWT Token Allowed", func(t *testing.T) {
+		status, _ := client.Request(http.MethodGet, "/groups", nil)
+		if status != http.StatusOK {
+			t.Errorf("expected status OK with valid JWT, got %d", status)
+		}
+	})
+
+	t.Run("No JWT Token Rejected", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, defaultBaseURL+"/groups", nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to execute request: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected status Unauthorized without JWT, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Invalid JWT Token Rejected", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, defaultBaseURL+"/groups", nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer invalid-token-12345")
+
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to execute request: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected status Unauthorized with invalid JWT, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("Wrong Subject Rejected", func(t *testing.T) {
+		// Create another Hydra client with different client_id
+		wrongClientID, wrongClientSecret, err := setupHydraClient(context.Background(), "Wrong Subject Client")
+		if err != nil {
+			t.Fatalf("failed to create wrong subject client: %v", err)
+		}
+
+		// Get JWT token for the wrong client
+		wrongToken, err := getJWTToken(context.Background(), wrongClientID, wrongClientSecret)
+		if err != nil {
+			t.Fatalf("failed to get JWT token for wrong client: %v", err)
+		}
+
+		// Try to access with wrong subject token
+		req, err := http.NewRequest(http.MethodGet, defaultBaseURL+"/groups", nil)
+		if err != nil {
+			t.Fatalf("failed to create request: %v", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+wrongToken)
+
+		httpClient := &http.Client{Timeout: 10 * time.Second}
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			t.Fatalf("failed to execute request: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected status Unauthorized with wrong subject, got %d", resp.StatusCode)
 		}
 	})
 }

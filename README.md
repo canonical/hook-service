@@ -34,11 +34,51 @@ The application is configured via environment variables.
 | `SALESFORCE_CONSUMER_SECRET` | Salesforce consumer secret | |
 | `AUTHORIZATION_ENABLED` | Enable authorization middleware | `false` |
 | `OPENFGA_WORKERS_TOTAL` | Total OpenFGA workers | `150` |
+| `AUTHENTICATION_ENABLED` | Enable JWT authentication for Groups/Authz APIs | `true` |
+| `AUTHENTICATION_ISSUER` | Expected JWT issuer (e.g., `https://auth.example.com`) | |
+| `AUTHENTICATION_JWKS_URL` | Optional explicit JWKS URL (overrides OIDC discovery) | |
+| `AUTHENTICATION_ALLOWED_SUBJECTS` | Comma-separated list of allowed JWT subjects | |
+| `AUTHENTICATION_REQUIRED_SCOPE` | Required scope for access (e.g., `hook-service:admin`) | |
 | `DSN` | Database connection string (Required) | |
 | `DB_MAX_CONNS` | Max DB connections | `25` |
 | `DB_MIN_CONNS` | Min DB connections | `2` |
 | `DB_MAX_CONN_LIFETIME` | Max DB connection lifetime | `1h` |
 | `DB_MAX_CONN_IDLE_TIME` | Max DB connection idle time | `30m` |
+
+## Features
+
+### JWT Authentication
+
+The Groups and Authorization APIs (`/api/v0/authz`) are protected by JWT authentication middleware. When enabled, all requests to these endpoints must include a valid JWT token in the `Authorization` header.
+
+**Configuration:**
+
+- `AUTHENTICATION_ENABLED`: Set to `true` to enable JWT authentication (default: `true`)
+- `AUTHENTICATION_ISSUER`: The expected JWT issuer URL. Used for OIDC metadata discovery to fetch JWKS or to verify the `iss` claim when using manual JWKS URL
+- `AUTHENTICATION_JWKS_URL`: (Optional) Explicit JWKS URL. If set, fetches keys from this URL instead of using OIDC discovery
+- `AUTHENTICATION_ALLOWED_SUBJECTS`: Comma-separated list of allowed JWT `sub` claims
+- `AUTHENTICATION_REQUIRED_SCOPE`: (Optional) A specific scope that grants access (e.g., `hook-service:admin`)
+
+**JWKS Configuration:**
+
+The middleware supports two modes for fetching JWKS:
+1. **OIDC Discovery** (default): Discovers JWKS URL from `{AUTHENTICATION_ISSUER}/.well-known/openid-configuration`
+2. **Manual JWKS URL**: If `AUTHENTICATION_JWKS_URL` is set, fetches keys directly from that URL
+
+Use manual JWKS URL when the issuer is not an OIDC provider or when OIDC discovery is not available.
+
+**Authorization Logic:**
+
+A request is authorized if **either**:
+1. The JWT's `sub` claim matches one of the `AUTHENTICATION_ALLOWED_SUBJECTS`, OR
+2. The JWT's `scope` or `scp` claim contains the `AUTHENTICATION_REQUIRED_SCOPE`
+
+**Usage:**
+
+```bash
+# Include JWT token in Authorization header
+curl -H "Authorization: Bearer <jwt-token>" http://localhost:8080/api/v0/authz/groups
+```
 
 ## Development Setup
 
