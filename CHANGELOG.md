@@ -1,5 +1,40 @@
 # Changelog
 
+## [1.1.0](https://github.com/canonical/hook-service/compare/v1.0.4...v1.1.0) (2026-02-03)
+
+
+### Features
+
+* add tracing span attributes in webhook handler ([a429847](https://github.com/canonical/hook-service/commit/a429847754115e66f30b5816f237658057aa4a44))
+* configure Hydra to use top-level claims for groups ([a38de50](https://github.com/canonical/hook-service/commit/a38de50a8d1c1035ad675343f7d721a05dec6fa9))
+* define authentication interfaces ([f22de85](https://github.com/canonical/hook-service/commit/f22de852e9cc05df0e302a374e293281f922305a))
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([87ea177](https://github.com/canonical/hook-service/commit/87ea17795559326248e34230e3b798b68e74657e))
+* **deps:** update go deps (minor) ([#137](https://github.com/canonical/hook-service/issues/137)) ([8258530](https://github.com/canonical/hook-service/commit/825853096386bc5b4bd93c606dd8088d62cae286))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 3f89685 ([811bc9a](https://github.com/canonical/hook-service/commit/811bc9ac63d3e76ef680b5950287cef2009429ef))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 3f89685 ([#141](https://github.com/canonical/hook-service/issues/141)) ([14b7d6e](https://github.com/canonical/hook-service/commit/14b7d6ed0bb59357e47155053e7297a4d56c034a))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 8636f87 ([8092e07](https://github.com/canonical/hook-service/commit/8092e07b949946ab5b314097a5930085c8eb7c43))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 8636f87 ([#158](https://github.com/canonical/hook-service/issues/158)) ([824d5d5](https://github.com/canonical/hook-service/commit/824d5d567e730308c1bb92b4268bb50244901625))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 8e98ce8 ([dff72fb](https://github.com/canonical/hook-service/commit/dff72fbdd6a7281b1a46835c8da7527bad221412))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 8e98ce8 ([#155](https://github.com/canonical/hook-service/issues/155)) ([d7b4407](https://github.com/canonical/hook-service/commit/d7b4407139c7c5e4899a48f9f1d6b97e5351c53e))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 99fd39f ([925c102](https://github.com/canonical/hook-service/commit/925c102b9e3e631b7bca47adf5e8e12225fa254b))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 99fd39f ([#139](https://github.com/canonical/hook-service/issues/139)) ([5bd9754](https://github.com/canonical/hook-service/commit/5bd9754795ff90e43ef00b35e5fe2c7a612cf3cb))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to b8f7ae3 ([9461e2b](https://github.com/canonical/hook-service/commit/9461e2b1cf76292944365216b38fe9c47f43019f))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to b8f7ae3 ([#152](https://github.com/canonical/hook-service/issues/152)) ([d342d3f](https://github.com/canonical/hook-service/commit/d342d3f45fd854d5d9a9f7be4d9ad52d4aeac5ac))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.2.4 ([c26ac48](https://github.com/canonical/hook-service/commit/c26ac480e75c8573db730a8891b8538b0d51905c))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.2.4 ([#142](https://github.com/canonical/hook-service/issues/142)) ([699ed92](https://github.com/canonical/hook-service/commit/699ed923213ead63494757a5b2dcc6318f7b28f9))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.5 ([bec6fe9](https://github.com/canonical/hook-service/commit/bec6fe9bd118195d485f5083f9465f5cf90f69ae))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.5 ([#153](https://github.com/canonical/hook-service/issues/153)) ([70cf019](https://github.com/canonical/hook-service/commit/70cf0199385e0025ec61a8009d3a8f0bc223197a))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.6 ([2403102](https://github.com/canonical/hook-service/commit/24031020c8046b06bf451d7ededea06bffd92bb1))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.6 ([#160](https://github.com/canonical/hook-service/issues/160)) ([0a380b3](https://github.com/canonical/hook-service/commit/0a380b3e129646e4bea7b883a617ae0f115f5698))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.7 ([8d2cf74](https://github.com/canonical/hook-service/commit/8d2cf74ec484f043a00e81ace28b7409ea302edf))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.7 ([#162](https://github.com/canonical/hook-service/issues/162)) ([e2cba69](https://github.com/canonical/hook-service/commit/e2cba6907d7c88be4add03f0a80fb6938a37899c))
+* **openfga:** Configure OpenFGA client telemetry using SDK's Telemetry field ([ef6a83c](https://github.com/canonical/hook-service/commit/ef6a83c52601a3dc41da1fa90990768e709deda6))
+* skip authz for service accounts with empty audience ([af777bc](https://github.com/canonical/hook-service/commit/af777bcbb7c79777e67b70b753ac56135e26ecf2))
+
 ## [1.0.4](https://github.com/canonical/hook-service/compare/v1.0.3...v1.0.4) (2025-12-27)
 
 
