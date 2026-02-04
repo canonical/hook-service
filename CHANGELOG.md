@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.1](https://github.com/canonical/hook-service/compare/v1.1.0...v1.1.1) (2026-02-04)
+
+
+### Bug Fixes
+
+* change permissions of certs folder ([da95f03](https://github.com/canonical/hook-service/commit/da95f0373fcbdbd3f228af1a4f63e8a6a4f81977))
+* **deps:** update go deps ([b23eda4](https://github.com/canonical/hook-service/commit/b23eda4fb53d00c258afeb4f9ac3fc4775f59350))
+* **deps:** update go deps (minor) ([#167](https://github.com/canonical/hook-service/issues/167)) ([9a6b958](https://github.com/canonical/hook-service/commit/9a6b95884553d5daa9792d3d9cebd809f00856ef))
+
 ## [1.1.0](https://github.com/canonical/hook-service/compare/v1.0.4...v1.1.0) (2026-02-03)
 
 
