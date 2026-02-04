@@ -7,6 +7,7 @@ description: >
   This is the Canonical Identity Platform Hook Service used for handling Hydra
   Hooks and managing groups
 license: Apache-2.0
+run-user: _daemon_
 platforms:
   amd64: null
 services:
@@ -16,6 +17,11 @@ services:
     startup: enabled
 parts:
   go-build:
+    permissions:
+      - path: etc/ssl/certs
+        owner: 584792
+        group: 584792
+        mode: "755"
     plugin: go
     source: .
     source-type: local
