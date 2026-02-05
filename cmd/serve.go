@@ -150,6 +150,7 @@ func serve() error {
 
 	router := web.NewRouter(
 		specs.ApiToken,
+		specs.AuthenticationEnabled,
 		s,
 		dbClient,
 		sf,

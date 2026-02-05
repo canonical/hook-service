@@ -32,6 +32,7 @@ import (
 
 func NewRouter(
 	token string,
+	authenticationEnabled bool,
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
 	salesforceClient salesforce.SalesforceInterface,
@@ -98,8 +99,10 @@ func NewRouter(
 
 	// Mount gRPC Gateway under /api/v0/ and protect with JWT auth middleware
 	authzRouter := chi.NewRouter()
-	jwtAuthMiddleware := authentication.NewMiddleware(jwtVerifier, tracer, monitor, logger)
-	authzRouter.Use(jwtAuthMiddleware.Authenticate())
+	if authenticationEnabled {
+		jwtAuthMiddleware := authentication.NewMiddleware(jwtVerifier, tracer, monitor, logger)
+		authzRouter.Use(jwtAuthMiddleware.Authenticate())
+	}
 	authzRouter.Mount("/", gRPCGatewayMux)
 
 	// Register unprottected HTTP handlers
