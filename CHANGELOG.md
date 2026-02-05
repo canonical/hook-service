@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/canonical/hook-service/compare/v1.1.1...v1.1.2) (2026-02-05)
+
+
+### Bug Fixes
+
+* allow user to disable authn ([706d114](https://github.com/canonical/hook-service/commit/706d1144e79a5dda49d8256c3da5cbaae47720ae))
+
 ## [1.1.1](https://github.com/canonical/hook-service/compare/v1.1.0...v1.1.1) (2026-02-04)
 
 
