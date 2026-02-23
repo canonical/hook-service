@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.3](https://github.com/canonical/hook-service/compare/v1.1.2...v1.1.3) (2026-02-23)
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([875cdc5](https://github.com/canonical/hook-service/commit/875cdc5d889e34ea472c7ca2958c84f7c8ccc32a))
+* **deps:** update go deps (minor) ([#176](https://github.com/canonical/hook-service/issues/176)) ([32a1b52](https://github.com/canonical/hook-service/commit/32a1b525e8bd6a3e4b11a9f3bfab185971f92f14))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 2f722ef ([6da6a35](https://github.com/canonical/hook-service/commit/6da6a35053141417a4c21e64c80e1d5b8664c1a7))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 2f722ef ([#182](https://github.com/canonical/hook-service/issues/182)) ([2ff0043](https://github.com/canonical/hook-service/commit/2ff0043ff9dd0a8f6a40d693554e457a5da9c5c0))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.2.5 ([90fd56b](https://github.com/canonical/hook-service/commit/90fd56bbab62f3c519959f2beaf4c731f8aed6af))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.2.5 ([#174](https://github.com/canonical/hook-service/issues/174)) ([6ce37c7](https://github.com/canonical/hook-service/commit/6ce37c7e7adc0e243ff97cc7184e0d700017a7bc))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.8 ([ad18f7a](https://github.com/canonical/hook-service/commit/ad18f7a856115fd2a5f5c33fc6d51a4aa90202a7))
+* **deps:** update module github.com/grpc-ecosystem/grpc-gateway/v2 to v2.27.8 ([#177](https://github.com/canonical/hook-service/issues/177)) ([22280ca](https://github.com/canonical/hook-service/commit/22280ca34cbbdf4833d8432ec11e36b7bed6afdd))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.0 ([ee21a3b](https://github.com/canonical/hook-service/commit/ee21a3b554c2db34341519196041679f46f4a8e3))
+* **deps:** update module github.com/pressly/goose/v3 to v3.27.0 ([#181](https://github.com/canonical/hook-service/issues/181)) ([17747df](https://github.com/canonical/hook-service/commit/17747df5042bbf009000174a66ce4014de667b45))
+
 ## [1.1.2](https://github.com/canonical/hook-service/compare/v1.1.1...v1.1.2) (2026-02-05)
 
 
