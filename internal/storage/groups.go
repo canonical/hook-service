@@ -18,6 +18,8 @@ import (
 	"github.com/canonical/hook-service/internal/types"
 )
 
+const DefaultTenantID = "default"
+
 // ListGroups retrieves all groups from the database.
 func (s *Storage) ListGroups(ctx context.Context) ([]*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.ListGroups")
@@ -95,6 +97,33 @@ func (s *Storage) GetGroup(ctx context.Context, id string) (*types.Group, error)
 		Select("id", "name", "tenant_id", "description", "type", "created_at", "updated_at").
 		From("groups").
 		Where(sq.Eq{"id": id}).
+		QueryRowContext(ctx)
+
+	group, err := scanGroup(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query group: %v", err)
+	}
+
+	return group, nil
+}
+
+// GetGroup retrieves a single group by name.
+func (s *Storage) GetGroupByName(ctx context.Context, name, tenantID string) (*types.Group, error) {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.GetGroupByName")
+	defer span.End()
+
+	// default to default tenant if no tenant ID is provided
+	if tenantID == "" {
+		tenantID = DefaultTenantID
+	}
+
+	row := s.db.Statement(ctx).
+		Select("id", "name", "tenant_id", "description", "type", "created_at", "updated_at").
+		From("groups").
+		Where(sq.Eq{"name": name, "tenant_id": tenantID}).
 		QueryRowContext(ctx)
 
 	group, err := scanGroup(row)
