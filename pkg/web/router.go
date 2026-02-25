@@ -19,7 +19,6 @@ import (
 	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
-	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/authentication"
@@ -35,7 +34,6 @@ func NewRouter(
 	authenticationEnabled bool,
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
-	salesforceClient salesforce.SalesforceInterface,
 	authz authorization.AuthorizerInterface,
 	jwtVerifier authentication.TokenVerifierInterface,
 	tracer tracing.TracingInterface,
@@ -73,9 +71,6 @@ func NewRouter(
 	groupService := groups_api.NewService(s, authz, tracer, monitor, logger)
 
 	groupClients := []hooks.ClientInterface{}
-	if salesforceClient != nil {
-		groupClients = append(groupClients, hooks.NewSalesforceClient(salesforceClient, tracer, monitor, logger))
-	}
 	if s != nil {
 		groupClients = append(groupClients, hooks.NewLocalStorageClient(s, tracer, monitor, logger))
 	}
