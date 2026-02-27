@@ -14,6 +14,7 @@ type StorageInterface interface {
 	ListGroups(ctx context.Context) ([]*types.Group, error)
 	CreateGroup(ctx context.Context, group *types.Group) (*types.Group, error)
 	GetGroup(ctx context.Context, id string) (*types.Group, error)
+	GetGroupByName(ctx context.Context, name string) (*types.Group, error)
 	UpdateGroup(ctx context.Context, id string, group *types.Group) (*types.Group, error)
 	DeleteGroup(ctx context.Context, id string) error
 

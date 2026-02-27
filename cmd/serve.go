@@ -23,7 +23,6 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
-	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/authentication"
@@ -106,15 +105,6 @@ func serve() error {
 		logger.Info("Using noop authorizer")
 	}
 
-	var sf salesforce.SalesforceInterface
-	if specs.SalesforceEnabled {
-		sf = salesforce.NewClient(
-			specs.SalesforceDomain,
-			specs.SalesforceConsumerKey,
-			specs.SalesforceConsumerSecret,
-		)
-	}
-
 	var jwtVerifier authentication.TokenVerifierInterface
 	if specs.AuthenticationEnabled {
 		// Parse allowed subjects from comma-separated string
@@ -153,7 +143,6 @@ func serve() error {
 		specs.AuthenticationEnabled,
 		s,
 		dbClient,
-		sf,
 		authorizer,
 		jwtVerifier,
 		tracer,

@@ -108,6 +108,28 @@ func (s *Storage) GetGroup(ctx context.Context, id string) (*types.Group, error)
 	return group, nil
 }
 
+// GetGroup retrieves a single group by name.
+func (s *Storage) GetGroupByName(ctx context.Context, name string) (*types.Group, error) {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.GetGroupByName")
+	defer span.End()
+
+	row := s.db.Statement(ctx).
+		Select("id", "name", "tenant_id", "description", "type", "created_at", "updated_at").
+		From("groups").
+		Where(sq.Eq{"name": name}).
+		QueryRowContext(ctx)
+
+	group, err := scanGroup(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query group: %v", err)
+	}
+
+	return group, nil
+}
+
 // UpdateGroup updates an existing group's mutable fields.
 func (s *Storage) UpdateGroup(ctx context.Context, id string, group *types.Group) (*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.UpdateGroup")
