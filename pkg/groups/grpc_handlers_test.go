@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	reflect "reflect"
 	"strings"
 	"testing"
@@ -973,28 +972,8 @@ func sanitizeName(name string) string {
 	return strings.ToLower(name)
 }
 
-// configurePodmanSocket sets DOCKER_HOST to the podman socket path derived from
-// XDG_RUNTIME_DIR, unless DOCKER_HOST is already set in the environment.
-// This allows testcontainers to use podman as the container runtime.
-func configurePodmanSocket() {
-	if os.Getenv("DOCKER_HOST") != "" {
-		return
-	}
-	xdgRuntime := os.Getenv("XDG_RUNTIME_DIR")
-	if xdgRuntime == "" {
-		return
-	}
-	socketPath := xdgRuntime + "/podman/podman.sock"
-	if _, err := os.Stat(socketPath); err == nil {
-		os.Setenv("DOCKER_HOST", "unix://"+socketPath) //nolint:errcheck
-	}
-}
-
 func setupTestPostgres(t *testing.T) (string, *postgres.PostgresContainer) {
 	t.Helper()
-
-	// Use podman socket if Docker is not already configured.
-	configurePodmanSocket()
 
 	ctx := context.Background()
 	containerName := fmt.Sprintf("hook-authz-%s", sanitizeName(t.Name()))
@@ -1071,10 +1050,6 @@ func runMigrations(t *testing.T, connStr string) {
 // handlers directly on a runtime.ServeMux (avoids import cycle with pkg/web).
 func newIntegrationServer(t *testing.T) (*testClient, func()) {
 	t.Helper()
-
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
 
 	connStr, pgContainer := setupTestPostgres(t)
 	if pgContainer == nil {
@@ -1162,6 +1137,10 @@ func createTestGroup(t *testing.T, client *testClient, name string) string {
 // TestGroupsLifecycle covers POST, GET, PUT, DELETE for groups.
 func TestGroupsLifecycle(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
 
 	client, teardown := newIntegrationServer(t)
 	if client == nil {
@@ -1262,6 +1241,10 @@ func TestGroupsLifecycle(t *testing.T) {
 // TestUserMembership covers adding and removing users from groups.
 func TestUserMembership(t *testing.T) {
 	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
 
 	client, teardown := newIntegrationServer(t)
 	if client == nil {
@@ -1370,6 +1353,10 @@ func TestUserMembership(t *testing.T) {
 func TestAddUserToMultipleGroups(t *testing.T) {
 	t.Parallel()
 
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	client, teardown := newIntegrationServer(t)
 	if client == nil {
 		return
@@ -1420,6 +1407,10 @@ func TestAddUserToMultipleGroups(t *testing.T) {
 
 // TestSetUserGroups covers PUT /users/{user_id}/groups.
 func TestSetUserGroups(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	client, teardown := newIntegrationServer(t)
 	if client == nil {
 		return
@@ -1467,6 +1458,10 @@ func TestSetUserGroups(t *testing.T) {
 
 // TestUserMembershipErrors verifies edge cases with users endpoints.
 func TestUserMembershipErrors(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	client, teardown := newIntegrationServer(t)
 	if client == nil {
 		return
