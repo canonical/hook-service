@@ -4,10 +4,17 @@
 package groups
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
-	"reflect"
+	"net/http/httptest"
+	"os"
+	reflect "reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +25,29 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+
+	"github.com/canonical/hook-service/internal/authorization"
+	"github.com/canonical/hook-service/internal/db"
+	httptypes "github.com/canonical/hook-service/internal/http/types"
+	"github.com/canonical/hook-service/internal/logging"
+	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/openfga"
+	"github.com/canonical/hook-service/internal/storage"
+	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/migrations"
+	authorization_api "github.com/canonical/hook-service/pkg/authorization"
+	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
+	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"google.golang.org/protobuf/encoding/protojson"
 )
+
+const groupsBase = "/api/v0/authz/groups"
+const usersBase = "/api/v0/authz/users"
 
 //go:generate mockgen -build_flags=--mod=mod -package groups -destination ./mock_groups.go -source=./interfaces.go ServiceInterface
 //go:generate mockgen -build_flags=--mod=mod -package groups -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
@@ -899,4 +928,565 @@ func TestMapErrorToStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+// testClient wraps an httptest.Server with helper methods for the authorization API.
+type testClient struct {
+	t      *testing.T
+	server *httptest.Server
+	http   *http.Client
+}
+
+func (c *testClient) Request(method, path string, body interface{}) (int, []byte) {
+	c.t.Helper()
+
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			c.t.Fatalf("failed to marshal request body: %v", err)
+		}
+		reqBody = bytes.NewReader(b)
+	}
+
+	req, err := http.NewRequestWithContext(context.Background(), method, c.server.URL+path, reqBody)
+	if err != nil {
+		c.t.Fatalf("failed to create request: %v", err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		c.t.Fatalf("request to %s %s failed: %v", method, path, err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, respBody
+}
+
+func sanitizeName(name string) string {
+	name = strings.ReplaceAll(name, "/", "-")
+	name = strings.ReplaceAll(name, " ", "-")
+	return strings.ToLower(name)
+}
+
+// configurePodmanSocket sets DOCKER_HOST to the podman socket path derived from
+// XDG_RUNTIME_DIR, unless DOCKER_HOST is already set in the environment.
+// This allows testcontainers to use podman as the container runtime.
+func configurePodmanSocket() {
+	if os.Getenv("DOCKER_HOST") != "" {
+		return
+	}
+	xdgRuntime := os.Getenv("XDG_RUNTIME_DIR")
+	if xdgRuntime == "" {
+		return
+	}
+	socketPath := xdgRuntime + "/podman/podman.sock"
+	if _, err := os.Stat(socketPath); err == nil {
+		os.Setenv("DOCKER_HOST", "unix://"+socketPath) //nolint:errcheck
+	}
+}
+
+func setupTestPostgres(t *testing.T) (string, *postgres.PostgresContainer) {
+	t.Helper()
+
+	// Use podman socket if Docker is not already configured.
+	configurePodmanSocket()
+
+	ctx := context.Background()
+	containerName := fmt.Sprintf("hook-authz-%s", sanitizeName(t.Name()))
+
+	var pgContainer *postgres.PostgresContainer
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Skipf("Skipping: container runtime not available (%v)", r)
+			}
+		}()
+		var err error
+		pgContainer, err = postgres.Run(ctx,
+			"postgres:16-alpine",
+			postgres.WithDatabase("testdb"),
+			postgres.WithUsername("testuser"),
+			postgres.WithPassword("testpass"),
+			testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
+				ContainerRequest: testcontainers.ContainerRequest{Name: containerName},
+			}),
+		)
+		if err != nil {
+			t.Skipf("Skipping: container runtime not available (%v)", err)
+		}
+	}()
+
+	if pgContainer == nil {
+		return "", nil
+	}
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		t.Fatalf("Failed to get connection string: %v", err)
+	}
+
+	for i := 0; i < 10; i++ {
+		cfg, err := pgx.ParseConfig(connStr)
+		if err != nil {
+			t.Fatalf("Failed to parse config: %v", err)
+		}
+		sqlDB := stdlib.OpenDB(*cfg)
+		if err := sqlDB.Ping(); err == nil {
+			sqlDB.Close()
+			break
+		}
+		sqlDB.Close()
+		if i < 9 {
+			time.Sleep(time.Second)
+		}
+	}
+
+	return connStr, pgContainer
+}
+
+func runMigrations(t *testing.T, connStr string) {
+	t.Helper()
+	cfg, err := pgx.ParseConfig(connStr)
+	if err != nil {
+		t.Fatalf("Failed to parse DSN: %v", err)
+	}
+	sqlDB := stdlib.OpenDB(*cfg)
+	defer sqlDB.Close()
+
+	goose.SetBaseFS(migrations.EmbedMigrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		t.Fatalf("Failed to set dialect: %v", err)
+	}
+	if err := goose.Up(sqlDB, "."); err != nil {
+		t.Fatalf("Failed to run migrations: %v", err)
+	}
+}
+
+// newIntegrationServer spins up Postgres, runs migrations, and wires all gRPC-gateway
+// handlers directly on a runtime.ServeMux (avoids import cycle with pkg/web).
+func newIntegrationServer(t *testing.T) (*testClient, func()) {
+	t.Helper()
+
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	connStr, pgContainer := setupTestPostgres(t)
+	if pgContainer == nil {
+		return nil, func() {}
+	}
+	runMigrations(t, connStr)
+
+	logger := logging.NewNoopLogger()
+	monitor := monitoring.NewNoopMonitor("hook-service-test", logger)
+	tracer := tracing.NewNoopTracer()
+
+	dbClient, err := db.NewDBClient(db.Config{DSN: connStr, MaxConns: 5, MinConns: 1}, tracer, monitor, logger)
+	if err != nil {
+		pgContainer.Terminate(context.Background()) //nolint:errcheck
+		t.Fatalf("Failed to create DB client: %v", err)
+	}
+
+	s := storage.NewStorage(dbClient, tracer, monitor, logger)
+	authz := authorization.NewAuthorizer(
+		openfga.NewNoopClient(tracer, monitor, logger),
+		tracer, monitor, logger,
+	)
+
+	// Wire gRPC-gateway directly to avoid the pkg/web → pkg/authorization import cycle.
+	gwMux := runtime.NewServeMux(
+		runtime.WithForwardResponseRewriter(httptypes.ForwardErrorResponseRewriter),
+		runtime.WithDisablePathLengthFallback(),
+		runtime.WithMarshalerOption(runtime.MIMEWildcard, &runtime.JSONPb{
+			MarshalOptions: protojson.MarshalOptions{UseProtoNames: true},
+		}),
+	)
+
+	authzSvc := authorization_api.NewService(s, authz, tracer, monitor, logger)
+	groupSvc := NewService(s, authz, tracer, monitor, logger)
+
+	ctx := context.Background()
+	v0_authz.RegisterAppAuthorizationServiceHandlerServer(ctx, gwMux,
+		authorization_api.NewGrpcServer(authzSvc, tracer, monitor, logger),
+	)
+	v0_groups.RegisterAuthzGroupsServiceHandlerServer(ctx, gwMux,
+		NewGrpcServer(groupSvc, tracer, monitor, logger),
+	)
+
+	srv := httptest.NewServer(gwMux)
+
+	cleanup := func() {
+		srv.Close()
+		dbClient.Close()
+		if err := pgContainer.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate container: %v", err)
+		}
+	}
+
+	return &testClient{t: t, server: srv, http: srv.Client()}, cleanup
+}
+
+// createTestGroup creates a group via the groups API and returns its ID.
+func createTestGroup(t *testing.T, client *testClient, name string) string {
+	t.Helper()
+
+	body := map[string]interface{}{
+		"name":        name,
+		"description": "integration test group",
+		"type":        "local",
+	}
+	statusCode, respBody := client.Request(http.MethodPost, "/api/v0/authz/groups", body)
+	if statusCode != http.StatusOK {
+		t.Fatalf("failed to create test group %q (status %d): %s", name, statusCode, string(respBody))
+	}
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		t.Fatalf("failed to unmarshal create group response: %v", err)
+	}
+	if len(resp.Data) == 0 {
+		t.Fatalf("create group returned empty data for group %q", name)
+	}
+	return resp.Data[0].ID
+}
+
+// TestGroupsLifecycle covers POST, GET, PUT, DELETE for groups.
+func TestGroupsLifecycle(t *testing.T) {
+	t.Parallel()
+
+	client, teardown := newIntegrationServer(t)
+	if client == nil {
+		return
+	}
+	defer teardown()
+
+	groupName := fmt.Sprintf("test-group-%d", time.Now().UnixNano())
+
+	// 1. Create Group
+	createBody := map[string]interface{}{
+		"name":        groupName,
+		"description": "Lifecycle test group",
+		"type":        "local",
+	}
+	statusCode, respBody := client.Request(http.MethodPost, groupsBase, createBody)
+	if statusCode != http.StatusOK {
+		t.Fatalf("CreateGroup: expected 200, got %d. Body: %s", statusCode, string(respBody))
+	}
+	var createResp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(respBody, &createResp); err != nil {
+		t.Fatalf("CreateGroup unmarshal error: %v", err)
+	}
+	if len(createResp.Data) == 0 {
+		t.Fatalf("CreateGroup returned empty data")
+	}
+	groupID := createResp.Data[0].ID
+
+	// 2. Get Group
+	statusCode, getBody := client.Request(http.MethodGet, fmt.Sprintf("%s/%s", groupsBase, groupID), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("GetGroup: expected 200, got %d. Body: %s", statusCode, string(getBody))
+	}
+	var getResp struct {
+		Data []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(getBody, &getResp); err != nil {
+		t.Fatalf("GetGroup unmarshal error: %v", err)
+	}
+	if len(getResp.Data) == 0 {
+		t.Fatalf("GetGroup returned empty data")
+	}
+	if getResp.Data[0].Name != groupName {
+		t.Errorf("GetGroup: expected name %s, got %s", groupName, getResp.Data[0].Name)
+	}
+
+	// 3. List Groups
+	statusCode, listBody := client.Request(http.MethodGet, groupsBase, nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("ListGroups: expected 200, got %d. Body: %s", statusCode, string(listBody))
+	}
+
+	// 4. Update Group
+	updateBody := map[string]interface{}{
+		"description": "Updated description",
+		"type":        "local",
+	}
+	statusCode, updateRespBody := client.Request(http.MethodPut, fmt.Sprintf("%s/%s", groupsBase, groupID), updateBody)
+	if statusCode != http.StatusOK {
+		t.Fatalf("UpdateGroup: expected 200, got %d. Body: %s", statusCode, string(updateRespBody))
+	}
+
+	// Verify update
+	statusCode, getUpdatedBody := client.Request(http.MethodGet, fmt.Sprintf("%s/%s", groupsBase, groupID), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("GetGroup (after update): expected 200, got %d. Body: %s", statusCode, string(getUpdatedBody))
+	}
+	if err := json.Unmarshal(getUpdatedBody, &getResp); err != nil {
+		t.Fatalf("GetGroup unmarshal error: %v", err)
+	}
+	if len(getResp.Data) == 0 {
+		t.Fatalf("GetGroup returned empty data after update")
+	}
+	if getResp.Data[0].Description != "Updated description" {
+		t.Errorf("expected updated description, got %s", getResp.Data[0].Description)
+	}
+
+	// 5. Delete Group
+	statusCode, deleteBody := client.Request(http.MethodDelete, fmt.Sprintf("%s/%s", groupsBase, groupID), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("DeleteGroup: expected 200, got %d. Body: %s", statusCode, string(deleteBody))
+	}
+
+	// Verify delete (GET should fail or return empty/404)
+	statusCode, _ = client.Request(http.MethodGet, fmt.Sprintf("%s/%s", groupsBase, groupID), nil)
+	if statusCode == http.StatusOK {
+		t.Errorf("GetGroup: expected non-200 after deletion, got 200")
+	}
+}
+
+// TestUserMembership covers adding and removing users from groups.
+func TestUserMembership(t *testing.T) {
+	t.Parallel()
+
+	client, teardown := newIntegrationServer(t)
+	if client == nil {
+		return
+	}
+	defer teardown()
+
+	groupID := createTestGroup(t, client, fmt.Sprintf("um-group-%d", time.Now().UnixNano()))
+	userID := fmt.Sprintf("test-user-%d@example.com", time.Now().UnixNano())
+
+	// Add User To Group (POST body is an array of strings mapping to user_ids)
+	t.Run("AddUserToGroup", func(t *testing.T) {
+		body := []string{userID}
+		statusCode, respBody := client.Request(http.MethodPost, fmt.Sprintf("%s/%s/users", groupsBase, groupID), body)
+		if statusCode != http.StatusOK {
+			t.Fatalf("expected status OK adding user, got %d. Body: %s", statusCode, string(respBody))
+		}
+	})
+
+	// List Users In Group
+	t.Run("ListUsersInGroup", func(t *testing.T) {
+		statusCode, body := client.Request(http.MethodGet, fmt.Sprintf("%s/%s/users", groupsBase, groupID), nil)
+		if statusCode != http.StatusOK {
+			t.Fatalf("expected status OK listing users, got %d. Body: %s", statusCode, string(body))
+		}
+
+		var resp struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		found := false
+		for _, u := range resp.Data {
+			if u.ID == userID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("added user %s not found in group %s", userID, groupID)
+		}
+	})
+
+	// List Groups For User
+	t.Run("ListGroupsForUser", func(t *testing.T) {
+		statusCode, body := client.Request(http.MethodGet, fmt.Sprintf("%s/%s/groups", usersBase, userID), nil)
+		if statusCode != http.StatusOK {
+			t.Fatalf("expected status OK listing user groups, got %d. Body: %s", statusCode, string(body))
+		}
+
+		var resp struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+
+		found := false
+		for _, g := range resp.Data {
+			if g.ID == groupID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("group %s not found in groups for user %s", groupID, userID)
+		}
+	})
+
+	// Remove User From Group
+	t.Run("RemoveUserFromGroup", func(t *testing.T) {
+		statusCode, respBody := client.Request(http.MethodDelete, fmt.Sprintf("%s/%s/users/%s", groupsBase, groupID, userID), nil)
+		if statusCode != http.StatusOK {
+			t.Fatalf("expected status OK removing user, got %d. Body: %s", statusCode, string(respBody))
+		}
+
+		// Verify user is no longer in group
+		statusCode, body := client.Request(http.MethodGet, fmt.Sprintf("%s/%s/users", groupsBase, groupID), nil)
+		if statusCode != http.StatusOK {
+			t.Fatalf("expected status OK listing users after removal, got %d", statusCode)
+		}
+
+		var resp struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			t.Fatalf("failed to unmarshal response: %v", err)
+		}
+		for _, u := range resp.Data {
+			if u.ID == userID {
+				t.Errorf("user %s still found in group %s after removal", userID, groupID)
+			}
+		}
+	})
+}
+
+// TestAddUserToMultipleGroups verifies AddUsersToGroup works sequentially.
+func TestAddUserToMultipleGroups(t *testing.T) {
+	t.Parallel()
+
+	client, teardown := newIntegrationServer(t)
+	if client == nil {
+		return
+	}
+	defer teardown()
+
+	group1ID := createTestGroup(t, client, fmt.Sprintf("multi-1-%d", time.Now().UnixNano()))
+	group2ID := createTestGroup(t, client, fmt.Sprintf("multi-2-%d", time.Now().UnixNano()))
+
+	userID := fmt.Sprintf("multi-group-user-%d@example.com", time.Now().UnixNano())
+
+	// Add user to both groups
+	for _, gID := range []string{group1ID, group2ID} {
+		body := []string{userID}
+		statusCode, respBody := client.Request(http.MethodPost, fmt.Sprintf("%s/%s/users", groupsBase, gID), body)
+		if statusCode != http.StatusOK {
+			t.Fatalf("expected status OK adding user to group %s, got %d. Body: %s", gID, statusCode, string(respBody))
+		}
+	}
+
+	// List groups for user
+	statusCode, body := client.Request(http.MethodGet, fmt.Sprintf("%s/%s/groups", usersBase, userID), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected status OK, got %d. Body: %s", statusCode, string(body))
+	}
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	groupsFound := make(map[string]bool)
+	for _, g := range resp.Data {
+		groupsFound[g.ID] = true
+	}
+
+	if !groupsFound[group1ID] {
+		t.Errorf("group %s not found in user's groups", group1ID)
+	}
+	if !groupsFound[group2ID] {
+		t.Errorf("group %s not found in user's groups", group2ID)
+	}
+}
+
+// TestSetUserGroups covers PUT /users/{user_id}/groups.
+func TestSetUserGroups(t *testing.T) {
+	client, teardown := newIntegrationServer(t)
+	if client == nil {
+		return
+	}
+	defer teardown()
+
+	group1ID := createTestGroup(t, client, fmt.Sprintf("set-1-%d", time.Now().UnixNano()))
+	group2ID := createTestGroup(t, client, fmt.Sprintf("set-2-%d", time.Now().UnixNano()))
+
+	userID := fmt.Sprintf("set-groups-user-%d@example.com", time.Now().UnixNano())
+
+	// Use PUT /users/{id}/groups to set groups for a user
+	body := []string{group1ID, group2ID}
+	statusCode, respBody := client.Request(http.MethodPut, fmt.Sprintf("%s/%s/groups", usersBase, userID), body)
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected status OK setting user groups, got %d. Body: %s", statusCode, string(respBody))
+	}
+
+	// Verify user is in both groups
+	statusCode, listBody := client.Request(http.MethodGet, fmt.Sprintf("%s/%s/groups", usersBase, userID), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected status OK listing user groups, got %d. Body: %s", statusCode, string(listBody))
+	}
+
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(listBody, &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+
+	groupsFound := make(map[string]bool)
+	for _, g := range resp.Data {
+		groupsFound[g.ID] = true
+	}
+	if !groupsFound[group1ID] {
+		t.Errorf("group %s not found in user's groups after PUT", group1ID)
+	}
+	if !groupsFound[group2ID] {
+		t.Errorf("group %s not found in user's groups after PUT", group2ID)
+	}
+}
+
+// TestUserMembershipErrors verifies edge cases with users endpoints.
+func TestUserMembershipErrors(t *testing.T) {
+	client, teardown := newIntegrationServer(t)
+	if client == nil {
+		return
+	}
+	defer teardown()
+
+	t.Run("ListUsersInNonExistentGroup", func(t *testing.T) {
+		statusCode, _ := client.Request(http.MethodGet, fmt.Sprintf("%s/non-existent-group/users", groupsBase), nil)
+		if statusCode == http.StatusOK {
+			t.Error("expected error for listing users in non-existent group, got 200")
+		}
+	})
+
+	t.Run("AddUserToNonExistentGroup", func(t *testing.T) {
+		body := map[string]interface{}{
+			"user_ids": []string{"some-user@example.com"},
+		}
+		statusCode, _ := client.Request(http.MethodPost, fmt.Sprintf("%s/non-existent-group/users", groupsBase), body)
+		if statusCode == http.StatusOK {
+			t.Error("expected error for adding user to non-existent group, got 200")
+		}
+	})
 }
