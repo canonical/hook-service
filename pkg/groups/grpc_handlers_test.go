@@ -76,7 +76,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 			expectResp: &types.Group{
 				ID:          "group-id",
 				Name:        "test-group",
-				TenantId:    DefaultTenantID,
+				TenantId:    storage.DefaultTenantID,
 				Description: "A test group",
 				Type:        types.GroupTypeLocal,
 				CreatedAt:   now,
@@ -88,7 +88,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 				Data: []*v0_groups.Group{{
 					Id:          "group-id",
 					Name:        "test-group",
-					TenantId:    DefaultTenantID,
+					TenantId:    storage.DefaultTenantID,
 					Description: "A test group",
 					Type:        "local",
 					CreatedAt:   timestamppb.New(now),
@@ -109,7 +109,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 			expectResp: &types.Group{
 				ID:          "group-id",
 				Name:        "test-group",
-				TenantId:    DefaultTenantID,
+				TenantId:    storage.DefaultTenantID,
 				Description: "A test group",
 				Type:        types.GroupTypeLocal,
 				CreatedAt:   now,
@@ -121,7 +121,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 				Data: []*v0_groups.Group{{
 					Id:          "group-id",
 					Name:        "test-group",
-					TenantId:    DefaultTenantID,
+					TenantId:    storage.DefaultTenantID,
 					Description: "A test group",
 					Type:        "local",
 					CreatedAt:   timestamppb.New(now),
@@ -159,7 +159,7 @@ func TestGrpcHandler_CreateGroup(t *testing.T) {
 			gType, _ := types.ParseGroupType(tt.input.Group.GetType())
 			g := &types.Group{
 				Name:        tt.input.Group.GetName(),
-				TenantId:    DefaultTenantID,
+				TenantId:    storage.DefaultTenantID,
 				Description: tt.input.Group.GetDescription(),
 				Type:        gType,
 			}
@@ -202,7 +202,7 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 			expectResp: &types.Group{
 				ID:          "group-id",
 				Name:        "test-group",
-				TenantId:    DefaultTenantID,
+				TenantId:    storage.DefaultTenantID,
 				Description: "A test group",
 				Type:        types.GroupTypeLocal,
 				CreatedAt:   now,
@@ -214,7 +214,7 @@ func TestGrpcHandler_GetGroup(t *testing.T) {
 				Data: []*v0_groups.Group{{
 					Id:          "group-id",
 					Name:        "test-group",
-					TenantId:    DefaultTenantID,
+					TenantId:    storage.DefaultTenantID,
 					Description: "A test group",
 					Type:        "local",
 					CreatedAt:   timestamppb.New(now),
