@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.2.0](https://github.com/canonical/hook-service/compare/v1.1.3...v1.2.0) (2026-03-04)
+
+
+### Features
+
+* add importer cmd for sourcing data from salesforce (or other drivers) ([587775e](https://github.com/canonical/hook-service/commit/587775ea63887336a5c33dc9ed58c7af9e12fcfa))
+* drop salesforce dependency, rely only on 'local|db' groups ([41977ee](https://github.com/canonical/hook-service/commit/41977ee28594a72ac26a00f85f6c67a3d0407e83))
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([9199477](https://github.com/canonical/hook-service/commit/9199477ed6788f97bed0216cdf5a0d26f08395d8))
+* **deps:** update go deps ([2f8bc0c](https://github.com/canonical/hook-service/commit/2f8bc0cd462a5e4d7fae2f836442c00cecdef0f3))
+* **deps:** update go deps (minor) ([#185](https://github.com/canonical/hook-service/issues/185)) ([a8604ad](https://github.com/canonical/hook-service/commit/a8604ad020b82a387847be72beb4533ba2c497ba))
+* **deps:** update go deps (minor) ([#191](https://github.com/canonical/hook-service/issues/191)) ([10006c1](https://github.com/canonical/hook-service/commit/10006c1609fe48151a450609ae6080982730d191))
+* drop memory.go files ([bb53669](https://github.com/canonical/hook-service/commit/bb53669e1d7481a8711d52b3ce80a2ef517319fc))
+* move constant for default tenant to storage package ([4e83689](https://github.com/canonical/hook-service/commit/4e8368903b6f1e9fe82756b1b104c6d77d08619f))
+
 ## [1.1.3](https://github.com/canonical/hook-service/compare/v1.1.2...v1.1.3) (2026-02-23)
 
 
