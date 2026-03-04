@@ -24,7 +24,7 @@ import (
 
 func TestService_CreateGroup(t *testing.T) {
 	groupName := "test-group"
-	org := DefaultTenantID
+	org := storage.DefaultTenantID
 	description := "A test group"
 	groupType := types.GroupTypeLocal
 	dbErr := errors.New("db error")

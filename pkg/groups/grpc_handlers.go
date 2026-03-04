@@ -18,13 +18,12 @@ import (
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/internal/types"
 )
 
 var _ v0_groups.AuthzGroupsServiceServer = (*GrpcServer)(nil)
-
-const DefaultTenantID = "default"
 
 type GrpcServer struct {
 	svc ServiceInterface
@@ -60,7 +59,7 @@ func (g *GrpcServer) CreateGroup(ctx context.Context, req *v0_groups.CreateGroup
 
 	group := &types.Group{
 		Name:        req.Group.GetName(),
-		TenantId:    DefaultTenantID,
+		TenantId:    storage.DefaultTenantID,
 		Description: req.Group.GetDescription(),
 		Type:        gType,
 	}
@@ -206,7 +205,7 @@ func (g *GrpcServer) UpdateGroup(ctx context.Context, req *v0_groups.UpdateGroup
 	group := &types.Group{
 		Description: req.Group.GetDescription(),
 		Type:        gType,
-		TenantId:    DefaultTenantID,
+		TenantId:    storage.DefaultTenantID,
 	}
 
 	gg, err := g.svc.UpdateGroup(ctx, req.GetId(), group)

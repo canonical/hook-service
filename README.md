@@ -8,7 +8,7 @@
 [![GitHub Release](https://img.shields.io/github/v/release/canonical/hook-service)](https://github.com/canonical/hook-service/releases)
 [![Go Reference](https://pkg.go.dev/badge/github.com/canonical/hook-service.svg)](https://pkg.go.dev/github.com/canonical/hook-service)
 
-This is the Canonical Identity Platform Hook Service used for handling Hydra Hooks and managing groups. It integrates with Ory Kratos for identity management, Ory Hydra for OAuth2/OIDC flows, OpenFGA for fine-grained authorization, and optional Salesforce for group management.
+This is the Canonical Identity Platform Hook Service used for handling Hydra Hooks and managing groups. It integrates with Ory Kratos for identity management, Ory Hydra for OAuth2/OIDC flows, and OpenFGA for fine-grained authorization. User group data is stored locally in PostgreSQL and can be bulk-imported from external sources (e.g. Salesforce) via the CLI.
 
 ## Environment Variables
 
@@ -28,10 +28,6 @@ The application is configured via environment variables.
 | `OPENFGA_API_TOKEN` | OpenFGA API token | |
 | `OPENFGA_STORE_ID` | OpenFGA store ID | |
 | `OPENFGA_AUTHORIZATION_MODEL_ID` | OpenFGA authorization model ID | |
-| `SALESFORCE_ENABLED` | Enable Salesforce integration | `true` |
-| `SALESFORCE_DOMAIN` | Salesforce domain | |
-| `SALESFORCE_CONSUMER_KEY` | Salesforce consumer key | |
-| `SALESFORCE_CONSUMER_SECRET` | Salesforce consumer secret | |
 | `AUTHORIZATION_ENABLED` | Enable authorization middleware | `false` |
 | `OPENFGA_WORKERS_TOTAL` | Total OpenFGA workers | `150` |
 | `AUTHENTICATION_ENABLED` | Enable JWT authentication for Groups/Authz APIs | `true` |
@@ -79,6 +75,28 @@ A request is authorized if **either**:
 # Include JWT token in Authorization header
 curl -H "Authorization: Bearer <jwt-token>" http://localhost:8080/api/v0/authz/groups
 ```
+
+### Import Command
+
+The `import` CLI command batch-imports user-group mappings from an external source into the local database. This decouples data ingestion from the token hook hot path.
+
+```bash
+# Import from Salesforce
+hook-service import --driver salesforce --dsn "postgres://user:pass@host:5432/db" \
+  --domain sf.example.com \
+  --consumer-key KEY \
+  --consumer-secret SECRET
+```
+
+Salesforce credentials can also be provided via environment variables (`SALESFORCE_DOMAIN`, `SALESFORCE_CONSUMER_KEY`, `SALESFORCE_CONSUMER_SECRET`). Flags take precedence over env vars.
+
+| Flag | Description |
+|------|-------------|
+| `--driver` | Import driver (required, currently: `salesforce`) |
+| `--dsn` | PostgreSQL connection string (required) |
+| `--domain` | Salesforce domain |
+| `--consumer-key` | Salesforce consumer key |
+| `--consumer-secret` | Salesforce consumer secret |
 
 ## Development Setup
 
@@ -148,6 +166,10 @@ oauth2:
 ```
 
 This configuration is set in `docker/hydra/hydra.yml` for local development. For production deployments, ensure your Hydra instance is configured with these settings to make the `groups` claim accessible at the top level of the token payload.
+
+## Architecture Decision Records
+
+Key technical decisions are documented in [`docs/adr/`](docs/adr/README.md).
 
 ## Security
 
