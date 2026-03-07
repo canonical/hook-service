@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/canonical/hook-service/compare/v1.2.0...v1.2.1) (2026-03-07)
+
+
+### Bug Fixes
+
+* **deps:** update module google.golang.org/grpc to v1.79.2 ([ae3651c](https://github.com/canonical/hook-service/commit/ae3651cced32a7e06966c71d07842fd4dc8c6a2b))
+* **deps:** update module google.golang.org/grpc to v1.79.2 ([#199](https://github.com/canonical/hook-service/issues/199)) ([13588a1](https://github.com/canonical/hook-service/commit/13588a14ae46a6c938a9502e99e94a4b1ad71da1))
+
 ## [1.2.0](https://github.com/canonical/hook-service/compare/v1.1.3...v1.2.0) (2026-03-04)
 
 
