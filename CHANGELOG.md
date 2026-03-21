@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.1](https://github.com/canonical/hook-service/compare/v1.2.0...v1.2.1) (2026-03-21)
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([7e4cd29](https://github.com/canonical/hook-service/commit/7e4cd29088dbcbf2daa442b57b0e3624a7adcf0d))
+* **deps:** update go deps (minor) ([#200](https://github.com/canonical/hook-service/issues/200)) ([237c5ad](https://github.com/canonical/hook-service/commit/237c5ad6a0778e7a58a6bbf63417240837d584b6))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0b37fe3 ([8e972b0](https://github.com/canonical/hook-service/commit/8e972b0db51d6090e7cf74c521f2a3e8b8df13e3))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0b37fe3 ([#206](https://github.com/canonical/hook-service/issues/206)) ([7489eb6](https://github.com/canonical/hook-service/commit/7489eb6ccbd9b3922a702002aa2d22378b631b02))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 84a4fc4 ([3c281c6](https://github.com/canonical/hook-service/commit/3c281c6e3907f510bdd133b714bead467fb558b9))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 84a4fc4 ([#202](https://github.com/canonical/hook-service/issues/202)) ([b0495f4](https://github.com/canonical/hook-service/commit/b0495f4f2a13c1b1eb7f922f44101568fa490313))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to d00831a ([2ce284b](https://github.com/canonical/hook-service/commit/2ce284bf2eb871b7b1cb44ab15893ead2aa98775))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to d00831a ([#211](https://github.com/canonical/hook-service/issues/211)) ([fb7269e](https://github.com/canonical/hook-service/commit/fb7269e17ed0d05b11b46a74e05f72f956983e33))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.0 ([73cbc18](https://github.com/canonical/hook-service/commit/73cbc187c96a33ae6eab9e225b65d6f739c911f6))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.0 ([#213](https://github.com/canonical/hook-service/issues/213)) ([2c4e0e4](https://github.com/canonical/hook-service/commit/2c4e0e4a3d2d1be425a92a85d043007b0f9a6f99))
+* **deps:** update module golang.org/x/net to v0.52.0 ([375ab53](https://github.com/canonical/hook-service/commit/375ab53c85667b0b691d36cc201fa82cb3c84417))
+* **deps:** update module golang.org/x/net to v0.52.0 ([#204](https://github.com/canonical/hook-service/issues/204)) ([2e9a376](https://github.com/canonical/hook-service/commit/2e9a376c60c117b1eb4b03dd34e9e156e0b21b2d))
+* **deps:** update module google.golang.org/grpc to v1.79.2 ([ae3651c](https://github.com/canonical/hook-service/commit/ae3651cced32a7e06966c71d07842fd4dc8c6a2b))
+* **deps:** update module google.golang.org/grpc to v1.79.2 ([#199](https://github.com/canonical/hook-service/issues/199)) ([13588a1](https://github.com/canonical/hook-service/commit/13588a14ae46a6c938a9502e99e94a4b1ad71da1))
+* **deps:** update module google.golang.org/grpc to v1.79.3 ([a8783bf](https://github.com/canonical/hook-service/commit/a8783bf48bb8e3a44298576964ec404b7e351e12))
+* **deps:** update module google.golang.org/grpc to v1.79.3 ([#208](https://github.com/canonical/hook-service/issues/208)) ([0cd86b5](https://github.com/canonical/hook-service/commit/0cd86b5d266b614ff9690bfc6e64c417746fa0ae))
+
 ## [1.2.0](https://github.com/canonical/hook-service/compare/v1.1.3...v1.2.0) (2026-03-04)
 
 
