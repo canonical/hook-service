@@ -27,3 +27,9 @@ type AuthorizerInterface interface {
 type DatabaseInterface interface {
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 }
+
+// TenantValidatorInterface validates that a user is an active member of a
+// tenant. See internal/tenants for the real and noop implementations.
+type TenantValidatorInterface interface {
+	ValidateMembership(ctx context.Context, identityID, tenantID string) error
+}

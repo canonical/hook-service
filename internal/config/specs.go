@@ -46,6 +46,8 @@ type EnvSpec struct {
 	DBMinConns        int32         `envconfig:"db_min_conns" default:"2"`
 	DBMaxConnLifetime time.Duration `envconfig:"db_max_conn_lifetime" default:"1h"`
 	DBMaxConnIdleTime time.Duration `envconfig:"db_max_conn_idle_time" default:"30m"`
+
+	TenantServiceURL string `envconfig:"tenant_service_url" default:""`
 }
 
 type Flags struct {

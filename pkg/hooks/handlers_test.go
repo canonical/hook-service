@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 	"testing"
 
+	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
 	"github.com/ory/fosite/handler/openid"
@@ -30,8 +31,16 @@ import (
 //go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
 
 func createHookRequest(clientId, userId string, grantTypes []string, aud []string) oauth2.TokenHookRequest {
+	return createHookRequestWithExtra(clientId, userId, grantTypes, aud, nil)
+}
+
+// createHookRequestWithExtra builds a TokenHookRequest optionally populated
+// with session extra data (e.g., {"_tenant_id": "..."}).
+func createHookRequestWithExtra(clientId, userId string, grantTypes []string, aud []string, extra map[string]interface{}) oauth2.TokenHookRequest {
 	r := oauth2.TokenHookRequest{
-		Session: &oauth2.Session{},
+		Session: &oauth2.Session{
+			Extra: extra,
+		},
 		Request: oauth2.Request{
 			ClientID:        clientId,
 			GrantTypes:      grantTypes,
@@ -152,6 +161,7 @@ func TestHandleHydraHook(t *testing.T) {
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 			mockService := NewMockServiceInterface(ctrl)
+			mockTenantValidator := NewMockTenantValidatorInterface(ctrl)
 
 			// Mock tracer Start call
 			mockTracer.EXPECT().Start(gomock.Any(), "hooks.API.handleHydraHook").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
@@ -177,7 +187,7 @@ func TestHandleHydraHook(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v0/hook/hydra", bytes.NewBuffer(body))
 
 			mux := chi.NewMux()
-			NewAPI(mockService, nil, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
+			NewAPI(mockService, mockTenantValidator, nil, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
 			w := httptest.NewRecorder()
 
 			mux.ServeHTTP(w, req)
@@ -203,6 +213,162 @@ func TestHandleHydraHook(t *testing.T) {
 
 			if res.StatusCode != test.expectedStatus {
 				t.Fatalf("expected status to be %v not %v", test.expectedStatus, res.StatusCode)
+			}
+		})
+	}
+}
+
+func TestHandleHydraHookTenantValidation(t *testing.T) {
+	groups := []*types.Group{{ID: "group1", Name: "group1"}}
+
+	tests := []struct {
+		name string
+
+		userId     string
+		clientId   string
+		grantTypes []string
+		extra      map[string]interface{}
+
+		tenantValidatorResult error
+
+		expectedStatus   int
+		expectedTenantID string
+	}{
+		{
+			name:                  "No tenant_id in session — skip validation",
+			userId:                "user-id",
+			clientId:              "client",
+			grantTypes:            []string{"authorization_code"},
+			extra:                 nil,
+			tenantValidatorResult: nil,
+			expectedStatus:        http.StatusOK,
+		},
+		{
+			name:                  "Valid tenant membership — inject tenant_id",
+			userId:                "user-id",
+			clientId:              "client",
+			grantTypes:            []string{"authorization_code"},
+			extra:                 map[string]interface{}{"_tenant_id": "tenant-abc"},
+			tenantValidatorResult: nil,
+			expectedStatus:        http.StatusOK,
+			expectedTenantID:      "tenant-abc",
+		},
+		{
+			name:                  "User not a member — 403",
+			userId:                "user-id",
+			clientId:              "client",
+			grantTypes:            []string{"authorization_code"},
+			extra:                 map[string]interface{}{"_tenant_id": "tenant-abc"},
+			tenantValidatorResult: tenants.ErrNotMember,
+			expectedStatus:        http.StatusForbidden,
+		},
+		{
+			name:                  "Tenant-service unreachable — 500",
+			userId:                "user-id",
+			clientId:              "client",
+			grantTypes:            []string{"authorization_code"},
+			extra:                 map[string]interface{}{"_tenant_id": "tenant-abc"},
+			tenantValidatorResult: errors.New("cannot reach tenant-service"),
+			expectedStatus:        http.StatusInternalServerError,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockLogger := NewMockLoggerInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+			mockService := NewMockServiceInterface(ctrl)
+			mockTenantValidator := NewMockTenantValidatorInterface(ctrl)
+
+			mockTracer.EXPECT().Start(gomock.Any(), "hooks.API.handleHydraHook").Return(context.Background(), trace.SpanFromContext(context.Background())).Times(1)
+
+			mockService.EXPECT().FetchUserGroups(gomock.Any(), gomock.Any()).Times(1).Return(groups, nil)
+			mockService.EXPECT().AuthorizeRequest(gomock.Any(), gomock.Any(), gomock.Any(), gomock.Any()).Times(1).Return(true, nil)
+
+			hasTenant := test.extra != nil && test.extra["_tenant_id"] != nil
+			if hasTenant {
+				mockTenantValidator.EXPECT().ValidateMembership(gomock.Any(), test.userId, test.extra["_tenant_id"].(string)).Times(1).Return(test.tenantValidatorResult)
+			}
+
+			mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any()).AnyTimes()
+			mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any()).AnyTimes()
+
+			body, _ := json.Marshal(createHookRequestWithExtra(test.clientId, test.userId, test.grantTypes, nil, test.extra))
+			req := httptest.NewRequest(http.MethodPost, "/api/v0/hook/hydra", bytes.NewBuffer(body))
+
+			mux := chi.NewMux()
+			NewAPI(mockService, mockTenantValidator, nil, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
+			w := httptest.NewRecorder()
+
+			mux.ServeHTTP(w, req)
+			res := w.Result()
+			defer res.Body.Close()
+
+			if res.StatusCode != test.expectedStatus {
+				t.Fatalf("expected status %d, got %d", test.expectedStatus, res.StatusCode)
+			}
+
+			if test.expectedTenantID != "" {
+				data, _ := io.ReadAll(res.Body)
+				resp := new(oauth2.TokenHookResponse)
+				if err := json.Unmarshal(data, resp); err != nil {
+					t.Fatalf("expected error to be nil got %v", err)
+				}
+				tid, ok := resp.Session.AccessToken["tenant_id"].(string)
+				if !ok || tid != test.expectedTenantID {
+					t.Fatalf("expected tenant_id %q in access token, got %q", test.expectedTenantID, tid)
+				}
+				tid, ok = resp.Session.IDToken["tenant_id"].(string)
+				if !ok || tid != test.expectedTenantID {
+					t.Fatalf("expected tenant_id %q in id token, got %q", test.expectedTenantID, tid)
+				}
+			}
+		})
+	}
+}
+
+func TestExtractTenantID(t *testing.T) {
+	tests := []struct {
+		name     string
+		req      *oauth2.TokenHookRequest
+		expected string
+	}{
+		{
+			name:     "nil session",
+			req:      &oauth2.TokenHookRequest{},
+			expected: "",
+		},
+		{
+			name:     "nil extra",
+			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{}},
+			expected: "",
+		},
+		{
+			name:     "no _tenant_id key",
+			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{Extra: map[string]interface{}{"foo": "bar"}}},
+			expected: "",
+		},
+		{
+			name:     "_tenant_id present",
+			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{Extra: map[string]interface{}{"_tenant_id": "t-123"}}},
+			expected: "t-123",
+		},
+		{
+			name:     "_tenant_id wrong type",
+			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{Extra: map[string]interface{}{"_tenant_id": 42}}},
+			expected: "",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := extractTenantID(test.req)
+			if got != test.expected {
+				t.Fatalf("expected %q, got %q", test.expected, got)
 			}
 		})
 	}

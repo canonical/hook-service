@@ -20,6 +20,7 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/storage"
+	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/authentication"
 	authz_api "github.com/canonical/hook-service/pkg/authorization"
@@ -35,6 +36,7 @@ func NewRouter(
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
 	authz authorization.AuthorizerInterface,
+	tenantValidator tenants.TenantValidatorInterface,
 	jwtVerifier authentication.TokenVerifierInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
@@ -103,6 +105,7 @@ func NewRouter(
 	// Register unprottected HTTP handlers
 	hooks.NewAPI(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
+		tenantValidator,
 		authMiddleware,
 		tracer,
 		monitor,

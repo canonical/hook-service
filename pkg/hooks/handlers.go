@@ -5,6 +5,7 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
@@ -27,8 +29,9 @@ const (
 )
 
 type API struct {
-	service    ServiceInterface
-	middleware *AuthMiddleware
+	service         ServiceInterface
+	tenantValidator TenantValidatorInterface
+	middleware      *AuthMiddleware
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -115,6 +118,28 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 
 	resp := a.newHookResponse(groups)
 
+	// Validate tenant membership if a tenant was selected at login.
+	if tenantID := extractTenantID(req); tenantID != "" {
+		span.SetAttributes(attribute.String("tenant_id", tenantID))
+		if err := a.tenantValidator.ValidateMembership(ctx, user.SubjectId, tenantID); err != nil {
+			if errors.Is(err, tenants.ErrNotMember) {
+				a.logger.Infof("tenant membership denied: user %s is not a member of tenant %s", user.SubjectId, tenantID)
+				span.SetStatus(codes.Error, "tenant membership denied")
+				span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			a.logger.Errorf("failed to validate tenant membership: %v", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "tenant validation failed")
+			span.SetAttributes(attribute.Int("http.status_code", http.StatusInternalServerError))
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		resp.Session.AccessToken["tenant_id"] = tenantID
+		resp.Session.IDToken["tenant_id"] = tenantID
+	}
+
 	span.SetAttributes(attribute.Int("http.status_code", http.StatusOK))
 	span.SetStatus(codes.Ok, "request successful")
 	w.WriteHeader(http.StatusOK)
@@ -142,6 +167,7 @@ func (a *API) newHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
 
 func NewAPI(
 	service ServiceInterface,
+	tenantValidator TenantValidatorInterface,
 	middleware *AuthMiddleware,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
@@ -150,6 +176,7 @@ func NewAPI(
 	a := new(API)
 
 	a.service = service
+	a.tenantValidator = tenantValidator
 	if middleware != nil {
 		a.middleware = middleware
 	}
@@ -159,4 +186,14 @@ func NewAPI(
 	a.logger = logger
 
 	return a
+}
+
+// extractTenantID returns the tenant ID from the session extra data, or
+// an empty string if none was set at login time.
+func extractTenantID(req *oauth2.TokenHookRequest) string {
+	if req.Session == nil || req.Session.Extra == nil {
+		return ""
+	}
+	tid, _ := req.Session.Extra["_tenant_id"].(string)
+	return tid
 }
