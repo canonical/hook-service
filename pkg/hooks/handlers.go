@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"sync"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -84,10 +85,40 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		attribute.StringSlice("granted_audience", req.Request.GrantedAudience),
 	)
 
-	groups, err := a.service.FetchUserGroups(ctx, *user)
-	if err != nil {
-		a.logger.Errorf("failed to fetch user groups: %v", err)
-		span.RecordError(err)
+	// Extract the tenant ID before launching goroutines: it is derived from the
+	// already-parsed request and is needed by both the tenant validation call and
+	// the final response assembly.
+	tenantID := extractTenantID(req)
+
+	// Run group lookup and tenant membership validation concurrently — they are
+	// independent I/O operations. AuthorizeRequest depends on groups, so it
+	// runs sequentially after both goroutines complete.
+	var (
+		groups    []*types.Group
+		groupsErr error
+		tenantErr error
+		wg        sync.WaitGroup
+	)
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		groups, groupsErr = a.service.FetchUserGroups(ctx, *user)
+	}()
+
+	if tenantID != "" {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			tenantErr = a.tenantValidator.ValidateMembership(ctx, user.SubjectId, tenantID)
+		}()
+	}
+
+	wg.Wait()
+
+	if groupsErr != nil {
+		a.logger.Errorf("failed to fetch user groups: %v", groupsErr)
+		span.RecordError(groupsErr)
 		span.SetStatus(codes.Error, "failed to fetch user groups")
 		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
 		w.WriteHeader(http.StatusForbidden)
@@ -118,19 +149,18 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 
 	resp := a.newHookResponse(groups)
 
-	// Validate tenant membership if a tenant was selected at login.
-	if tenantID := extractTenantID(req); tenantID != "" {
+	if tenantID != "" {
 		span.SetAttributes(attribute.String("tenant_id", tenantID))
-		if err := a.tenantValidator.ValidateMembership(ctx, user.SubjectId, tenantID); err != nil {
-			if errors.Is(err, tenants.ErrNotMember) {
+		if tenantErr != nil {
+			if errors.Is(tenantErr, tenants.ErrNotMember) {
 				a.logger.Infof("tenant membership denied: user %s is not a member of tenant %s", user.SubjectId, tenantID)
 				span.SetStatus(codes.Error, "tenant membership denied")
 				span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
 				w.WriteHeader(http.StatusForbidden)
 				return
 			}
-			a.logger.Errorf("failed to validate tenant membership: %v", err)
-			span.RecordError(err)
+			a.logger.Errorf("failed to validate tenant membership: %v", tenantErr)
+			span.RecordError(tenantErr)
 			span.SetStatus(codes.Error, "tenant validation failed")
 			span.SetAttributes(attribute.Int("http.status_code", http.StatusInternalServerError))
 			w.WriteHeader(http.StatusInternalServerError)
@@ -152,6 +182,10 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 func (a *API) newHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
 	resp := oauth2.TokenHookResponse{
 		Session: *flow.NewConsentRequestSessionData(),
+	}
+
+	if len(groups) == 0 {
+		return &resp
 	}
 
 	groupNames := make(map[string]struct{}, len(groups))
