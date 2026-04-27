@@ -187,7 +187,7 @@ func TestHandleHydraHook(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v0/hook/hydra", bytes.NewBuffer(body))
 
 			mux := chi.NewMux()
-			NewAPI(mockService, mockTenantValidator, nil, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
+			NewAPI(mockService, mockTenantValidator, nil, 100, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
 			w := httptest.NewRecorder()
 
 			mux.ServeHTTP(w, req)
@@ -302,7 +302,7 @@ func TestHandleHydraHookTenantValidation(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v0/hook/hydra", bytes.NewBuffer(body))
 
 			mux := chi.NewMux()
-			NewAPI(mockService, mockTenantValidator, nil, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
+			NewAPI(mockService, mockTenantValidator, nil, 100, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
 			w := httptest.NewRecorder()
 
 			mux.ServeHTTP(w, req)
@@ -371,5 +371,30 @@ func TestExtractTenantID(t *testing.T) {
 				t.Fatalf("expected %q, got %q", test.expected, got)
 			}
 		})
+	}
+}
+
+// TestHandleHydraHookSemaphore verifies that handleHydraHook returns 429 when
+// the semaphore is exhausted (maxConcurrent=0 means capacity-0 channel, which
+// always takes the default branch in a non-blocking select).
+func TestHandleHydraHookSemaphore(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockLogger := NewMockLoggerInterface(ctrl)
+	mockTracer := NewMockTracingInterface(ctrl)
+	mockMonitor := NewMockMonitorInterface(ctrl)
+	mockService := NewMockServiceInterface(ctrl)
+	mockTenantValidator := NewMockTenantValidatorInterface(ctrl)
+
+	mux := chi.NewMux()
+	NewAPI(mockService, mockTenantValidator, nil, 0, mockTracer, mockMonitor, mockLogger).RegisterEndpoints(mux)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v0/hook/hydra", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected status %d, got %d", http.StatusTooManyRequests, w.Code)
 	}
 }

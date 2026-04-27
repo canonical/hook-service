@@ -10,7 +10,6 @@ import (
 	"maps"
 	"net/http"
 	"slices"
-	"sync"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -22,6 +21,7 @@ import (
 	"github.com/ory/hydra/v2/oauth2"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -33,6 +33,7 @@ type API struct {
 	service         ServiceInterface
 	tenantValidator TenantValidatorInterface
 	middleware      *AuthMiddleware
+	sem             chan struct{}
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -51,6 +52,14 @@ func (a *API) RegisterEndpoints(mux *chi.Mux) {
 // Span attributes include user.id, client.id, grant_types, groups.count,
 // authorization.allowed, and http.status_code for observability.
 func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
+	select {
+	case a.sem <- struct{}{}:
+		defer func() { <-a.sem }()
+	default:
+		w.WriteHeader(http.StatusTooManyRequests)
+		return
+	}
+
 	ctx, span := a.tracer.Start(r.Context(), "hooks.API.handleHydraHook")
 	defer span.End()
 
@@ -91,32 +100,31 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 	tenantID := extractTenantID(req)
 
 	// Run group lookup and tenant membership validation concurrently — they are
-	// independent I/O operations. AuthorizeRequest depends on groups, so it
-	// runs sequentially after both goroutines complete.
+	// independent I/O operations. errgroup propagates context cancellation so
+	// that if the groups fetch fails, any in-flight tenant call is aborted.
+	// AuthorizeRequest depends on groups, so it runs sequentially after both
+	// goroutines complete.
 	var (
 		groups    []*types.Group
-		groupsErr error
 		tenantErr error
-		wg        sync.WaitGroup
 	)
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		groups, groupsErr = a.service.FetchUserGroups(ctx, *user)
-	}()
+	g, gctx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		var err error
+		groups, err = a.service.FetchUserGroups(gctx, *user)
+		return err
+	})
 
 	if tenantID != "" {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			tenantErr = a.tenantValidator.ValidateMembership(ctx, user.SubjectId, tenantID)
-		}()
+		g.Go(func() error {
+			tenantErr = a.tenantValidator.ValidateMembership(gctx, user.SubjectId, tenantID)
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	if groupsErr != nil {
+	if groupsErr := g.Wait(); groupsErr != nil {
 		a.logger.Errorf("failed to fetch user groups: %v", groupsErr)
 		span.RecordError(groupsErr)
 		span.SetStatus(codes.Error, "failed to fetch user groups")
@@ -203,6 +211,7 @@ func NewAPI(
 	service ServiceInterface,
 	tenantValidator TenantValidatorInterface,
 	middleware *AuthMiddleware,
+	maxConcurrent int,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -214,6 +223,7 @@ func NewAPI(
 	if middleware != nil {
 		a.middleware = middleware
 	}
+	a.sem = make(chan struct{}, maxConcurrent)
 
 	a.monitor = monitor
 	a.tracer = tracer

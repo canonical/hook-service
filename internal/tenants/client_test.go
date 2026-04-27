@@ -9,7 +9,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -102,7 +104,7 @@ func TestClientValidateMembership(t *testing.T) {
 			// Use a simple noop tracer for unit tests.
 			tracer := &noopTracer{}
 
-			client := NewClient(server.URL, tracer, nil, nil)
+			client := NewClient(server.URL, 5*time.Second, tracer, nil, nil)
 			err := client.ValidateMembership(context.Background(), test.identityID, test.tenantID)
 
 			if test.expectErr == nil {
@@ -125,7 +127,7 @@ func TestClientValidateMembership(t *testing.T) {
 			}
 
 			// For non-sentinel errors, check the message contains expected text.
-			if err.Error() != test.expectErr.Error() && !containsSubstring(err.Error(), test.expectErr.Error()) {
+			if !strings.Contains(err.Error(), test.expectErr.Error()) {
 				t.Fatalf("expected error containing %q, got %q", test.expectErr.Error(), err.Error())
 			}
 		})
@@ -134,7 +136,7 @@ func TestClientValidateMembership(t *testing.T) {
 
 func TestClientValidateMembershipUnreachable(t *testing.T) {
 	tracer := &noopTracer{}
-	client := NewClient("http://127.0.0.1:1", tracer, nil, nil)
+	client := NewClient("http://127.0.0.1:1", time.Second, tracer, nil, nil)
 	err := client.ValidateMembership(context.Background(), "user-123", "tenant-abc")
 	if err == nil {
 		t.Fatal("expected error for unreachable server, got nil")
@@ -146,17 +148,4 @@ type noopTracer struct{}
 
 func (n *noopTracer) Start(ctx context.Context, _ string, _ ...trace.SpanStartOption) (context.Context, trace.Span) {
 	return ctx, trace.SpanFromContext(ctx)
-}
-
-func containsSubstring(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && contains(s, substr))
-}
-
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

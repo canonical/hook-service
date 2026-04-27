@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -42,13 +44,22 @@ type Client struct {
 }
 
 // NewClient creates a tenant-service client pointed at baseURL.
-func NewClient(baseURL string, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Client {
+// timeout caps the total time allowed for each lookup request (DNS + connect + body).
+// The client's transport propagates the active OpenTelemetry span as a traceparent
+// header so tenant-service can continue the distributed trace.
+func NewClient(baseURL string, timeout time.Duration, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Client {
+	transport := otelhttp.NewTransport(&http.Transport{
+		MaxConnsPerHost: 50,
+	})
 	return &Client{
-		baseURL:    baseURL,
-		httpClient: &http.Client{},
-		tracer:     tracer,
-		monitor:    monitor,
-		logger:     logger,
+		baseURL: baseURL,
+		httpClient: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+		},
+		tracer:  tracer,
+		monitor: monitor,
+		logger:  logger,
 	}
 }
 

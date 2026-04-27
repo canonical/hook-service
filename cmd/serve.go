@@ -108,7 +108,7 @@ func serve() error {
 
 	var tenantValidator tenants.TenantValidatorInterface
 	if specs.TenantServiceURL != "" {
-		tenantValidator = tenants.NewClient(specs.TenantServiceURL, tracer, monitor, logger)
+		tenantValidator = tenants.NewClient(specs.TenantServiceURL, specs.TenantServiceTimeout, tracer, monitor, logger)
 		logger.Infof("Tenant validation enabled (tenant-service: %s)", specs.TenantServiceURL)
 	} else {
 		tenantValidator = tenants.NewNoopValidator()
@@ -151,6 +151,7 @@ func serve() error {
 	router := web.NewRouter(
 		specs.ApiToken,
 		specs.AuthenticationEnabled,
+		specs.HookMaxConcurrent,
 		s,
 		dbClient,
 		authorizer,

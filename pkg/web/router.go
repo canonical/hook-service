@@ -33,6 +33,7 @@ import (
 func NewRouter(
 	token string,
 	authenticationEnabled bool,
+	maxConcurrent int,
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
 	authz authorization.AuthorizerInterface,
@@ -107,6 +108,7 @@ func NewRouter(
 		hooks.NewService(groupClients, authz, tracer, monitor, logger),
 		tenantValidator,
 		authMiddleware,
+		maxConcurrent,
 		tracer,
 		monitor,
 		logger).RegisterEndpoints(router)
