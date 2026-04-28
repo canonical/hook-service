@@ -21,6 +21,10 @@ import (
 	"go.opentelemetry.io/otel/codes"
 )
 
+var (
+	otelHTTPClient = http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}
+)
+
 // ErrNotMember indicates the user is not an active member of the tenant.
 var ErrNotMember = errors.New("user is not a member of the tenant")
 
@@ -37,6 +41,7 @@ type lookupResponse struct {
 // Client calls tenant-service's lookup API to validate membership.
 type Client struct {
 	baseURL    string
+	timeout    time.Duration
 	httpClient *http.Client
 
 	tracer  tracing.TracingInterface
@@ -45,21 +50,15 @@ type Client struct {
 }
 
 // NewClient creates a tenant-service client pointed at baseURL.
-// timeout caps the total time allowed for each lookup request (DNS + connect + body).
-// The client's transport propagates the active OpenTelemetry span as a traceparent
-// header so tenant-service can continue the distributed trace.
+// timeout caps the total time allowed for each lookup request.
 func NewClient(baseURL string, timeout time.Duration, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Client {
-	base := http.DefaultTransport.(*http.Transport).Clone()
-	transport := otelhttp.NewTransport(base)
 	return &Client{
-		baseURL: baseURL,
-		httpClient: &http.Client{
-			Timeout:   timeout,
-			Transport: transport,
-		},
-		tracer:  tracer,
-		monitor: monitor,
-		logger:  logger,
+		baseURL:    baseURL,
+		timeout:    timeout,
+		httpClient: &otelHTTPClient,
+		tracer:     tracer,
+		monitor:    monitor,
+		logger:     logger,
 	}
 }
 
@@ -82,6 +81,9 @@ func (c *Client) ValidateMembership(ctx context.Context, identityID, tenantID st
 	q := u.Query()
 	q.Set("identity_id", identityID)
 	u.RawQuery = q.Encode()
+
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {

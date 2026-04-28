@@ -48,7 +48,7 @@ type EnvSpec struct {
 	DBMaxConnIdleTime time.Duration `envconfig:"db_max_conn_idle_time" default:"30m"`
 
 	TenantServiceURL     string        `envconfig:"tenant_service_url" default:""`
-	TenantServiceTimeout time.Duration `envconfig:"tenant_service_timeout" default:"5s"`
+	TenantServiceTimeout time.Duration `envconfig:"tenant_service_timeout" default:"1s"`
 
 	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"150"`
 }
