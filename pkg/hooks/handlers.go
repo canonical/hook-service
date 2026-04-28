@@ -115,10 +115,20 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		span.SetAttributes(attribute.String("tenant_id", hctx.TenantID))
 	}
 
+	encoded, err := json.Marshal(a.composeTokenResponse(hctx))
+	if err != nil {
+		a.logger.Errorf("failed to encode hook response: %v", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to encode hook response")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusInternalServerError))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
 	span.SetAttributes(attribute.Int("http.status_code", http.StatusOK))
 	span.SetStatus(codes.Ok, "request successful")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(a.composeTokenResponse(hctx))
+	_, _ = w.Write(encoded)
 }
 
 // composeTokenResponse builds the final TokenHookResponse from a processed hook

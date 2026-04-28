@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"time"
@@ -48,9 +49,8 @@ type Client struct {
 // The client's transport propagates the active OpenTelemetry span as a traceparent
 // header so tenant-service can continue the distributed trace.
 func NewClient(baseURL string, timeout time.Duration, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *Client {
-	transport := otelhttp.NewTransport(&http.Transport{
-		MaxConnsPerHost: 50,
-	})
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	transport := otelhttp.NewTransport(base)
 	return &Client{
 		baseURL: baseURL,
 		httpClient: &http.Client{
@@ -75,10 +75,15 @@ func (c *Client) ValidateMembership(ctx context.Context, identityID, tenantID st
 		attribute.String("tenant_id", tenantID),
 	)
 
-	lookupURL := fmt.Sprintf("%s/api/v0/tenants/lookup?identity_id=%s",
-		c.baseURL, url.QueryEscape(identityID))
+	u, err := url.Parse(c.baseURL + "/api/v0/tenants/lookup")
+	if err != nil {
+		return fmt.Errorf("cannot parse tenant-service URL: %v", err)
+	}
+	q := u.Query()
+	q.Set("identity_id", identityID)
+	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, lookupURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "cannot create request")
@@ -94,6 +99,8 @@ func (c *Client) ValidateMembership(ctx context.Context, identityID, tenantID st
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		// Drain body so the underlying TCP connection can be reused.
+		_, _ = io.Copy(io.Discard, resp.Body)
 		err := fmt.Errorf("tenant-service returned status %d", resp.StatusCode)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "tenant-service error response")
