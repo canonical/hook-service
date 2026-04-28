@@ -50,7 +50,7 @@ type EnvSpec struct {
 	TenantServiceURL     string        `envconfig:"tenant_service_url" default:""`
 	TenantServiceTimeout time.Duration `envconfig:"tenant_service_timeout" default:"5s"`
 
-	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"100"`
+	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"150"`
 }
 
 type Flags struct {

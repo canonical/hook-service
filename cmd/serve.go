@@ -23,6 +23,7 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
+	"github.com/canonical/hook-service/internal/pool"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
@@ -148,10 +149,13 @@ func serve() error {
 		jwtVerifier = authentication.NewNoopVerifier()
 	}
 
+	wpool := pool.NewWorkerPool(specs.HookMaxConcurrent, tracer, monitor, logger)
+	defer wpool.Stop()
+
 	router := web.NewRouter(
 		specs.ApiToken,
 		specs.AuthenticationEnabled,
-		specs.HookMaxConcurrent,
+		wpool,
 		s,
 		dbClient,
 		authorizer,

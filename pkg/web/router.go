@@ -19,6 +19,7 @@ import (
 	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/pool"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
@@ -33,7 +34,7 @@ import (
 func NewRouter(
 	token string,
 	authenticationEnabled bool,
-	maxConcurrent int,
+	wpool pool.WorkerPoolInterface,
 	s storage.StorageInterface,
 	dbClient db.DBClientInterface,
 	authz authorization.AuthorizerInterface,
@@ -105,10 +106,8 @@ func NewRouter(
 
 	// Register unprottected HTTP handlers
 	hooks.NewAPI(
-		hooks.NewService(groupClients, authz, tracer, monitor, logger),
-		tenantValidator,
+		hooks.NewService(groupClients, authz, tenantValidator, wpool, tracer, monitor, logger),
 		authMiddleware,
-		maxConcurrent,
 		tracer,
 		monitor,
 		logger).RegisterEndpoints(router)

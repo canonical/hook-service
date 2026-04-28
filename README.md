@@ -30,6 +30,7 @@ The application is configured via environment variables.
 | `OPENFGA_AUTHORIZATION_MODEL_ID` | OpenFGA authorization model ID | |
 | `AUTHORIZATION_ENABLED` | Enable authorization middleware | `false` |
 | `OPENFGA_WORKERS_TOTAL` | Total OpenFGA workers | `150` |
+| `HOOK_MAX_CONCURRENT` | Max concurrent token hook requests processed by the worker pool | `150` |
 | `AUTHENTICATION_ENABLED` | Enable JWT authentication for Groups/Authz APIs | `true` |
 | `AUTHENTICATION_ISSUER` | Expected JWT issuer (e.g., `https://auth.example.com`) | |
 | `AUTHENTICATION_JWKS_URL` | Optional explicit JWKS URL (overrides OIDC discovery) | |

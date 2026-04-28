@@ -11,8 +11,7 @@ import (
 )
 
 type ServiceInterface interface {
-	FetchUserGroups(context.Context, User) ([]*types.Group, error)
-	AuthorizeRequest(context.Context, User, oauth2.TokenHookRequest, []*types.Group) (bool, error)
+	ProcessRequest(context.Context, User, oauth2.TokenHookRequest) (*HookContext, error)
 }
 
 type ClientInterface interface {
