@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.3.0](https://github.com/canonical/hook-service/compare/v1.2.0...v1.3.0) (2026-05-01)
+
+
+### Features
+
+* parallelize groups and tenant lookups ([722e363](https://github.com/canonical/hook-service/commit/722e363bb74732e635da64878af4587579eb6f47))
+
+
+### Bug Fixes
+
+* add integration with tenant service ([ef3c047](https://github.com/canonical/hook-service/commit/ef3c0475fcecc5c91a5cbe42e0eefdd03e38565b))
+* add semaphore and request timeouts ([9a6ede2](https://github.com/canonical/hook-service/commit/9a6ede236eabbae07008530edbd88f2e4f50e7a6))
+* catch marshalling err, use default client ([84cbb03](https://github.com/canonical/hook-service/commit/84cbb0399c6ad866b40820704f57a8913ec25227))
+* **deps:** update go deps ([81f0536](https://github.com/canonical/hook-service/commit/81f05366051440c0c5bcd7855d669365c8d6aa80))
+* **deps:** update go deps ([6a605f7](https://github.com/canonical/hook-service/commit/6a605f7a5df2298bad468b183d9c54d5873e68ac))
+* **deps:** update go deps ([7e4cd29](https://github.com/canonical/hook-service/commit/7e4cd29088dbcbf2daa442b57b0e3624a7adcf0d))
+* **deps:** update go deps (minor) ([#200](https://github.com/canonical/hook-service/issues/200)) ([237c5ad](https://github.com/canonical/hook-service/commit/237c5ad6a0778e7a58a6bbf63417240837d584b6))
+* **deps:** update go deps (minor) ([#220](https://github.com/canonical/hook-service/issues/220)) ([017c42f](https://github.com/canonical/hook-service/commit/017c42fd458ac881e6cce046d148d8c1b85c5ae2))
+* **deps:** update go deps (patch) ([#221](https://github.com/canonical/hook-service/issues/221)) ([fdd4957](https://github.com/canonical/hook-service/commit/fdd4957450282357c11728aa6195ff2883aed935))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0b37fe3 ([8e972b0](https://github.com/canonical/hook-service/commit/8e972b0db51d6090e7cf74c521f2a3e8b8df13e3))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0b37fe3 ([#206](https://github.com/canonical/hook-service/issues/206)) ([7489eb6](https://github.com/canonical/hook-service/commit/7489eb6ccbd9b3922a702002aa2d22378b631b02))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 84a4fc4 ([3c281c6](https://github.com/canonical/hook-service/commit/3c281c6e3907f510bdd133b714bead467fb558b9))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 84a4fc4 ([#202](https://github.com/canonical/hook-service/issues/202)) ([b0495f4](https://github.com/canonical/hook-service/commit/b0495f4f2a13c1b1eb7f922f44101568fa490313))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to d00831a ([2ce284b](https://github.com/canonical/hook-service/commit/2ce284bf2eb871b7b1cb44ab15893ead2aa98775))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to d00831a ([#211](https://github.com/canonical/hook-service/issues/211)) ([fb7269e](https://github.com/canonical/hook-service/commit/fb7269e17ed0d05b11b46a74e05f72f956983e33))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.0 ([73cbc18](https://github.com/canonical/hook-service/commit/73cbc187c96a33ae6eab9e225b65d6f739c911f6))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.0 ([#213](https://github.com/canonical/hook-service/issues/213)) ([2c4e0e4](https://github.com/canonical/hook-service/commit/2c4e0e4a3d2d1be425a92a85d043007b0f9a6f99))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.1 ([a62883a](https://github.com/canonical/hook-service/commit/a62883a4b83a80be1415d9c8257810a9e6c9090a))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.1 ([#214](https://github.com/canonical/hook-service/issues/214)) ([217ee75](https://github.com/canonical/hook-service/commit/217ee75797642bd9a80ce5b82372a0fc22a7ecab))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.2 [security] ([50d5657](https://github.com/canonical/hook-service/commit/50d56578ba0b3e083e3105c7f35f055e6f91e2ec))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.9.2 [security] ([#226](https://github.com/canonical/hook-service/issues/226)) ([730f4c9](https://github.com/canonical/hook-service/commit/730f4c9ce4cab2ad3abeb3024b09258c6752ea10))
+* **deps:** update module github.com/openfga/language/pkg/go to v0.2.1 ([29a0892](https://github.com/canonical/hook-service/commit/29a0892755403cafd239e2d97986f03ac464bd17))
+* **deps:** update module github.com/openfga/language/pkg/go to v0.2.1 ([#215](https://github.com/canonical/hook-service/issues/215)) ([afcb565](https://github.com/canonical/hook-service/commit/afcb565da845fa6f8727feb94258cddcbec7c30c))
+* **deps:** update module go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 [security] ([43159b1](https://github.com/canonical/hook-service/commit/43159b1ba2060913ceeadb561a72b246a2fd132b))
+* **deps:** update module go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp to v1.43.0 [security] ([#223](https://github.com/canonical/hook-service/issues/223)) ([ad27acf](https://github.com/canonical/hook-service/commit/ad27acf1f8e1739539e47847ff56e169ecb2e64f))
+* **deps:** update module go.opentelemetry.io/otel/sdk to v1.43.0 [security] ([66208a9](https://github.com/canonical/hook-service/commit/66208a9d3614f6ae8bd4e79282c7fc831c9c9063))
+* **deps:** update module go.opentelemetry.io/otel/sdk to v1.43.0 [security] ([#224](https://github.com/canonical/hook-service/issues/224)) ([b17c7c9](https://github.com/canonical/hook-service/commit/b17c7c97c2d2aa8c70be9d0178f612e54f73869a))
+* **deps:** update module golang.org/x/net to v0.52.0 ([375ab53](https://github.com/canonical/hook-service/commit/375ab53c85667b0b691d36cc201fa82cb3c84417))
+* **deps:** update module golang.org/x/net to v0.52.0 ([#204](https://github.com/canonical/hook-service/issues/204)) ([2e9a376](https://github.com/canonical/hook-service/commit/2e9a376c60c117b1eb4b03dd34e9e156e0b21b2d))
+* **deps:** update module google.golang.org/grpc to v1.79.2 ([ae3651c](https://github.com/canonical/hook-service/commit/ae3651cced32a7e06966c71d07842fd4dc8c6a2b))
+* **deps:** update module google.golang.org/grpc to v1.79.2 ([#199](https://github.com/canonical/hook-service/issues/199)) ([13588a1](https://github.com/canonical/hook-service/commit/13588a14ae46a6c938a9502e99e94a4b1ad71da1))
+* **deps:** update module google.golang.org/grpc to v1.79.3 ([a8783bf](https://github.com/canonical/hook-service/commit/a8783bf48bb8e3a44298576964ec404b7e351e12))
+* **deps:** update module google.golang.org/grpc to v1.79.3 ([#208](https://github.com/canonical/hook-service/issues/208)) ([0cd86b5](https://github.com/canonical/hook-service/commit/0cd86b5d266b614ff9690bfc6e64c417746fa0ae))
+* introduce routine pool to run conc tasks ([4460884](https://github.com/canonical/hook-service/commit/446088424f666f1a6a2630975e39ab24df66b1f6))
+* use context to timeout ([a41bacc](https://github.com/canonical/hook-service/commit/a41bacc2c4a68fefea51b7f93fe137b9af0ffdda))
+
 ## [1.2.0](https://github.com/canonical/hook-service/compare/v1.1.3...v1.2.0) (2026-03-04)
 
 
