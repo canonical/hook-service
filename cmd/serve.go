@@ -23,7 +23,9 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
+	"github.com/canonical/hook-service/internal/pool"
 	"github.com/canonical/hook-service/internal/storage"
+	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/authentication"
 	"github.com/canonical/hook-service/pkg/web"
@@ -105,6 +107,15 @@ func serve() error {
 		logger.Info("Using noop authorizer")
 	}
 
+	var tenantValidator tenants.TenantValidatorInterface
+	if specs.TenantServiceURL != "" {
+		tenantValidator = tenants.NewClient(specs.TenantServiceURL, specs.TenantServiceTimeout, tracer, monitor, logger)
+		logger.Infof("Tenant validation enabled (tenant-service: %s)", specs.TenantServiceURL)
+	} else {
+		tenantValidator = tenants.NewNoopValidator()
+		logger.Info("Tenant validation disabled (no TENANT_SERVICE_URL)")
+	}
+
 	var jwtVerifier authentication.TokenVerifierInterface
 	if specs.AuthenticationEnabled {
 		// Parse allowed subjects from comma-separated string
@@ -138,12 +149,17 @@ func serve() error {
 		jwtVerifier = authentication.NewNoopVerifier()
 	}
 
+	wpool := pool.NewWorkerPool(specs.HookMaxConcurrent, tracer, monitor, logger)
+	defer wpool.Stop()
+
 	router := web.NewRouter(
 		specs.ApiToken,
 		specs.AuthenticationEnabled,
+		wpool,
 		s,
 		dbClient,
 		authorizer,
+		tenantValidator,
 		jwtVerifier,
 		tracer,
 		monitor,

@@ -7,9 +7,14 @@ import (
 	"context"
 	"errors"
 	reflect "reflect"
+	"sync"
 	"testing"
 
+	"github.com/canonical/hook-service/internal/pool"
+	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/types"
+	"github.com/google/uuid"
+	"github.com/ory/hydra/v2/oauth2"
 	trace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -18,6 +23,27 @@ import (
 //go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_hooks.go -source=./interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_pool.go -source=../../internal/pool/interfaces.go
+
+// setupMockSubmit configures a MockWorkerPoolInterface to execute submitted
+// commands synchronously inline, push the result to the provided channel, and
+// call wg.Done(). This allows ProcessRequest tests to run without a real pool.
+func setupMockSubmit(wp *MockWorkerPoolInterface) {
+	key := uuid.New()
+	wp.EXPECT().Submit(gomock.Any(), gomock.Any(), gomock.Any()).AnyTimes().Do(
+		func(command any, results chan *pool.Result[any], wg *sync.WaitGroup) {
+			var value any = true
+			switch commandFunc := command.(type) {
+			case func():
+				commandFunc()
+			case func() any:
+				value = commandFunc()
+			}
+			results <- pool.NewResult[any](key, value)
+			wg.Done()
+		},
+	).Return(key.String(), nil)
+}
 
 func TestServiceFetchUserGroups(t *testing.T) {
 	err := errors.New("some error")
@@ -104,7 +130,7 @@ func TestServiceFetchUserGroups(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), "hooks.Service.FetchUserGroups").Times(1).Return(context.TODO(), trace.SpanFromContext(context.TODO()))
 
-			s := NewService(test.mockedClients(ctrl), mockAuthorizer, mockTracer, mockMonitor, mockLogger)
+			s := NewService(test.mockedClients(ctrl), mockAuthorizer, nil, nil, mockTracer, mockMonitor, mockLogger)
 
 			groups, err := s.FetchUserGroups(context.TODO(), test.input)
 
@@ -270,7 +296,7 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 
 			mockTracer.EXPECT().Start(gomock.Any(), "hooks.Service.AuthorizeRequest").Times(1).Return(context.TODO(), trace.SpanFromContext(context.TODO()))
 
-			s := NewService([]ClientInterface{mockClient}, test.mockedCanAccess(ctrl), mockTracer, mockMonitor, mockLogger)
+			s := NewService([]ClientInterface{mockClient}, test.mockedCanAccess(ctrl), nil, nil, mockTracer, mockMonitor, mockLogger)
 
 			req := createHookRequest(test.clientId, test.user.SubjectId, test.grantTypes, test.grantedAud)
 
@@ -285,4 +311,217 @@ func TestServiceAuthorizeRequest(t *testing.T) {
 		})
 	}
 
+}
+
+func TestServiceProcessRequest(t *testing.T) {
+	someErr := errors.New("some error")
+	user := User{SubjectId: "user-123", Email: "a@a.com"}
+
+	groups := []*types.Group{{ID: "g1", Name: "g1"}}
+
+	newService := func(ctrl *gomock.Controller, mockClient ClientInterface, mockAuthz AuthorizerInterface, mockTV TenantValidatorInterface, mockPool pool.WorkerPoolInterface) *Service {
+		mockTracer := NewMockTracingInterface(ctrl)
+		mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).AnyTimes().Return(context.TODO(), trace.SpanFromContext(context.TODO()))
+		mockMonitor := NewMockMonitorInterface(ctrl)
+		mockLogger := NewMockLoggerInterface(ctrl)
+		mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
+		return NewService([]ClientInterface{mockClient}, mockAuthz, mockTV, mockPool, mockTracer, mockMonitor, mockLogger)
+	}
+
+	tests := []struct {
+		name string
+
+		req oauth2.TokenHookRequest
+
+		mockClient func(*gomock.Controller) ClientInterface
+		mockAuthz  func(*gomock.Controller) AuthorizerInterface
+		mockTV     func(*gomock.Controller) TenantValidatorInterface
+		mockPool   func(*gomock.Controller) pool.WorkerPoolInterface
+
+		expectedResult *HookContext
+		expectedError  error
+		expectedErrIs  error
+	}{
+		{
+			name: "groups fetched, no tenant, authorized",
+			req:  createHookRequest("client", user.SubjectId, []string{"authorization_code"}, nil),
+			mockClient: func(ctrl *gomock.Controller) ClientInterface {
+				m := NewMockClientInterface(ctrl)
+				m.EXPECT().FetchUserGroups(gomock.Any(), user).Return(groups, nil)
+				return m
+			},
+			mockAuthz: func(ctrl *gomock.Controller) AuthorizerInterface {
+				m := NewMockAuthorizerInterface(ctrl)
+				m.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client", []string{"g1"}).Return(true, nil)
+				return m
+			},
+			mockTV: func(ctrl *gomock.Controller) TenantValidatorInterface {
+				return NewMockTenantValidatorInterface(ctrl)
+			},
+			mockPool: func(ctrl *gomock.Controller) pool.WorkerPoolInterface {
+				m := NewMockWorkerPoolInterface(ctrl)
+				setupMockSubmit(m)
+				return m
+			},
+			expectedResult: &HookContext{Groups: groups},
+		},
+		{
+			name: "groups fetched, tenant member, authorized",
+			req:  createHookRequestWithExtra("client", user.SubjectId, []string{"authorization_code"}, nil, map[string]interface{}{"_tenant_id": "t-1"}),
+			mockClient: func(ctrl *gomock.Controller) ClientInterface {
+				m := NewMockClientInterface(ctrl)
+				m.EXPECT().FetchUserGroups(gomock.Any(), user).Return(groups, nil)
+				return m
+			},
+			mockAuthz: func(ctrl *gomock.Controller) AuthorizerInterface {
+				m := NewMockAuthorizerInterface(ctrl)
+				m.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client", []string{"g1"}).Return(true, nil)
+				return m
+			},
+			mockTV: func(ctrl *gomock.Controller) TenantValidatorInterface {
+				m := NewMockTenantValidatorInterface(ctrl)
+				m.EXPECT().ValidateMembership(gomock.Any(), user.SubjectId, "t-1").Return(nil)
+				return m
+			},
+			mockPool: func(ctrl *gomock.Controller) pool.WorkerPoolInterface {
+				m := NewMockWorkerPoolInterface(ctrl)
+				setupMockSubmit(m)
+				return m
+			},
+			expectedResult: &HookContext{Groups: groups, TenantID: "t-1"},
+		},
+		{
+			name: "tenant not member — error returned",
+			req:  createHookRequestWithExtra("client", user.SubjectId, []string{"authorization_code"}, nil, map[string]interface{}{"_tenant_id": "t-1"}),
+			mockClient: func(ctrl *gomock.Controller) ClientInterface {
+				m := NewMockClientInterface(ctrl)
+				m.EXPECT().FetchUserGroups(gomock.Any(), user).Return(groups, nil)
+				return m
+			},
+			mockAuthz: func(ctrl *gomock.Controller) AuthorizerInterface {
+				m := NewMockAuthorizerInterface(ctrl)
+				m.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client", []string{"g1"}).Return(true, nil)
+				return m
+			},
+			mockTV: func(ctrl *gomock.Controller) TenantValidatorInterface {
+				m := NewMockTenantValidatorInterface(ctrl)
+				m.EXPECT().ValidateMembership(gomock.Any(), user.SubjectId, "t-1").Return(tenants.ErrNotMember)
+				return m
+			},
+			mockPool: func(ctrl *gomock.Controller) pool.WorkerPoolInterface {
+				m := NewMockWorkerPoolInterface(ctrl)
+				setupMockSubmit(m)
+				return m
+			},
+			expectedErrIs: tenants.ErrNotMember,
+		},
+		{
+			name: "tenant service error — errTenantInternal returned",
+			req:  createHookRequestWithExtra("client", user.SubjectId, []string{"authorization_code"}, nil, map[string]interface{}{"_tenant_id": "t-1"}),
+			mockClient: func(ctrl *gomock.Controller) ClientInterface {
+				m := NewMockClientInterface(ctrl)
+				m.EXPECT().FetchUserGroups(gomock.Any(), user).Return(groups, nil)
+				return m
+			},
+			mockAuthz: func(ctrl *gomock.Controller) AuthorizerInterface {
+				m := NewMockAuthorizerInterface(ctrl)
+				m.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client", []string{"g1"}).Return(true, nil)
+				return m
+			},
+			mockTV: func(ctrl *gomock.Controller) TenantValidatorInterface {
+				m := NewMockTenantValidatorInterface(ctrl)
+				m.EXPECT().ValidateMembership(gomock.Any(), user.SubjectId, "t-1").Return(errors.New("connection refused"))
+				return m
+			},
+			mockPool: func(ctrl *gomock.Controller) pool.WorkerPoolInterface {
+				m := NewMockWorkerPoolInterface(ctrl)
+				setupMockSubmit(m)
+				return m
+			},
+			expectedErrIs: errTenantInternal,
+		},
+		{
+			name: "groups fetch error — error returned",
+			req:  createHookRequest("client", user.SubjectId, []string{"authorization_code"}, nil),
+			mockClient: func(ctrl *gomock.Controller) ClientInterface {
+				m := NewMockClientInterface(ctrl)
+				m.EXPECT().FetchUserGroups(gomock.Any(), user).Return(nil, someErr)
+				return m
+			},
+			mockAuthz: func(ctrl *gomock.Controller) AuthorizerInterface {
+				return NewMockAuthorizerInterface(ctrl)
+			},
+			mockTV: func(ctrl *gomock.Controller) TenantValidatorInterface {
+				return NewMockTenantValidatorInterface(ctrl)
+			},
+			mockPool: func(ctrl *gomock.Controller) pool.WorkerPoolInterface {
+				m := NewMockWorkerPoolInterface(ctrl)
+				setupMockSubmit(m)
+				return m
+			},
+			expectedError: errors.New("cannot fetch user groups: some error"),
+		},
+		{
+			name: "access denied — error returned",
+			req:  createHookRequest("client", user.SubjectId, []string{"authorization_code"}, nil),
+			mockClient: func(ctrl *gomock.Controller) ClientInterface {
+				m := NewMockClientInterface(ctrl)
+				m.EXPECT().FetchUserGroups(gomock.Any(), user).Return(groups, nil)
+				return m
+			},
+			mockAuthz: func(ctrl *gomock.Controller) AuthorizerInterface {
+				m := NewMockAuthorizerInterface(ctrl)
+				m.EXPECT().CanAccess(gomock.Any(), user.GetUserId(), "client", []string{"g1"}).Return(false, nil)
+				return m
+			},
+			mockTV: func(ctrl *gomock.Controller) TenantValidatorInterface {
+				return NewMockTenantValidatorInterface(ctrl)
+			},
+			mockPool: func(ctrl *gomock.Controller) pool.WorkerPoolInterface {
+				m := NewMockWorkerPoolInterface(ctrl)
+				setupMockSubmit(m)
+				return m
+			},
+			expectedError: errors.New("access denied for user user-123 to client client"),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			s := newService(ctrl, test.mockClient(ctrl), test.mockAuthz(ctrl), test.mockTV(ctrl), test.mockPool(ctrl))
+
+			result, err := s.ProcessRequest(context.TODO(), user, test.req)
+
+			if test.expectedError != nil {
+				if err == nil {
+					t.Fatalf("expected error %q, got nil", test.expectedError)
+				}
+				if err.Error() != test.expectedError.Error() {
+					t.Fatalf("expected error %q, got %q", test.expectedError, err)
+				}
+				return
+			}
+			if test.expectedErrIs != nil {
+				if err == nil {
+					t.Fatalf("expected error wrapping %v, got nil", test.expectedErrIs)
+				}
+				if !errors.Is(err, test.expectedErrIs) {
+					t.Fatalf("expected error wrapping %v, got %v", test.expectedErrIs, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("expected no error, got %v", err)
+			}
+			if !reflect.DeepEqual(result.Groups, test.expectedResult.Groups) {
+				t.Fatalf("expected groups %v, got %v", test.expectedResult.Groups, result.Groups)
+			}
+			if result.TenantID != test.expectedResult.TenantID {
+				t.Fatalf("expected TenantID %q, got %q", test.expectedResult.TenantID, result.TenantID)
+			}
+		})
+	}
 }

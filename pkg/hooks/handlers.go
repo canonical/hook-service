@@ -5,6 +5,7 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"maps"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
@@ -35,6 +37,7 @@ type API struct {
 	logger  logging.LoggerInterface
 }
 
+// RegisterEndpoints registers the Hydra token hook endpoint on the given router.
 func (a *API) RegisterEndpoints(mux *chi.Mux) {
 	if a.middleware != nil {
 		mux = mux.With(a.middleware.AuthMiddleware).(*chi.Mux)
@@ -43,9 +46,9 @@ func (a *API) RegisterEndpoints(mux *chi.Mux) {
 }
 
 // handleHydraHook processes OAuth token hook requests from Hydra.
-// It enriches tokens with user groups and enforces authorization policies.
-// Span attributes include user.id, client.id, grant_types, groups.count,
-// authorization.allowed, and http.status_code for observability.
+// It delegates orchestration to the service layer and maps the result to
+// an HTTP response. Span attributes include user.id, client.id, grant_types,
+// groups.count, tenant_id, and http.status_code for observability.
 func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 	ctx, span := a.tracer.Start(r.Context(), "hooks.API.handleHydraHook")
 	defer span.End()
@@ -62,8 +65,7 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req := new(oauth2.TokenHookRequest)
-	err = json.Unmarshal(body, req)
-	if err != nil {
+	if err = json.Unmarshal(body, req); err != nil {
 		a.logger.Errorf("failed to parse request: %v", err)
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "failed to parse request")
@@ -81,45 +83,63 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		attribute.StringSlice("granted_audience", req.Request.GrantedAudience),
 	)
 
-	groups, err := a.service.FetchUserGroups(ctx, *user)
+	hctx, err := a.service.ProcessRequest(ctx, *user, *req)
 	if err != nil {
-		a.logger.Errorf("failed to fetch user groups: %v", err)
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to fetch user groups")
-		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
-		w.WriteHeader(http.StatusForbidden)
+		switch {
+		case errors.Is(err, ErrTooBusy):
+			span.SetAttributes(attribute.Int("http.status_code", http.StatusTooManyRequests))
+			w.WriteHeader(http.StatusTooManyRequests)
+		case errors.Is(err, tenants.ErrNotMember):
+			a.logger.Infof("tenant membership denied: %v", err)
+			span.SetStatus(codes.Error, "tenant membership denied")
+			span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
+			w.WriteHeader(http.StatusForbidden)
+		case errors.Is(err, errTenantInternal):
+			a.logger.Errorf("failed to validate tenant membership: %v", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "tenant validation failed")
+			span.SetAttributes(attribute.Int("http.status_code", http.StatusInternalServerError))
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			a.logger.Errorf("failed to process hook request: %v", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, "failed to process hook request")
+			span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
+			w.WriteHeader(http.StatusForbidden)
+		}
 		return
 	}
 
-	span.SetAttributes(attribute.Int("groups.count", len(groups)))
+	span.SetAttributes(attribute.Int("groups.count", len(hctx.Groups)))
+	if hctx.TenantID != "" {
+		span.SetAttributes(attribute.String("tenant_id", hctx.TenantID))
+	}
 
-	allowed, err := a.service.AuthorizeRequest(ctx, *user, *req, groups)
+	encoded, err := json.Marshal(a.composeTokenResponse(hctx))
 	if err != nil {
-		a.logger.Errorf("failed to authorize request: %v", err)
+		a.logger.Errorf("failed to encode hook response: %v", err)
 		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to authorize request")
-		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
-		w.WriteHeader(http.StatusForbidden)
+		span.SetStatus(codes.Error, "failed to encode hook response")
+		span.SetAttributes(attribute.Int("http.status_code", http.StatusInternalServerError))
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-
-	span.SetAttributes(attribute.Bool("authorization.allowed", allowed))
-
-	if !allowed {
-		a.logger.Infof("unauthorized request, user %s tried to access %s", user.GetUserId(), req.Request.ClientID)
-		span.SetStatus(codes.Error, "authorization denied")
-		span.SetAttributes(attribute.Int("http.status_code", http.StatusForbidden))
-		w.WriteHeader(http.StatusForbidden)
-		return
-	}
-
-	resp := a.newHookResponse(groups)
 
 	span.SetAttributes(attribute.Int("http.status_code", http.StatusOK))
 	span.SetStatus(codes.Ok, "request successful")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	_, _ = w.Write(encoded)
+}
 
+// composeTokenResponse builds the final TokenHookResponse from a processed hook
+// context, including group names and the tenant_id when present.
+func (a *API) composeTokenResponse(hctx *HookContext) *oauth2.TokenHookResponse {
+	resp := a.newHookResponse(hctx.Groups)
+	if hctx.TenantID != "" {
+		resp.Session.AccessToken["tenant_id"] = hctx.TenantID
+		resp.Session.IDToken["tenant_id"] = hctx.TenantID
+	}
+	return resp
 }
 
 // newHookResponse creates a TokenHookResponse with the group names added to both
@@ -127,6 +147,10 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 func (a *API) newHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
 	resp := oauth2.TokenHookResponse{
 		Session: *flow.NewConsentRequestSessionData(),
+	}
+
+	if len(groups) == 0 {
+		return &resp
 	}
 
 	groupNames := make(map[string]struct{}, len(groups))
@@ -140,6 +164,7 @@ func (a *API) newHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
 	return &resp
 }
 
+// NewAPI creates a new API handler for the Hydra token hook endpoint.
 func NewAPI(
 	service ServiceInterface,
 	middleware *AuthMiddleware,
