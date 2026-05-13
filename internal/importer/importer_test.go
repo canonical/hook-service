@@ -31,6 +31,7 @@ import (
 //go:generate mockgen -build_flags=--mod=mod -package importer -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package importer -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package importer -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package importer -destination ./mock_salesforce.go -source=../../internal/salesforce/interfaces.go
 
 func TestImporterRun(t *testing.T) {
 	tests := []struct {

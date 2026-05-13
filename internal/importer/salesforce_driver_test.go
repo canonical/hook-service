@@ -11,8 +11,6 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-//go:generate mockgen -build_flags=--mod=mod -package importer -destination ./mock_salesforce.go -source=../../internal/salesforce/interfaces.go
-
 func TestSalesforceDriverFetchAllUserGroups(t *testing.T) {
 	tests := []struct {
 		name        string
