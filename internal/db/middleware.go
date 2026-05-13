@@ -10,7 +10,6 @@ import (
 
 	"github.com/canonical/hook-service/internal/logging"
 )
-
 // TransactionMiddleware creates a middleware that wraps each request in a database transaction.
 // The transaction is committed if the handler completes successfully (status < 400).
 // The transaction is rolled back if the handler returns an error or status >= 400.
@@ -20,7 +19,8 @@ func TransactionMiddleware(db DBClientInterface, logger logging.LoggerInterface)
 			ctx := r.Context()
 
 			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				// No need for a transaction on read-only requests
+				ctx = contextWithReadOnly(ctx)
+				r = r.WithContext(ctx)
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -51,4 +51,8 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func WithReadOnly(ctx context.Context) context.Context {
+	return contextWithReadOnly(ctx)
 }
