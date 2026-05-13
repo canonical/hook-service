@@ -19,6 +19,8 @@ type EnvSpec struct {
 
 	Port int `envconfig:"port" default:"8080"`
 
+	GRPCPort int `envconfig:"grpc_port" default:"9090"`
+
 	ApiToken string `envconfig:"api_token" default:""`
 
 	OpenfgaApiScheme string `envconfig:"openfga_api_scheme" default:""`
@@ -50,6 +52,16 @@ type EnvSpec struct {
 	TenantServiceGRPCAddress string        `envconfig:"tenant_service_grpc_address" default:""`
 	TenantServiceGRPCTimeout time.Duration `envconfig:"tenant_service_grpc_timeout" default:"5s"`
 	TenantServiceTLSEnabled  bool          `envconfig:"tenant_service_tls_enabled" default:"false"`
+
+	ReplicaDSN              string        `envconfig:"replica_dsn" default:""`
+	ReplicaDBMaxConns       int32         `envconfig:"replica_db_max_conns" default:"25"`
+	ReplicaDBMinConns       int32         `envconfig:"replica_db_min_conns" default:"2"`
+	ReplicaDBMaxConnLifetime time.Duration `envconfig:"replica_db_max_conn_lifetime" default:"1h"`
+	ReplicaDBMaxConnIdleTime time.Duration `envconfig:"replica_db_max_conn_idle_time" default:"30m"`
+	MaxReplicaLagMs         int64         `envconfig:"max_replica_lag_ms" default:"1000"`
+	ReplicaPoolSizeMultiplier float64     `envconfig:"replica_pool_size_multiplier" default:"1.0"`
+
+	StreamTimeout        time.Duration `envconfig:"stream_timeout" default:"30s"`
 
 	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"150"`
 }
