@@ -14,4 +14,7 @@ var (
 	ErrInternalServerError = errors.New("internal server error")
 	ErrUserAlreadyInGroup  = errors.New("user already in group")
 	ErrInvalidGroupID      = errors.New("invalid group id")
+	ErrInvalidUserID       = errors.New("invalid user id")
+	ErrStreamInterrupted   = errors.New("stream interrupted")
+	ErrUnauthorizedStream  = errors.New("unauthorized stream access")
 )
