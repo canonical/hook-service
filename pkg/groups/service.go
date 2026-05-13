@@ -154,6 +154,26 @@ func (s *Service) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	return nil
 }
 
+func (s *Service) StreamGroupsForUser(ctx context.Context, tenantID, userID string, fn func(*types.Group) error) error {
+	ctx, span := s.tracer.Start(ctx, "groups.Service.StreamGroupsForUser")
+	defer span.End()
+
+	if err := s.db.StreamGroupsForUser(ctx, tenantID, userID, fn); err != nil {
+		return fmt.Errorf("failed to stream groups for user: %w", err)
+	}
+	return nil
+}
+
+func (s *Service) StreamUsersInGroup(ctx context.Context, tenantID, groupID string, fn func(string) error) error {
+	ctx, span := s.tracer.Start(ctx, "groups.Service.StreamUsersInGroup")
+	defer span.End()
+
+	if err := s.db.StreamUsersInGroup(ctx, tenantID, groupID, fn); err != nil {
+		return fmt.Errorf("failed to stream users in group: %w", err)
+	}
+	return nil
+}
+
 func NewService(
 	db DatabaseInterface,
 	authz AuthorizerInterface,
