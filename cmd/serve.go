@@ -59,12 +59,19 @@ func serve() error {
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
 	dbConfig := db.Config{
-		DSN:             specs.DSN,
-		MaxConns:        specs.DBMaxConns,
-		MinConns:        specs.DBMinConns,
-		MaxConnLifetime: specs.DBMaxConnLifetime,
-		MaxConnIdleTime: specs.DBMaxConnIdleTime,
-		TracingEnabled:  specs.TracingEnabled,
+		DSN:                      specs.DSN,
+		MaxConns:                 specs.DBMaxConns,
+		MinConns:                 specs.DBMinConns,
+		MaxConnLifetime:          specs.DBMaxConnLifetime,
+		MaxConnIdleTime:          specs.DBMaxConnIdleTime,
+		TracingEnabled:           specs.TracingEnabled,
+		ReplicaDSN:               specs.ReplicaDSN,
+		ReplicaMaxConns:          specs.ReplicaDBMaxConns,
+		ReplicaMinConns:          specs.ReplicaDBMinConns,
+		ReplicaMaxConnLifetime:   specs.ReplicaDBMaxConnLifetime,
+		ReplicaMaxConnIdleTime:   specs.ReplicaDBMaxConnIdleTime,
+		MaxReplicaLagMs:          specs.MaxReplicaLagMs,
+		ReplicaPoolSizeMultiplier: specs.ReplicaPoolSizeMultiplier,
 	}
 	dbClient, err := db.NewDBClient(dbConfig, tracer, monitor, logger)
 	if err != nil {
