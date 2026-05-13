@@ -11,10 +11,6 @@ import (
 	"go.uber.org/mock/gomock"
 )
 
-//go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_hooks.go -source=./interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package hooks -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
-
 func TestMiddleware_Auth(t *testing.T) {
 	tests := []struct {
 		name         string

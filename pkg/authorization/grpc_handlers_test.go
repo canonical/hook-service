@@ -43,11 +43,6 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
-//go:generate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_authorization.go -source=./interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
-//goʻgenerate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
-
 // testClient wraps an httptest.Server with helper methods for the authorization API.
 type testClient struct {
 	t      *testing.T

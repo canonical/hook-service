@@ -48,11 +48,6 @@ import (
 const groupsBase = "/api/v0/authz/groups"
 const usersBase = "/api/v0/authz/users"
 
-//go:generate mockgen -build_flags=--mod=mod -package groups -destination ./mock_groups.go -source=./interfaces.go ServiceInterface
-//go:generate mockgen -build_flags=--mod=mod -package groups -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package groups -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package groups -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
-
 func TestGrpcHandler_CreateGroup(t *testing.T) {
 	now := time.Now()
 	strPtr := func(s string) *string { return &s }

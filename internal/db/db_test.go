@@ -3,47 +3,15 @@
 
 package db
 
+//go:generate mockgen -build_flags=--mod=mod -package db -destination ./mock_tracing.go -source=../tracing/interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package db -destination ./mock_monitor.go -source=../monitoring/interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package db -destination ./mock_logger.go -source=../logging/interfaces.go
+
 import (
-	"context"
 	"testing"
 
-	"github.com/canonical/hook-service/internal/logging"
-	"go.opentelemetry.io/otel/trace"
+	"go.uber.org/mock/gomock"
 )
-
-// MockLogger to capture Fatalf calls
-type MockLogger struct {
-	logging.LoggerInterface
-	FatalfFunc func(template string, args ...interface{})
-}
-
-func (m *MockLogger) Fatalf(template string, args ...interface{}) {
-	if m.FatalfFunc != nil {
-		m.FatalfFunc(template, args...)
-	}
-}
-
-func (m *MockLogger) Errorf(template string, args ...interface{}) {
-	// no-op for now or allow mocking if needed
-}
-
-// Manual Mocks for Tracing and Monitoring to avoid code generation issues
-
-type MockTracer struct{}
-
-func (m *MockTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	return ctx, trace.SpanFromContext(ctx)
-}
-
-type MockMonitor struct{}
-
-func (m *MockMonitor) GetService() string { return "test-service" }
-func (m *MockMonitor) SetResponseTimeMetric(labels map[string]string, value float64) error {
-	return nil
-}
-func (m *MockMonitor) SetDependencyAvailability(labels map[string]string, value float64) error {
-	return nil
-}
 
 func TestOffset(t *testing.T) {
 	tests := []struct {
@@ -120,15 +88,17 @@ func TestPageSize(t *testing.T) {
 }
 
 func TestNewDBClient_DSNValidationFailure(t *testing.T) {
-	mockTracer := &MockTracer{}
-	mockMonitor := &MockMonitor{}
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockTracer := NewMockTracingInterface(ctrl)
+	mockMonitor := NewMockMonitorInterface(ctrl)
+	mockLogger := NewMockLoggerInterface(ctrl)
 
 	fatalCalled := false
-	mockLogger := &MockLogger{
-		FatalfFunc: func(template string, args ...interface{}) {
-			fatalCalled = true
-		},
-	}
+	mockLogger.EXPECT().Fatalf(gomock.Any(), gomock.Any()).Do(func(template string, args ...interface{}) {
+		fatalCalled = true
+	}).AnyTimes()
 
 	cfg := Config{
 		DSN: "invalid-dsn",

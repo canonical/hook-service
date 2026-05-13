@@ -4,6 +4,8 @@
 package storage
 
 import (
+	"time"
+
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -15,6 +17,8 @@ var _ StorageInterface = (*Storage)(nil)
 type Storage struct {
 	db db.DBClientInterface
 
+	streamTimeout time.Duration
+
 	logger  logging.LoggerInterface
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -24,10 +28,15 @@ func NewStorage(c db.DBClientInterface, tracer tracing.TracingInterface, monitor
 	s := new(Storage)
 
 	s.db = c
+	s.streamTimeout = streamTimeout
 
 	s.logger = logger
 	s.tracer = tracer
 	s.monitor = monitor
 
 	return s
+}
+
+func (s *Storage) SetStreamTimeout(d time.Duration) {
+	s.streamTimeout = d
 }
