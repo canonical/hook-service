@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package hook.groups.v1;
+
+option go_package = "github.com/canonical/hook-service/gen/hook/groups/v1";
+
+import "google/protobuf/timestamp.proto";
+
+service GroupsMappingService {
+  rpc GetGroupsForUser(GetGroupsForUserReq) returns (stream GroupMapping);
+  rpc GetUsersInGroup(GetUsersInGroupReq) returns (stream UserMapping);
+}
+
+message GetGroupsForUserReq {
+  string user_id = 1;
+  optional string tenant_id = 2;
+}
+
+message GetUsersInGroupReq {
+  string group_id = 1;
+  optional string tenant_id = 2;
+}
+
+message GroupMapping {
+  string id = 1;
+  string name = 2;
+  string tenant_id = 3;
+  string description = 4;
+  string type = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message UserMapping {
+  string id = 1;
+}
