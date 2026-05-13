@@ -365,6 +365,7 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	return nil
 }
 
+
 // RemoveUserFromAllGroups removes a user from every group they belong to.
 // This operation is idempotent — it succeeds even if the user has no memberships.
 func (s *Storage) RemoveUserFromAllGroups(ctx context.Context, userID string) error {
@@ -467,6 +468,79 @@ func (s *Storage) SyncGroupMembers(ctx context.Context, groupID string, userIDs 
 
 	if _, err := insert.ExecContext(ctx); err != nil {
 		return fmt.Errorf("failed to upsert group members: %v", err)
+
+const streamTimeout = 30 * time.Second
+
+// StreamGroupsForUser streams all groups that a user belongs to within a specific tenant,
+// calling fn for each group. Returns on the first error (including context cancellation).
+func (s *Storage) StreamGroupsForUser(ctx context.Context, tenantID, userID string, fn func(*types.Group) error) error {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.StreamGroupsForUser")
+	defer span.End()
+
+	ctx, cancel := context.WithTimeout(ctx, s.streamTimeout)
+	defer cancel()
+
+	rows, err := s.db.Statement(ctx).
+		Select("g.id", "g.name", "g.tenant_id", "g.description", "g.type", "g.created_at", "g.updated_at").
+		From("groups g").
+		Join("group_members gm ON g.id = gm.group_id").
+		Where(sq.Eq{"gm.user_id": userID, "g.tenant_id": tenantID}).
+		OrderBy("g.name ASC").
+		QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query groups for user: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		group, err := scanGroup(rows)
+		if err != nil {
+			return fmt.Errorf("failed to scan group: %v", err)
+		}
+		if err := fn(group); err != nil {
+			return err
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating groups: %v", err)
+	}
+
+	return nil
+}
+
+// StreamUsersInGroup streams all user IDs that are members of a group within a specific tenant,
+// calling fn for each user ID. Returns on the first error (including context cancellation).
+func (s *Storage) StreamUsersInGroup(ctx context.Context, tenantID, groupID string, fn func(string) error) error {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.StreamUsersInGroup")
+	defer span.End()
+
+	ctx, cancel := context.WithTimeout(ctx, s.streamTimeout)
+	defer cancel()
+
+	rows, err := s.db.Statement(ctx).
+		Select("user_id").
+		From("group_members").
+		Where(sq.Eq{"group_id": groupID, "tenant_id": tenantID}).
+		OrderBy("user_id ASC").
+		QueryContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to query group members: %v", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return fmt.Errorf("failed to scan user ID: %v", err)
+		}
+		if err := fn(userID); err != nil {
+			return err
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("error iterating group members: %v", err)
 	}
 
 	return nil

@@ -32,6 +32,10 @@ type StorageInterface interface {
 	ListGroupsByPrefix(ctx context.Context, prefix, tenantID string) ([]*types.Group, error)
 	SyncGroupMembers(ctx context.Context, groupID string, userIDs []string) error
 
+	// User-centric group streaming operations
+	StreamGroupsForUser(ctx context.Context, tenantID, userID string, fn func(*types.Group) error) error
+	StreamUsersInGroup(ctx context.Context, tenantID, groupID string, fn func(string) error) error
+
 	// Application authorization operations
 	GetAllowedApps(ctx context.Context, groupID string) ([]string, error)
 	AddAllowedApp(ctx context.Context, groupID string, appID string) error
