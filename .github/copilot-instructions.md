@@ -1,5 +1,5 @@
 // Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0
+// SPDX-License-Identifier: AGPL-3.0-only
 
 # Hook Service - AI Coding Agent Instructions
 
@@ -112,8 +112,8 @@ All code in this project follows strict conventions derived from Canonical's Go 
 ### File Headers
 Every file must start with:
 ```go
-// Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0
+// Copyright 2026 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only
 ```
 
 ### Error Handling Philosophy
