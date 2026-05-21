@@ -468,23 +468,32 @@ func (s *Storage) SyncGroupMembers(ctx context.Context, groupID string, userIDs 
 
 	if _, err := insert.ExecContext(ctx); err != nil {
 		return fmt.Errorf("failed to upsert group members: %v", err)
+	}
+
+	return nil
+}
 
 const streamTimeout = 30 * time.Second
 
 // StreamGroupsForUser streams all groups that a user belongs to within a specific tenant,
 // calling fn for each group. Returns on the first error (including context cancellation).
-func (s *Storage) StreamGroupsForUser(ctx context.Context, tenantID, userID string, fn func(*types.Group) error) error {
+func (s *Storage) StreamGroupsForUser(ctx context.Context, tenantID, userID string, fn func(*types.Group) (error)) error {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.StreamGroupsForUser")
 	defer span.End()
 
 	ctx, cancel := context.WithTimeout(ctx, s.streamTimeout)
 	defer cancel()
 
+	whereClause := sq.Eq{"gm.user_id": userID}
+	if tenantID != "" {
+		whereClause["g.tenant_id"] = tenantID
+	}
+
 	rows, err := s.db.Statement(ctx).
 		Select("g.id", "g.name", "g.tenant_id", "g.description", "g.type", "g.created_at", "g.updated_at").
 		From("groups g").
 		Join("group_members gm ON g.id = gm.group_id").
-		Where(sq.Eq{"gm.user_id": userID, "g.tenant_id": tenantID}).
+		Where(whereClause).
 		OrderBy("g.name ASC").
 		QueryContext(ctx)
 	if err != nil {
@@ -511,17 +520,22 @@ func (s *Storage) StreamGroupsForUser(ctx context.Context, tenantID, userID stri
 
 // StreamUsersInGroup streams all user IDs that are members of a group within a specific tenant,
 // calling fn for each user ID. Returns on the first error (including context cancellation).
-func (s *Storage) StreamUsersInGroup(ctx context.Context, tenantID, groupID string, fn func(string) error) error {
+func (s *Storage) StreamUsersInGroup(ctx context.Context, tenantID, groupID string, fn func(string) (error)) error {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.StreamUsersInGroup")
 	defer span.End()
 
 	ctx, cancel := context.WithTimeout(ctx, s.streamTimeout)
 	defer cancel()
 
+	whereClause := sq.Eq{"group_id": groupID}
+	if tenantID != "" {
+		whereClause["tenant_id"] = tenantID
+	}
+
 	rows, err := s.db.Statement(ctx).
 		Select("user_id").
 		From("group_members").
-		Where(sq.Eq{"group_id": groupID, "tenant_id": tenantID}).
+		Where(whereClause).
 		OrderBy("user_id ASC").
 		QueryContext(ctx)
 	if err != nil {

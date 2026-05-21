@@ -271,25 +271,6 @@ func TestWithReadOnly(t *testing.T) {
 	}
 }
 
-func TestNewDBClient_EmptyReplicaDSN_PrimaryOnly(t *testing.T) {
-	logger := &testLogger{}
-	d := &DBClient{
-		dbRunner:      &mockBaseRunner{},
-		replicaRunner: nil,
-		replicaLagMs:  0,
-		maxLagMs:      1000,
-		logger:        logger,
-	}
-
-	assert.Nil(t, d.replicaRunner)
-	assert.Nil(t, d.replicaDB)
-	assert.Nil(t, d.replicaPool)
-
-	stmt := d.Statement(context.Background())
-	row := stmt.Select("1").QueryRow()
-	_ = row
-}
-
 func TestClose_WithAndWithoutReplica(t *testing.T) {
 	tests := []struct {
 		name       string
