@@ -8,12 +8,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"sync/atomic"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/exaring/otelpgx"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/prometheus/client_golang/prometheus"
@@ -339,7 +339,10 @@ func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring
 	}
 
 	db := stdlib.OpenDBFromPool(pool)
-	if err := db.Ping(); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err = db.PingContext(pingCtx)
+	pingCancel()
+	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the database: %v", err)
 	}
 
@@ -387,7 +390,10 @@ func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring
 		}
 
 		replicaDB := stdlib.OpenDBFromPool(replicaPool)
-		if err := replicaDB.Ping(); err != nil {
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = replicaDB.PingContext(pingCtx)
+		pingCancel()
+		if err != nil {
 			logger.Warnf("failed to ping replica database, falling back to primary-only mode: %v", err)
 			replicaDB.Close()
 			replicaPool.Close()
@@ -439,5 +445,9 @@ func isMissingRelation(err error) bool {
 	if err == nil {
 		return false
 	}
-	return strings.Contains(err.Error(), "pg_stat_replication")
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "42P01"
+	}
+	return false
 }
