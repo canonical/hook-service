@@ -20,6 +20,7 @@ type EnvSpec struct {
 	Port int `envconfig:"port" default:"8080"`
 
 	GRPCPort int `envconfig:"grpc_port" default:"9090"`
+	GRPCMaxConcurrentStreams uint32 `envconfig:"grpc_max_concurrent_streams" default:"100"`
 
 	ApiToken string `envconfig:"api_token" default:""`
 

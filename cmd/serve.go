@@ -204,9 +204,13 @@ func serve() error {
 	}
 
 	grpcSrv := grpc.NewServer(
-		grpc.MaxConcurrentStreams(100),
-		grpc.StreamInterceptor(
+		grpc.MaxConcurrentStreams(specs.GRPCMaxConcurrentStreams),
+		grpc.ChainUnaryInterceptor(
+			db.UnaryReplicaRoutingInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
 			authentication.NewGrpcInterceptor(jwtVerifier, tracer, monitor, logger).StreamAuthenticate(),
+			db.StreamReplicaRoutingInterceptor(),
 		),
 	)
 	mappingServer := groups_api.NewMappingGrpcServer(groupService, tracer, monitor, logger)
