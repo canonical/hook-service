@@ -204,9 +204,13 @@ func serve() error {
 	}
 
 	grpcSrv := grpc.NewServer(
-		grpc.MaxConcurrentStreams(100),
-		grpc.StreamInterceptor(
+		grpc.MaxConcurrentStreams(specs.GRPCMaxConcurrentStreams),
+		grpc.ChainUnaryInterceptor(
+			db.UnaryReplicaRoutingInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
 			authentication.NewGrpcInterceptor(jwtVerifier, tracer, monitor, logger).StreamAuthenticate(),
+			db.StreamReplicaRoutingInterceptor(),
 		),
 	)
 	mappingServer := groups_api.NewMappingGrpcServer(groupService, tracer, monitor, logger)
@@ -227,17 +231,44 @@ func serve() error {
 
 	eg.Go(func() error {
 		logger.Security().SystemStartup()
-		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("HTTP server error: %w", err)
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- httpServer.ListenAndServe()
+		}()
+
+		select {
+		case err := <-errChan:
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return fmt.Errorf("HTTP server error: %w", err)
+			}
+			return nil
+		case <-ctx.Done():
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer shutdownCancel()
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				return fmt.Errorf("HTTP server shutdown error: %w", err)
+			}
+			return nil
 		}
-		return nil
 	})
 
 	eg.Go(func() error {
-		if err := grpcSrv.Serve(grpcLis); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
-			return fmt.Errorf("gRPC server error: %w", err)
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- grpcSrv.Serve(grpcLis)
+		}()
+
+		select {
+		case err := <-errChan:
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				return fmt.Errorf("gRPC server error: %w", err)
+			}
+			return nil
+		case <-ctx.Done():
+			grpcSrv.GracefulStop()
+			return nil
 		}
-		return nil
 	})
 
 	eg.Go(func() error {
@@ -251,25 +282,6 @@ func serve() error {
 
 	if err := eg.Wait(); err == nil || errors.Is(err, errShutdownSignal) {
 		logger.Security().SystemShutdown()
-
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer shutdownCancel()
-
-		shutdownEg, _ := errgroup.WithContext(shutdownCtx)
-
-		shutdownEg.Go(func() error {
-			grpcSrv.GracefulStop()
-			return nil
-		})
-
-		shutdownEg.Go(func() error {
-			return httpServer.Shutdown(shutdownCtx)
-		})
-
-		if err := shutdownEg.Wait(); err != nil {
-			return fmt.Errorf("shutdown error: %w", err)
-		}
-
 		return nil
 	}
 
