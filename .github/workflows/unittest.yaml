@@ -14,7 +14,7 @@ jobs:
           go-version: '1.26'
 
       - name: Install Podman
-        uses: redhat-actions/podman-install@92eb12467c2fc271e7781d006c413e17770230ed # main
+        uses: redhat-actions/podman-install@5bc2ecc87c737059124c295845be51ee7297fb89 # main
 
       - name: Setup podman for rootless (standard GitHub runner user)
         run: systemctl --user enable --now podman.socket
@@ -25,7 +25,7 @@ jobs:
           GO_TEST_PARALLEL: 10
           DOCKER_HOST: "unix://$XDG_RUNTIME_DIR/podman/podman.sock"
 
-      - uses: codecov/codecov-action@57e3a136b779b570ffcdbf80b3bdc90e7fab3de2 # v6
+      - uses: codecov/codecov-action@e79a6962e0d4c0c17b229090214935d2e33f8354 # v6
         with:
           files: ./coverage.out
 
