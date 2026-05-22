@@ -26,7 +26,7 @@ parts:
     source: .
     source-type: local
     build-snaps:
-      - go/1.25/stable
+      - go/1.26/stable
     build-packages:
       - make
       - git

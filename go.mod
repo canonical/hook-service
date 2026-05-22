@@ -1,6 +1,6 @@
 module github.com/canonical/hook-service
 
-go 1.25.7
+go 1.26.0
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
