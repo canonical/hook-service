@@ -23,6 +23,7 @@ The application is configured via environment variables.
 | `DEBUG` | Enable debug mode | `false` |
 | `PORT` | HTTP server port | `8080` |
 | `GRPC_PORT` | Native gRPC server port for internal groups mapping API | `9090` |
+| `GRPC_MAX_CONCURRENT_STREAMS` | Max concurrent streams allowed per gRPC connection | `100` |
 | `API_TOKEN` | Token for API authentication | |
 | `OPENFGA_API_SCHEME` | OpenFGA API scheme | |
 | `OPENFGA_API_HOST` | OpenFGA API host | |
