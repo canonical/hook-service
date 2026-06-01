@@ -1,0 +1,30 @@
+schema: spec-driven
+
+context: |
+  hook-service is a Go OAuth token-hook service.
+  Integrations: Ory Kratos, Ory Hydra, OpenFGA, optional Salesforce.
+  Stack: Go, PostgreSQL, gRPC/gRPC-gateway, cobra CLI, OpenTelemetry.
+
+  OpenSpec intent for this repo:
+  - Specs are the single source of truth for behavior.
+  - Purpose captures concise rationale (why); Requirements capture normative behavior (what).
+  - Keep artifact prose human-readable and avoid dumping implementation details into canonical specs.
+
+  Authoritative code conventions live in .github/copilot-instructions.md; do not duplicate them here.
+
+rules:
+  spec:
+    - Every capability spec under openspec/specs/ must include a ## Purpose section before ## Requirements
+    - The ## Purpose section is the single source of truth for design rationale (ADR-style); capture intent, goals, non-goals, and key decisions (with brief alternatives) so no separate ADR or design file is needed
+    - Keep the ## Purpose human-readable: prose and decisions, not machine-generated task lists or file-path dumps
+    - If Purpose includes a Non-goals subsection, each item must be capability-specific and describe concrete out-of-scope boundaries (avoid repeated boilerplate across specs)
+    - Requirements stay behaviour-driven (SHALL/MUST + #### Scenario blocks); the "why" lives in ## Purpose, the "what" in ## Requirements
+    - Exclude repository coding conventions from capability requirements (for example, SPDX headers, formatting, lint style, or file scaffolding rules); keep those in repository instructions/tooling
+  proposal:
+    - Keep proposals concise (under 400 words)
+    - Always include a Non-goals section
+    - Reference affected packages by name
+  tasks:
+    - Break tasks into single-package units of work
+    - Each task must reference the file(s) it touches
+    - Always include a task for updating/adding tests
