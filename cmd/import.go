@@ -4,16 +4,17 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/importer"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
+	"github.com/canonical/hook-service/internal/openfga"
 	"github.com/canonical/hook-service/internal/salesforce"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/tracing"
@@ -43,6 +44,11 @@ func init() {
 	importCmd.Flags().String("domain", "", "Salesforce domain")
 	importCmd.Flags().String("consumer-key", "", "Salesforce consumer key")
 	importCmd.Flags().String("consumer-secret", "", "Salesforce consumer secret")
+	importCmd.Flags().Bool("sync", false, "Reconcile DB with driver data, removing stale groups and memberships")
+	importCmd.Flags().String("openfga-host", "", "OpenFGA API host (optional, for authorization tuple cleanup on --sync)")
+	importCmd.Flags().String("openfga-store-id", "", "OpenFGA store ID")
+	importCmd.Flags().String("openfga-token", "", "OpenFGA API token")
+	importCmd.Flags().String("openfga-model-id", "", "OpenFGA authorization model ID")
 
 	_ = importCmd.MarkFlagRequired("driver")
 	_ = importCmd.MarkFlagRequired("dsn")
@@ -88,8 +94,30 @@ func runImport(cmd *cobra.Command) error {
 		return fmt.Errorf("unsupported driver: %q (supported: salesforce)", driver)
 	}
 
-	imp := importer.NewImporter(importDriver, s, logger)
-	return imp.Run(context.Background())
+	imp := importer.NewImporter(importDriver, s, buildAuthorizer(cmd, tracer, monitor, logger), logger)
+
+	sync, _ := cmd.Flags().GetBool("sync")
+	if sync {
+		return imp.Sync(cmd.Context())
+	}
+	return imp.Run(cmd.Context())
+}
+
+// buildAuthorizer constructs an Authorizer from the --openfga-* flags.
+// If no OpenFGA host is provided it falls back to the noop authorizer, which
+// is correct when authorization is disabled or the import is run without --sync.
+func buildAuthorizer(cmd *cobra.Command, tracer *tracing.Tracer, monitor *prometheus.Monitor, logger logging.LoggerInterface) *authorization.Authorizer {
+	host, _ := cmd.Flags().GetString("openfga-host")
+	if host == "" {
+		return authorization.NewAuthorizer(openfga.NewNoopClient(tracer, monitor, logger), tracer, monitor, logger)
+	}
+
+	storeID, _ := cmd.Flags().GetString("openfga-store-id")
+	token, _ := cmd.Flags().GetString("openfga-token")
+	modelID, _ := cmd.Flags().GetString("openfga-model-id")
+
+	ofga := openfga.NewClient(openfga.NewConfig("", host, storeID, token, modelID, false, tracer, monitor, logger))
+	return authorization.NewAuthorizer(ofga, tracer, monitor, logger)
 }
 
 func buildSalesforceDriver(cmd *cobra.Command) (*importer.SalesforceDriver, error) {

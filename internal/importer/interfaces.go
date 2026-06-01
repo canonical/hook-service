@@ -17,3 +17,9 @@ type DriverInterface interface {
 	Prefix() string
 	FetchAllUserGroups(ctx context.Context) ([]UserGroupMapping, error)
 }
+
+// AuthorizerInterface defines the authorization side-effects required by the Importer.
+// DeleteGroup removes all authorization tuples associated with a group when it is deleted.
+type AuthorizerInterface interface {
+	DeleteGroup(ctx context.Context, id string) error
+}

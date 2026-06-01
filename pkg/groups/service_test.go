@@ -464,13 +464,6 @@ func TestService_AddUsersToGroup(t *testing.T) {
 			expectedErr: ErrInvalidGroupID,
 		},
 		{
-			name: "user already in group",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(storage.ErrDuplicateKey)
-			},
-			expectedErr: ErrUserAlreadyInGroup,
-		},
-		{
 			name: "db error",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(dbErr)

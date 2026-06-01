@@ -101,9 +101,6 @@ func (s *Service) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 	}
 
 	if err := s.db.AddUsersToGroup(ctx, groupID, userIDs); err != nil {
-		if errors.Is(err, storage.ErrDuplicateKey) {
-			return ErrUserAlreadyInGroup
-		}
 		if errors.Is(err, storage.ErrForeignKeyViolation) {
 			return ErrInvalidGroupID
 		}
