@@ -51,6 +51,37 @@ func createHookRequestWithExtra(clientId, userId string, grantTypes []string, au
 	return r
 }
 
+func createHookRequestWithIDTokenExtra(clientId, userId string, grantTypes []string, idTokenExtra map[string]interface{}) oauth2.TokenHookRequest {
+	return oauth2.TokenHookRequest{
+		Session: &oauth2.Session{
+			DefaultSession: &openid.DefaultSession{
+				Subject: userId,
+				Claims:  &jwt.IDTokenClaims{Extra: idTokenExtra},
+			},
+		},
+		Request: oauth2.Request{
+			ClientID:   clientId,
+			GrantTypes: grantTypes,
+		},
+	}
+}
+
+func createHookRequestWithSessionAndIDTokenExtra(clientId, userId string, grantTypes []string, sessionExtra, idTokenExtra map[string]interface{}) oauth2.TokenHookRequest {
+	return oauth2.TokenHookRequest{
+		Session: &oauth2.Session{
+			Extra: sessionExtra,
+			DefaultSession: &openid.DefaultSession{
+				Subject: userId,
+				Claims:  &jwt.IDTokenClaims{Extra: idTokenExtra},
+			},
+		},
+		Request: oauth2.Request{
+			ClientID:   clientId,
+			GrantTypes: grantTypes,
+		},
+	}
+}
+
 func createHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
 	r := oauth2.TokenHookResponse{
 		Session: *flow.NewConsentRequestSessionData(),
@@ -79,6 +110,8 @@ func TestHandleHydraHook(t *testing.T) {
 
 		expectedStatus   int
 		expectedResponse *oauth2.TokenHookResponse
+		request          *oauth2.TokenHookRequest
+		assertResponse   func(t *testing.T, resp *oauth2.TokenHookResponse)
 	}{
 		{
 			name:                 "Should add groups to user",
@@ -106,6 +139,165 @@ func TestHandleHydraHook(t *testing.T) {
 			processRequestResult: &HookContext{Groups: groups},
 			expectedStatus:       http.StatusOK,
 			expectedResponse:     createHookResponse(groups),
+		},
+		{
+			name:                 "Should preserve existing ID token claims in hook response",
+			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "g1"}}},
+			expectedStatus:       http.StatusOK,
+			request: ptr(createHookRequestWithIDTokenExtra(
+				"client",
+				"user",
+				[]string{"authorization_code"},
+				map[string]interface{}{"email": "user@example.com", "name": "Alice"},
+			)),
+			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+				email, ok := resp.Session.IDToken["email"].(string)
+				if !ok || email != "user@example.com" {
+					t.Fatalf("expected id_token email to be %q, got %v", "user@example.com", resp.Session.IDToken["email"])
+				}
+
+				name, ok := resp.Session.IDToken["name"].(string)
+				if !ok || name != "Alice" {
+					t.Fatalf("expected id_token name to be %q, got %v", "Alice", resp.Session.IDToken["name"])
+				}
+
+				if resp.Session.IDToken["groups"] == nil {
+					t.Fatal("expected id_token groups to be non-nil")
+				}
+			},
+		},
+		{
+			name:                 "Should overwrite stale groups claim while preserving other id token claims",
+			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "fresh-group"}}},
+			expectedStatus:       http.StatusOK,
+			request: ptr(createHookRequestWithIDTokenExtra(
+				"client",
+				"user",
+				[]string{"authorization_code"},
+				map[string]interface{}{"groups": []string{"stale-group"}, "email": "user@example.com"},
+			)),
+			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+				email, ok := resp.Session.IDToken["email"].(string)
+				if !ok || email != "user@example.com" {
+					t.Fatalf("expected id_token email to be %q, got %v", "user@example.com", resp.Session.IDToken["email"])
+				}
+
+				groupsClaim, ok := resp.Session.IDToken["groups"].([]interface{})
+				if !ok {
+					t.Fatalf("expected id_token groups claim to be []interface{}, got %T", resp.Session.IDToken["groups"])
+				}
+
+				hasFresh := false
+				hasStale := false
+				for _, g := range groupsClaim {
+					groupName, ok := g.(string)
+					if !ok {
+						continue
+					}
+					if groupName == "fresh-group" {
+						hasFresh = true
+					}
+					if groupName == "stale-group" {
+						hasStale = true
+					}
+				}
+
+				if !hasFresh {
+					t.Fatal("expected id_token groups to include fresh-group")
+				}
+				if hasStale {
+					t.Fatal("expected id_token groups to not include stale-group")
+				}
+			},
+		},
+		{
+			name:                 "Should preserve existing access token claims in hook response",
+			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "g1"}}},
+			expectedStatus:       http.StatusOK,
+			request: ptr(createHookRequestWithSessionAndIDTokenExtra(
+				"client",
+				"user",
+				[]string{"authorization_code"},
+				map[string]interface{}{"scope": "openid", "aud": "app"},
+				map[string]interface{}{"email": "user@example.com"},
+			)),
+			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+				scope, ok := resp.Session.AccessToken["scope"].(string)
+				if !ok || scope != "openid" {
+					t.Fatalf("expected access_token scope to be %q, got %v", "openid", resp.Session.AccessToken["scope"])
+				}
+
+				aud, ok := resp.Session.AccessToken["aud"].(string)
+				if !ok || aud != "app" {
+					t.Fatalf("expected access_token aud to be %q, got %v", "app", resp.Session.AccessToken["aud"])
+				}
+
+				if resp.Session.AccessToken["groups"] == nil {
+					t.Fatal("expected access_token groups to be non-nil")
+				}
+			},
+		},
+		{
+			name:                 "Should overwrite stale groups claim while preserving other access token claims",
+			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "fresh-group"}}},
+			expectedStatus:       http.StatusOK,
+			request: ptr(createHookRequestWithSessionAndIDTokenExtra(
+				"client",
+				"user",
+				[]string{"authorization_code"},
+				map[string]interface{}{"groups": []string{"stale-group"}, "scope": "openid"},
+				map[string]interface{}{"email": "user@example.com"},
+			)),
+			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+				scope, ok := resp.Session.AccessToken["scope"].(string)
+				if !ok || scope != "openid" {
+					t.Fatalf("expected access_token scope to be %q, got %v", "openid", resp.Session.AccessToken["scope"])
+				}
+
+				groupsClaim, ok := resp.Session.AccessToken["groups"].([]interface{})
+				if !ok {
+					t.Fatalf("expected access_token groups claim to be []interface{}, got %T", resp.Session.AccessToken["groups"])
+				}
+
+				hasFresh := false
+				hasStale := false
+				for _, g := range groupsClaim {
+					groupName, ok := g.(string)
+					if !ok {
+						continue
+					}
+					if groupName == "fresh-group" {
+						hasFresh = true
+					}
+					if groupName == "stale-group" {
+						hasStale = true
+					}
+				}
+
+				if !hasFresh {
+					t.Fatal("expected access_token groups to include fresh-group")
+				}
+				if hasStale {
+					t.Fatal("expected access_token groups to not include stale-group")
+				}
+			},
+		},
+		{
+			name:                 "Should not panic when default session is nil",
+			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "g1"}}},
+			expectedStatus:       http.StatusOK,
+			request: &oauth2.TokenHookRequest{
+				Session: &oauth2.Session{},
+				Request: oauth2.Request{
+					ClientID:   "client",
+					GrantTypes: []string{"authorization_code"},
+				},
+			},
+			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+				if resp.Session.IDToken["groups"] == nil {
+					t.Fatal("expected id_token groups to be non-nil")
+				}
+			},
 		},
 		{
 			name:                "Should fail authz",
@@ -155,7 +347,12 @@ func TestHandleHydraHook(t *testing.T) {
 				mockLogger.EXPECT().Infof(gomock.Any(), gomock.Any()).AnyTimes()
 			}
 
-			body, _ := json.Marshal(createHookRequest(test.clientId, test.userId, test.grantTypes, test.grantedAud))
+			reqPayload := createHookRequest(test.clientId, test.userId, test.grantTypes, test.grantedAud)
+			if test.request != nil {
+				reqPayload = *test.request
+			}
+
+			body, _ := json.Marshal(reqPayload)
 			req := httptest.NewRequest(http.MethodPost, "/api/v0/hook/hydra", bytes.NewBuffer(body))
 
 			mux := chi.NewMux()
@@ -172,14 +369,20 @@ func TestHandleHydraHook(t *testing.T) {
 				t.Fatalf("expected error to be nil got %v", err)
 			}
 
-			if test.expectedResponse != nil {
+			if test.expectedResponse != nil || test.assertResponse != nil {
 				resp := new(oauth2.TokenHookResponse)
 				if err := json.Unmarshal(data, resp); err != nil {
 					t.Fatalf("expected error to be nil got %v", err)
 				}
 
-				if reflect.DeepEqual(resp.Session, test.expectedResponse.Session) {
-					t.Fatalf("expected response body to be %v got %v", test.expectedResponse, *resp)
+				if test.expectedResponse != nil {
+					if reflect.DeepEqual(resp.Session, test.expectedResponse.Session) {
+						t.Fatalf("expected response body to be %v got %v", test.expectedResponse, *resp)
+					}
+				}
+
+				if test.assertResponse != nil {
+					test.assertResponse(t, resp)
 				}
 			}
 
@@ -188,6 +391,10 @@ func TestHandleHydraHook(t *testing.T) {
 			}
 		})
 	}
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
 
 func TestHandleHydraHookTenantValidation(t *testing.T) {

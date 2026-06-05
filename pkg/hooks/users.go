@@ -31,8 +31,15 @@ func NewUserFromHookRequest(r *oauth2.TokenHookRequest, logger logging.LoggerInt
 		return u
 	}
 
-	u.SubjectId = r.Session.Subject
+	if r.Session == nil {
+		return u
+	}
+
 	s := r.Session.DefaultSession
+	if s != nil {
+		u.SubjectId = s.Subject
+	}
+
 	if s != nil && s.Claims != nil {
 		email, ok := s.Claims.Extra["email"].(string)
 		if !ok {

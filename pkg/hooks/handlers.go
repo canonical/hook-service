@@ -115,7 +115,7 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		span.SetAttributes(attribute.String("tenant_id", hctx.TenantID))
 	}
 
-	encoded, err := json.Marshal(a.composeTokenResponse(hctx))
+	encoded, err := json.Marshal(a.composeTokenResponse(req, hctx))
 	if err != nil {
 		a.logger.Errorf("failed to encode hook response: %v", err)
 		span.RecordError(err)
@@ -133,8 +133,22 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 
 // composeTokenResponse builds the final TokenHookResponse from a processed hook
 // context, including group names and the tenant_id when present.
-func (a *API) composeTokenResponse(hctx *HookContext) *oauth2.TokenHookResponse {
-	resp := a.newHookResponse(hctx.Groups)
+func (a *API) composeTokenResponse(req *oauth2.TokenHookRequest, hctx *HookContext) *oauth2.TokenHookResponse {
+	var existingAccessToken map[string]interface{}
+	var existingIDToken map[string]interface{}
+	// Preserve existing Hydra session claims and only overwrite hook-managed claims.
+	if req.Session != nil {
+		existingAccessToken = req.Session.Extra
+
+		if req.Session.DefaultSession != nil {
+			claims := req.Session.IDTokenClaims()
+			if claims != nil {
+				existingIDToken = claims.Extra
+			}
+		}
+	}
+
+	resp := a.newHookResponse(hctx.Groups, existingAccessToken, existingIDToken)
 	if hctx.TenantID != "" {
 		resp.Session.AccessToken["tenant_id"] = hctx.TenantID
 		resp.Session.IDToken["tenant_id"] = hctx.TenantID
@@ -144,9 +158,17 @@ func (a *API) composeTokenResponse(hctx *HookContext) *oauth2.TokenHookResponse 
 
 // newHookResponse creates a TokenHookResponse with the group names added to both
 // the access token and ID token session data. Duplicate group names are removed.
-func (a *API) newHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
+func (a *API) newHookResponse(groups []*types.Group, existingAccessToken, existingIDToken map[string]interface{}) *oauth2.TokenHookResponse {
 	resp := oauth2.TokenHookResponse{
 		Session: *flow.NewConsentRequestSessionData(),
+	}
+
+	for k, v := range existingAccessToken {
+		resp.Session.AccessToken[k] = v
+	}
+
+	for k, v := range existingIDToken {
+		resp.Session.IDToken[k] = v
 	}
 
 	if len(groups) == 0 {
