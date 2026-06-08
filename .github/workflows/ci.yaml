@@ -21,12 +21,20 @@ jobs:
   build:
     uses: ./.github/workflows/build-and-test-rock.yaml
   gh-publish:
+    permissions:
+      packages: write
+      contents: read
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: [ build, unit-test ]
     uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@59d4d2782bcb8fc2deea2aa08442e4c8603f2689 # v1.11.2
     with:
       rock: "hook-service"
   scan:
+    permissions:
+      packages: read
+      contents: read
+      security-events: write
+      actions: read
     if: ${{ (github.ref == 'refs/heads/main') || (github.ref_type == 'tag') }}
     needs: gh-publish
     uses: canonical/identity-team/.github/workflows/_rock-scan.yaml@59d4d2782bcb8fc2deea2aa08442e4c8603f2689 # v1.11.2
