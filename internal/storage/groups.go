@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
@@ -197,20 +198,31 @@ func (s *Storage) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 		return nil
 	}
 
+	// Deduplicate userIDs to avoid the "ON CONFLICT DO UPDATE command cannot
+	// affect row a second time" PostgreSQL error when duplicates are in the
+	// input slice.
+	seen := make(map[string]struct{}, len(userIDs))
+	unique := make([]string, 0, len(userIDs))
+	for _, id := range userIDs {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			unique = append(unique, id)
+		}
+	}
+
 	now := time.Now().UTC()
 	insert := s.db.Statement(ctx).
 		Insert("group_members").
 		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at")
 
-	for _, userID := range userIDs {
+	for _, userID := range unique {
 		insert = insert.Values(groupID, userID, "default", types.RoleMember, now, now)
 	}
 
-	_, err := insert.ExecContext(ctx)
+	_, err := insert.
+		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at").
+		ExecContext(ctx)
 	if err != nil {
-		if IsDuplicateKeyError(err) {
-			return WrapDuplicateKeyError(err, "user already in group")
-		}
 		if IsForeignKeyViolation(err) {
 			return WrapForeignKeyError(err, "group does not exist")
 		}
@@ -348,6 +360,113 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 			return WrapForeignKeyError(err, "one or more groups do not exist")
 		}
 		return fmt.Errorf("failed to upsert group memberships: %v", err)
+	}
+
+	return nil
+}
+
+// RemoveUserFromAllGroups removes a user from every group they belong to.
+// This operation is idempotent — it succeeds even if the user has no memberships.
+func (s *Storage) RemoveUserFromAllGroups(ctx context.Context, userID string) error {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.RemoveUserFromAllGroups")
+	defer span.End()
+
+	_, err := s.db.Statement(ctx).
+		Delete("group_members").
+		Where(sq.Eq{"user_id": userID}).
+		ExecContext(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to remove user from all groups: %v", err)
+	}
+
+	return nil
+}
+
+// ListGroupsByPrefix retrieves all groups whose names start with the given prefix for a tenant.
+// It uses a LIKE query with an escaped prefix for correctness across all PostgreSQL collations.
+// (A lexicographic byte-range approach does not work correctly with non-C locales such as
+// en_US.UTF-8, where letters sort differently relative to punctuation characters.)
+func (s *Storage) ListGroupsByPrefix(ctx context.Context, prefix, tenantID string) ([]*types.Group, error) {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.ListGroupsByPrefix")
+	defer span.End()
+
+	if tenantID == "" {
+		tenantID = DefaultTenantID
+	}
+
+	escaped := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
+	rows, err := s.db.Statement(ctx).
+		Select("id", "name", "tenant_id", "description", "type", "created_at", "updated_at").
+		From("groups").
+		Where(sq.Eq{"tenant_id": tenantID}).
+		Where(sq.Expr("name LIKE ? ESCAPE '\\'", escaped+"%")).
+		OrderBy("name ASC").
+		QueryContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query groups by prefix: %v", err)
+	}
+	defer rows.Close()
+
+	groups := make([]*types.Group, 0)
+	for rows.Next() {
+		group, err := scanGroup(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan group: %v", err)
+		}
+		groups = append(groups, group)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating groups: %v", err)
+	}
+
+	return groups, nil
+}
+
+// SyncGroupMembers replaces all memberships of a group with the provided user IDs.
+// It deduplicates the provided user IDs, removes members not in the list,
+// and upserts the current members. This mirrors UpdateGroupsForUser but is group-centric.
+func (s *Storage) SyncGroupMembers(ctx context.Context, groupID string, userIDs []string) error {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.SyncGroupMembers")
+	defer span.End()
+
+	// Deduplicate userIDs to avoid PostgreSQL error: "ON CONFLICT DO UPDATE command cannot affect row a second time"
+	uniqueUserIDsMap := make(map[string]struct{}, len(userIDs))
+	for _, id := range userIDs {
+		uniqueUserIDsMap[id] = struct{}{}
+	}
+	uniqueUserIDs := slices.Collect(maps.Keys(uniqueUserIDsMap))
+
+	// Remove members that are not in the provided list
+	delBuilder := s.db.Statement(ctx).
+		Delete("group_members").
+		Where(sq.Eq{"group_id": groupID})
+
+	if len(uniqueUserIDs) > 0 {
+		delBuilder = delBuilder.Where(sq.NotEq{"user_id": uniqueUserIDs})
+	}
+
+	if _, err := delBuilder.ExecContext(ctx); err != nil {
+		return fmt.Errorf("failed to remove stale group members: %v", err)
+	}
+
+	if len(uniqueUserIDs) == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+
+	insert := s.db.Statement(ctx).
+		Insert("group_members").
+		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at").
+		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
+
+	for _, userID := range uniqueUserIDs {
+		insert = insert.Values(groupID, userID, "default", types.RoleMember, now, now)
+	}
+
+	if _, err := insert.ExecContext(ctx); err != nil {
+		return fmt.Errorf("failed to upsert group members: %v", err)
 	}
 
 	return nil

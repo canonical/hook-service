@@ -26,6 +26,11 @@ type StorageInterface interface {
 	// User-centric group operations
 	GetGroupsForUser(ctx context.Context, userID string) ([]*types.Group, error)
 	UpdateGroupsForUser(ctx context.Context, userID string, groupIDs []string) error
+	RemoveUserFromAllGroups(ctx context.Context, userID string) error
+
+	// Prefix-based group operations
+	ListGroupsByPrefix(ctx context.Context, prefix, tenantID string) ([]*types.Group, error)
+	SyncGroupMembers(ctx context.Context, groupID string, userIDs []string) error
 
 	// Application authorization operations
 	GetAllowedApps(ctx context.Context, groupID string) ([]string, error)

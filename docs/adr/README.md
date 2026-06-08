@@ -7,6 +7,8 @@ This directory contains Architecture Decision Records documenting key technical 
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [001](./001-remove-salesforce-integration.md) | Remove Salesforce Integration | Accepted | 2026-02-25 |
+| [002](./002-tenant-service-integration.md) | Tenant Service Integration | Accepted | 2026-03-12 |
+| [003](./003-cli-user-group-sync.md) | CLI User/Group Operations and Import Sync Mode | Accepted | 2026-05-04 |
 
 ## ADR Format
 
