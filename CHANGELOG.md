@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.3.1](https://github.com/canonical/hook-service/compare/v1.3.0...v1.3.1) (2026-06-08)
+
+
+### Bug Fixes
+
+* add group, user subcommands and --sync ([04c0ec1](https://github.com/canonical/hook-service/commit/04c0ec1bd7afe0304831f45319ee61b910ffa20c))
+* **deps:** update go deps ([06a12e6](https://github.com/canonical/hook-service/commit/06a12e633a8ae2f66c7ef6100f6459bbfe55cdc0))
+* **deps:** update go deps ([2579943](https://github.com/canonical/hook-service/commit/25799433e3a14f82426beef79bf9e56e568d1f74))
+* **deps:** update go deps (minor) ([#264](https://github.com/canonical/hook-service/issues/264)) ([cc2da6f](https://github.com/canonical/hook-service/commit/cc2da6ff38b3e5f9204ee9cdca6054b2945d8c21))
+* **deps:** update go deps to v1.44.0 ([51716c4](https://github.com/canonical/hook-service/commit/51716c4978dfdf2e15a10213135b30ea556dba38))
+* **deps:** update go deps to v1.44.0 ([#262](https://github.com/canonical/hook-service/issues/262)) ([19a7bc4](https://github.com/canonical/hook-service/commit/19a7bc41cbd6e8ae21562c59b01ab9ed44403220))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0a33c5d ([e8b1d12](https://github.com/canonical/hook-service/commit/e8b1d1229f7e68d76b1a534f0197ea148afbe487))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 0a33c5d ([#256](https://github.com/canonical/hook-service/issues/256)) ([f1b21c0](https://github.com/canonical/hook-service/commit/f1b21c082b1c206e55c7de6d26f6b14b6be200e5))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 3dc84a4 ([122d431](https://github.com/canonical/hook-service/commit/122d43145153ab2a89e07774bc423af3e5f6454c))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 3dc84a4 ([#260](https://github.com/canonical/hook-service/issues/260)) ([d21bcc7](https://github.com/canonical/hook-service/commit/d21bcc7a45f320dc0d8662aeda9240e3745ac97e))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 60b97b3 ([a696f6d](https://github.com/canonical/hook-service/commit/a696f6d0f8368191e9ab46107915cb73555dd8d2))
+* **deps:** update google.golang.org/genproto/googleapis/rpc digest to 60b97b3 ([#243](https://github.com/canonical/hook-service/issues/243)) ([0cd4714](https://github.com/canonical/hook-service/commit/0cd471493b51ff1b93daec48b8833f5d01dfdb2e))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.3 ([9eb17c9](https://github.com/canonical/hook-service/commit/9eb17c912db67f3f5a832a66c31260ef770a0f3d))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.3 ([#265](https://github.com/canonical/hook-service/issues/265)) ([388cf1a](https://github.com/canonical/hook-service/commit/388cf1aa2a0aa9571dc227c864fcc364e2145bf1))
+* **deps:** update module golang.org/x/net to v0.54.0 ([e94e9f6](https://github.com/canonical/hook-service/commit/e94e9f6016867e0b1ebfdb015dcedeabf905bf8a))
+* **deps:** update module golang.org/x/net to v0.54.0 ([#248](https://github.com/canonical/hook-service/issues/248)) ([73c9cab](https://github.com/canonical/hook-service/commit/73c9cab71d9989dc4b07cad0fa28869253c104a8))
+* **deps:** update module google.golang.org/grpc to v1.81.0 ([9662b75](https://github.com/canonical/hook-service/commit/9662b754c24a61fc27ce701c82633ca0334b7055))
+* **deps:** update module google.golang.org/grpc to v1.81.0 ([#239](https://github.com/canonical/hook-service/issues/239)) ([8b82fa6](https://github.com/canonical/hook-service/commit/8b82fa6e25ce8c98bda3f5af0c085eab7d68ff51))
+* **deps:** update module google.golang.org/grpc to v1.81.1 ([ed7d62c](https://github.com/canonical/hook-service/commit/ed7d62c4e165ba61cc4115c6f7b7b57f4b9b16fa))
+* **deps:** update module google.golang.org/grpc to v1.81.1 ([#252](https://github.com/canonical/hook-service/issues/252)) ([4595238](https://github.com/canonical/hook-service/commit/459523862f48e402b16a9d5e798aae550a5839aa))
+* preserve hydra session ([feface8](https://github.com/canonical/hook-service/commit/feface89491190ea5325dd2c453b5b4b1636a23f))
+
 ## [1.3.0](https://github.com/canonical/hook-service/compare/v1.2.0...v1.3.0) (2026-05-01)
 
 
