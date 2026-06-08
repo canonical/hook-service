@@ -66,7 +66,3 @@ test_source.json
 app
 log.txt
 
-# openspec: track config, specs, and active changes (for PR review).
-# Archived changes are redundant — their rationale is merged into openspec/specs/
-# on `openspec archive`, which is the single source of truth.
-openspec/changes/archive/
