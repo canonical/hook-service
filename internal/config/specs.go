@@ -47,7 +47,9 @@ type EnvSpec struct {
 	DBMaxConnLifetime time.Duration `envconfig:"db_max_conn_lifetime" default:"1h"`
 	DBMaxConnIdleTime time.Duration `envconfig:"db_max_conn_idle_time" default:"30m"`
 
-	TenantServiceGRPCAddress string `envconfig:"tenant_service_grpc_address" default:""`
+	TenantServiceGRPCAddress string        `envconfig:"tenant_service_grpc_address" default:""`
+	TenantServiceGRPCTimeout time.Duration `envconfig:"tenant_service_grpc_timeout" default:"5s"`
+	TenantServiceTLSEnabled  bool          `envconfig:"tenant_service_tls_enabled" default:"false"`
 
 	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"150"`
 }
