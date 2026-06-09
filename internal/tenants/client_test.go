@@ -5,42 +5,42 @@ package tenants
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
+	tenantpb "github.com/canonical/identity-platform-api/v0/tenant"
+	"go.uber.org/mock/gomock"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc"
 )
 
 //go:generate mockgen -build_flags=--mod=mod -package tenants -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package tenants -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package tenants -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package tenants -destination ./mock_tenant_service_client.go -source=./interfaces.go
 
 func TestClientValidateMembership(t *testing.T) {
 	tests := []struct {
 		name       string
 		identityID string
 		tenantID   string
-		handler    http.HandlerFunc
+		mockClient func(*MockTenantServiceClientInterface)
 		expectErr  error
 	}{
 		{
 			name:       "membership valid",
 			identityID: "user-123",
 			tenantID:   "tenant-abc",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				if r.URL.Query().Get("identity_id") != "user-123" {
-					t.Errorf("expected identity_id=user-123, got %s", r.URL.Query().Get("identity_id"))
-				}
-				json.NewEncoder(w).Encode(lookupResponse{
-					Tenants: []tenant{
-						{ID: "tenant-abc"},
-						{ID: "tenant-def"},
-					},
+			mockClient: func(client *MockTenantServiceClientInterface) {
+				client.EXPECT().LookupTenants(gomock.Any(), gomock.Any()).DoAndReturn(func(_ context.Context, req *tenantpb.LookupTenantsRequest, _ ...grpc.CallOption) (*tenantpb.LookupTenantsResponse, error) {
+					if req.GetIdentityId() != "user-123" {
+						t.Fatalf("expected identity_id=user-123, got %s", req.GetIdentityId())
+					}
+
+					return &tenantpb.LookupTenantsResponse{
+						Tenants: []*tenantpb.Tenant{{Id: "tenant-abc"}, {Id: "tenant-def"}},
+					}, nil
 				})
 			},
 			expectErr: nil,
@@ -49,62 +49,32 @@ func TestClientValidateMembership(t *testing.T) {
 			name:       "membership denied — tenant not in list",
 			identityID: "user-123",
 			tenantID:   "tenant-xyz",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(lookupResponse{
-					Tenants: []tenant{
-						{ID: "tenant-abc"},
-					},
-				})
+			mockClient: func(client *MockTenantServiceClientInterface) {
+				client.EXPECT().LookupTenants(gomock.Any(), gomock.Any()).Return(&tenantpb.LookupTenantsResponse{
+					Tenants: []*tenantpb.Tenant{{Id: "tenant-abc"}},
+				}, nil)
 			},
 			expectErr: ErrNotMember,
 		},
 		{
-			name:       "membership denied — empty tenant list",
+			name:       "grpc client returns error",
 			identityID: "user-123",
 			tenantID:   "tenant-abc",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				json.NewEncoder(w).Encode(lookupResponse{Tenants: []tenant{}})
+			mockClient: func(client *MockTenantServiceClientInterface) {
+				client.EXPECT().LookupTenants(gomock.Any(), gomock.Any()).Return(nil, errors.New("backend unavailable"))
 			},
-			expectErr: ErrNotMember,
-		},
-		{
-			name:       "tenant-service returns 500",
-			identityID: "user-123",
-			tenantID:   "tenant-abc",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusInternalServerError)
-			},
-			expectErr: errors.New("tenant-service returned status 500"),
-		},
-		{
-			name:       "tenant-service returns 404",
-			identityID: "user-123",
-			tenantID:   "tenant-abc",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.WriteHeader(http.StatusNotFound)
-			},
-			expectErr: errors.New("tenant-service returned status 404"),
-		},
-		{
-			name:       "tenant-service returns invalid JSON",
-			identityID: "user-123",
-			tenantID:   "tenant-abc",
-			handler: func(w http.ResponseWriter, r *http.Request) {
-				w.Write([]byte("not json"))
-			},
-			expectErr: errors.New("cannot decode tenant-service response"),
+			expectErr: errors.New("cannot look up tenants: backend unavailable"),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(test.handler)
-			defer server.Close()
+			ctrl := gomock.NewController(t)
+			grpcClient := NewMockTenantServiceClientInterface(ctrl)
+			test.mockClient(grpcClient)
 
-			// Use a simple noop tracer for unit tests.
 			tracer := &noopTracer{}
-
-			client := NewClient(server.URL, 5*time.Second, tracer, nil, nil)
+			client := NewClient(grpcClient, 5*time.Second, tracer, nil, nil)
 			err := client.ValidateMembership(context.Background(), test.identityID, test.tenantID)
 
 			if test.expectErr == nil {
@@ -126,20 +96,10 @@ func TestClientValidateMembership(t *testing.T) {
 				return
 			}
 
-			// For non-sentinel errors, check the message contains expected text.
-			if !strings.Contains(err.Error(), test.expectErr.Error()) {
-				t.Fatalf("expected error containing %q, got %q", test.expectErr.Error(), err.Error())
+			if err.Error() != test.expectErr.Error() {
+				t.Fatalf("expected error %q, got %q", test.expectErr.Error(), err.Error())
 			}
 		})
-	}
-}
-
-func TestClientValidateMembershipUnreachable(t *testing.T) {
-	tracer := &noopTracer{}
-	client := NewClient("http://127.0.0.1:1", time.Second, tracer, nil, nil)
-	err := client.ValidateMembership(context.Background(), "user-123", "tenant-abc")
-	if err == nil {
-		t.Fatal("expected error for unreachable server, got nil")
 	}
 }
 

@@ -6,7 +6,7 @@ package tenants
 import "context"
 
 // NoopValidator is used when tenant validation is disabled
-// (TENANT_SERVICE_URL is empty). All calls succeed.
+// (TENANT_SERVICE_GRPC_ADDRESS is empty). All calls succeed.
 type NoopValidator struct{}
 
 // NewNoopValidator returns a validator that always succeeds.

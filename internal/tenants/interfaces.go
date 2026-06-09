@@ -3,7 +3,17 @@
 
 package tenants
 
-import "context"
+import (
+	"context"
+
+	tenantpb "github.com/canonical/identity-platform-api/v0/tenant"
+	"google.golang.org/grpc"
+)
+
+// TenantServiceClientInterface is the narrow tenant-service dependency used by the validator.
+type TenantServiceClientInterface interface {
+	LookupTenants(ctx context.Context, in *tenantpb.LookupTenantsRequest, opts ...grpc.CallOption) (*tenantpb.LookupTenantsResponse, error)
+}
 
 // TenantValidatorInterface validates that a user is an active member of a tenant.
 type TenantValidatorInterface interface {
