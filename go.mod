@@ -4,7 +4,7 @@ go 1.25.7
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/canonical/identity-platform-api v0.0.0-20251124101154-ab78e5ddfcd5
+	github.com/canonical/identity-platform-api v0.0.0-20260603112512-593712f43a4d
 	github.com/coreos/go-oidc/v3 v3.18.0
 	github.com/exaring/otelpgx v0.11.1
 	github.com/go-chi/chi/v5 v5.3.0
@@ -174,7 +174,6 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/moby/term v0.5.2 // indirect
 	github.com/mohae/deepcopy v0.0.0-20170929034955-c48cc78d4826 // indirect
-	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nyaruka/phonenumbers v1.2.2 // indirect
 	github.com/onsi/ginkgo v1.12.0 // indirect

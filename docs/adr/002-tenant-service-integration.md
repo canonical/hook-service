@@ -1,6 +1,7 @@
 # ADR-002: Integrate Tenant Service for Multi-Tenant Token Enrichment
 
-**Status**: Proposed
+**Status**: Superseded — migrated into `openspec/specs/tenant-grpc-client/spec.md` (`## Purpose`). The spec is now the single source of truth; this file is kept temporarily for external links and will be removed once `docs/adr/` is retired.
+
 **Date**: 2026-04-21
 **Deciders**: Development Team
 
@@ -135,26 +136,26 @@ Hydra ──POST /api/v0/hook/hydra──▶ hook-service
 1. Parse `TokenHookRequest` (existing).
 2. Extract user identity and fetch groups (existing).
 3. Authorize request via OpenFGA (existing).
-4. **NEW**: If tenant-service is configured (`TENANT_SERVICE_URL` is set):
+4. **NEW**: If tenant-service is configured (`TENANT_SERVICE_GRPC_ADDRESS` is set):
    a. Extract `tenant_id` from `req.Session.Extra["_tenant_id"]`.
    b. If no `tenant_id` in session: skip tenant enrichment (proceed without tenant
       claims).
    c. Extract `identity_id` from `req.Session.Subject` (always available).
-   d. Call `GET {TENANT_SERVICE_URL}/api/v0/tenants/lookup?identity_id={identity_id}`.
-      No authentication header needed — the endpoint is unauthenticated.
+  d. Call `TenantService.LookupTenants(identity_id={identity_id})` over gRPC.
+    No authentication metadata is required — the RPC is intended for internal callers.
    e. Check if `tenant_id` appears in the returned tenant list.
    f. If found: inject `tenant_id` into both `id_token` and `access_token` claims.
    g. If not found: return `403 Forbidden` to Hydra (deny the token).
-   h. On network error / 5xx: **fail closed** — return 500 to Hydra.
+  h. On RPC / transport failure: **fail closed** — return 500 to Hydra.
 5. Return `TokenHookResponse` to Hydra with both `groups` and `tenant_id` claims.
 
 ### Configuration
 
 | Variable | Default | Required | Purpose |
 |----------|---------|----------|---------|
-| `TENANT_SERVICE_URL` | `""` (disabled) | No | Base URL of tenant-service (e.g., `http://tenant-service:8000`) |
+| `TENANT_SERVICE_GRPC_ADDRESS` | `""` (disabled) | No | gRPC address of tenant-service (e.g., `tenant-service:9000`) |
 
-When `TENANT_SERVICE_URL` is empty, hook-service behaves exactly as before — no tenant
+When `TENANT_SERVICE_GRPC_ADDRESS` is empty, hook-service behaves exactly as before — no tenant
 enrichment, full backward compatibility.
 
 No API token is needed — the `LookupTenantsByEmail` endpoint is unauthenticated by
@@ -171,17 +172,16 @@ hook-service returning an error to Hydra, which blocks token issuance:
 | `tenant_id` found in lookup response | Inject `tenant_id` claim |
 | `tenant_id` not in lookup response | Return `403 Forbidden` to Hydra |
 | Lookup returns empty list (email unknown) | Return `403 Forbidden` to Hydra |
-| Tenant-service returns `4xx` | Return `500` to Hydra |
-| Tenant-service returns `5xx` | Return `500` to Hydra |
+| Tenant-service RPC returns error | Return `500` to Hydra |
 | Tenant-service unreachable (timeout/DNS) | Return `500` to Hydra |
-| `TENANT_SERVICE_URL` not configured | Skip tenant enrichment entirely |
+| `TENANT_SERVICE_GRPC_ADDRESS` not configured | Skip tenant enrichment entirely |
 
 ### Operator Integration (Juju Charms)
 
 - **hook-service-operator**: Adds a `requires: tenant-service-info` relation using the
   existing `tenant_service_info` charm library. When the relation is established,
-  hook-service-operator reads `service_url` from the relation databag and sets
-  `TENANT_SERVICE_URL` in the workload environment.
+  hook-service-operator reads `grpc_url` from the relation databag and sets
+  `TENANT_SERVICE_GRPC_ADDRESS` in the workload environment.
 - **tenant-service-operator**: Already provides the `tenant-service-info` relation
   (publishes `service_url` and `grpc_url`). Removes its `hydra-token-hook` relation since
   hook-service now handles tenant validation during the token hook.
@@ -206,13 +206,13 @@ resource "juju_integration" "hook_service_tenant_service" {
 
 ## Rationale
 
-### Uses Existing Unauthenticated Lookup API
+### Uses Existing Tenant gRPC API
 
-The `LookupTenantsByEmail` endpoint (`GET /api/v0/tenants/lookup`) is an existing,
-stable, internal endpoint designed for privileged callers. It requires no
-authentication tokens — simplifying configuration. The `identity_id` (subject) is
-always available in the Hydra `TokenHookRequest`, so hook-service can always call
-this endpoint reliably regardless of which OAuth scopes were requested.
+The `LookupTenants` RPC is an internal API designed for privileged callers. It requires
+no additional authentication tokens in this deployment path, simplifying configuration.
+The `identity_id` (subject) is always available in the Hydra `TokenHookRequest`, so
+hook-service can always call this RPC reliably regardless of which OAuth scopes were
+requested.
 
 ### Separation of Concerns
 
@@ -222,14 +222,14 @@ knowledge of tenant-service internals.
 
 ### Simplicity
 
-The validation logic in hook-service is trivial: call the lookup endpoint with the
-user's identity_id, check if `tenant_id` is in the returned list. No authentication
-setup, no request forwarding, no response merging, no dependency on
+The validation logic in hook-service is trivial: call the lookup RPC with the
+user's identity_id, check if `tenant_id` is in the returned list. No request
+forwarding, no response merging, no dependency on
 `oauth2.TokenHookRequest` serialization.
 
 ### Backward Compatibility
 
-The feature is entirely opt-in. Without `TENANT_SERVICE_URL`, hook-service behaves
+The feature is entirely opt-in. Without `TENANT_SERVICE_GRPC_ADDRESS`, hook-service behaves
 identically to today. Existing deployments are unaffected.
 
 ### Fail-Closed Security
@@ -240,7 +240,7 @@ multi-tenancy is expected.
 
 ### Performance
 
-Adds one HTTP round-trip per token request to tenant-service (same datacenter /
+Adds one gRPC round-trip per token request to tenant-service (same datacenter /
 Kubernetes cluster). Expected latency: 1-3ms. When called with `identity_id`, the
 lookup skips the Kratos email→identity resolution and goes directly to a single
 indexed database query (join on `memberships` and `tenants` tables filtered by
@@ -448,13 +448,13 @@ if tenantID := extractTenantID(req); tenantID != "" {
 ### Docker-Compose Changes
 
 The tenant-service `docker-compose.dev.yml` should be updated to include hook-service
-as a service, with `TENANT_SERVICE_URL` pointing to the tenant-service:
+as a service, with `TENANT_SERVICE_GRPC_ADDRESS` pointing to the tenant-service gRPC endpoint:
 
 ```yaml
 hook-service:
   build: ../hook-service
   environment:
-    TENANT_SERVICE_URL: http://tenant-service:8000
+    TENANT_SERVICE_GRPC_ADDRESS: tenant-service:9000
 ```
 
 ## References
@@ -462,5 +462,5 @@ hook-service:
 - [ADR-001: Remove Salesforce Integration from Hot Path](001-remove-salesforce-integration.md)
 - [Hydra Token Hook Documentation](https://www.ory.sh/docs/hydra/guides/claims-at-refresh)
 - tenant-service ADR-0008: Tenant-Aware Login
-- tenant-service protobuf: `api/proto/v0/tenant.proto` (`LookupTenantsByEmail` RPC)
+- tenant-service protobuf: `proto/v0/tenant/service.proto` (`LookupTenants` RPC)
 - `tenant_service_info` charm library: `lib/charms/tenant_service_operator/v0/tenant_service_info.py`

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	tenantpb "github.com/canonical/identity-platform-api/v0/tenant"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/cobra"
 
@@ -108,12 +109,24 @@ func serve() error {
 	}
 
 	var tenantValidator tenants.TenantValidatorInterface
-	if specs.TenantServiceURL != "" {
-		tenantValidator = tenants.NewClient(specs.TenantServiceURL, specs.TenantServiceTimeout, tracer, monitor, logger)
-		logger.Infof("Tenant validation enabled (tenant-service: %s)", specs.TenantServiceURL)
+	if specs.TenantServiceGRPCAddress != "" {
+		tenantServiceConn, err := tenants.NewGRPCConn(specs.TenantServiceGRPCAddress, specs.TenantServiceTLSEnabled)
+		if err != nil {
+			return err
+		}
+		defer tenantServiceConn.Close()
+
+		tenantValidator = tenants.NewClient(
+			tenantpb.NewTenantServiceClient(tenantServiceConn),
+			specs.TenantServiceGRPCTimeout,
+			tracer,
+			monitor,
+			logger,
+		)
+		logger.Infof("Tenant validation enabled (tenant-service: %s, tls: %v, timeout: %s)", specs.TenantServiceGRPCAddress, specs.TenantServiceTLSEnabled, specs.TenantServiceGRPCTimeout)
 	} else {
 		tenantValidator = tenants.NewNoopValidator()
-		logger.Info("Tenant validation disabled (no TENANT_SERVICE_URL)")
+		logger.Info("Tenant validation disabled (no TENANT_SERVICE_GRPC_ADDRESS)")
 	}
 
 	var jwtVerifier authentication.TokenVerifierInterface
