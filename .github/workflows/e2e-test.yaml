@@ -13,5 +13,13 @@ jobs:
         with:
           go-version: '1.26'
 
+      - name: Install Podman
+        uses: redhat-actions/podman-install@aea6ff44f2a4a82da13d22061ce73443a125925d # main
+
+      - name: Setup podman for rootless (standard GitHub runner user)
+        run: systemctl --user enable --now podman.socket
+
       - name: Run E2E tests
         run: make test-e2e
+        env:
+          DOCKER_HOST: "unix://$XDG_RUNTIME_DIR/podman/podman.sock"
