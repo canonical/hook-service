@@ -1,10 +1,11 @@
-// Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0
+// Copyright 2026 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package groups
 
 import (
 	"errors"
+	"fmt"
 
 	pb "github.com/canonical/hook-service/gen/hook/groups/v1"
 	"google.golang.org/grpc"
@@ -49,7 +50,7 @@ func (m *MappingGrpcServer) GetGroupsForUser(req *pb.GetGroupsForUserReq, stream
 	}
 
 	err := m.svc.StreamGroupsForUser(ctx, req.GetTenantId(), req.GetUserId(), func(g *types.Group) error {
-		return stream.Send(&pb.GroupMapping{
+		if err := stream.Send(&pb.GroupMapping{
 			Id:          g.ID,
 			Name:        g.Name,
 			TenantId:    g.TenantId,
@@ -57,7 +58,10 @@ func (m *MappingGrpcServer) GetGroupsForUser(req *pb.GetGroupsForUserReq, stream
 			Type:        g.Type.String(),
 			CreatedAt:   timestamppb.New(g.CreatedAt),
 			UpdatedAt:   timestamppb.New(g.UpdatedAt),
-		})
+		}); err != nil {
+			return fmt.Errorf("%w: %v", ErrStreamInterrupted, err)
+		}
+		return nil
 	})
 	if err != nil {
 		span.RecordError(err)
@@ -86,7 +90,10 @@ func (m *MappingGrpcServer) GetUsersInGroup(req *pb.GetUsersInGroupReq, stream g
 	}
 
 	err := m.svc.StreamUsersInGroup(ctx, req.GetTenantId(), req.GetGroupId(), func(userID string) error {
-		return stream.Send(&pb.UserMapping{Id: userID})
+		if err := stream.Send(&pb.UserMapping{Id: userID}); err != nil {
+			return fmt.Errorf("%w: %v", ErrStreamInterrupted, err)
+		}
+		return nil
 	})
 	if err != nil {
 		span.RecordError(err)
