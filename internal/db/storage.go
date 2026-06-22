@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package db
@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"sync/atomic"
 	"time"
 
@@ -350,6 +351,7 @@ func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring
 	d.pool = pool
 	d.db = db
 	d.dbRunner = db
+	d.replicaLagMs = math.MaxInt64
 
 	d.maxLagMs = cfg.MaxReplicaLagMs
 	if d.maxLagMs <= 0 {
@@ -422,10 +424,11 @@ func (d *DBClient) monitorReplicationLag(ctx context.Context) {
 			return
 		case <-ticker.C:
 			queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			var count int
 			var lagMs int64
 			err := d.db.QueryRowContext(queryCtx,
-				"SELECT COALESCE(MAX(EXTRACT(EPOCH FROM replay_lag) * 1000), 0) FROM pg_stat_replication",
-			).Scan(&lagMs)
+				"SELECT COUNT(*), COALESCE(MAX(EXTRACT(EPOCH FROM replay_lag) * 1000), 0) FROM pg_stat_replication WHERE state = 'streaming'",
+			).Scan(&count, &lagMs)
 			cancel()
 			if err != nil {
 				if isMissingRelation(err) {
@@ -433,7 +436,11 @@ func (d *DBClient) monitorReplicationLag(ctx context.Context) {
 					return
 				}
 				d.logger.Warnf("failed to query replication lag: %v", err)
+				atomic.StoreInt64(&d.replicaLagMs, math.MaxInt64)
 				continue
+			}
+			if count == 0 {
+				lagMs = math.MaxInt64
 			}
 			atomic.StoreInt64(&d.replicaLagMs, lagMs)
 			replicaLagGauge.Set(float64(lagMs))
