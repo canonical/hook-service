@@ -1,15 +1,18 @@
-// Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0
+// Copyright 2026 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package db
 
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	sq "github.com/Masterminds/squirrel"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -54,7 +57,7 @@ func setupTestPostgres(t *testing.T, suffix string) (string, *postgres.PostgresC
 			}),
 		)
 		if err != nil {
-			t.Fatalf("Failed to start PostgreSQL container: %v", err)
+			t.Skipf("Skipping: Docker/PostgreSQL container failed to start: %v", err)
 		}
 	}()
 
@@ -107,7 +110,7 @@ func runMigrationsOnDSN(t *testing.T, connStr string) {
 	}
 }
 
-func TestIntegration_ReplicaLagFallback(t *testing.T) {
+func TestIntegration_ReplicaUnconfigured(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -153,8 +156,8 @@ func TestIntegration_ReplicaLagFallback(t *testing.T) {
 	if dbClient.replicaPool != nil {
 		t.Errorf("expected replicaPool to be nil, got %v", dbClient.replicaPool)
 	}
-	if got := dbClient.replicaLagMs; got != 0 {
-		t.Errorf("expected replicaLagMs to be 0, got %d", got)
+	if got := dbClient.replicaLagMs; got != math.MaxInt64 {
+		t.Errorf("expected replicaLagMs to be %d, got %d", math.MaxInt64, got)
 	}
 
 	ctx := context.Background()
@@ -172,6 +175,125 @@ func TestIntegration_ReplicaLagFallback(t *testing.T) {
 	_, _, err = readOnlyStmt.Select("1").ToSql()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestIntegration_ReplicaLagFallback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	t.Parallel()
+
+	// Spin up primary container
+	primaryDSN, primaryContainer := setupTestPostgres(t, "primary-lag")
+	if primaryContainer == nil {
+		return
+	}
+	defer func() {
+		if err := primaryContainer.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate primary container: %v", err)
+		}
+	}()
+	runMigrationsOnDSN(t, primaryDSN)
+
+	// Spin up replica container
+	replicaDSN, replicaContainer := setupTestPostgres(t, "replica-lag")
+	if replicaContainer == nil {
+		return
+	}
+	defer func() {
+		if err := replicaContainer.Terminate(context.Background()); err != nil {
+			t.Logf("Failed to terminate replica container: %v", err)
+		}
+	}()
+	runMigrationsOnDSN(t, replicaDSN)
+
+	// Setup dummy data that differs between primary and replica to distinguish routing.
+	primaryConfig, err := pgx.ParseConfig(primaryDSN)
+	if err != nil {
+		t.Fatalf("failed to parse primary DSN: %v", err)
+	}
+	primarySQLDB := stdlib.OpenDB(*primaryConfig)
+	defer primarySQLDB.Close()
+
+	groupID := "00000000-0000-0000-0000-000000000001"
+	_, err = primarySQLDB.Exec(
+		"INSERT INTO groups (id, name, tenant_id, description, type) VALUES ($1, $2, $3, $4, $5)",
+		groupID, "test-group", "test-tenant", "primary-desc", 0,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert test group into primary: %v", err)
+	}
+
+	replicaConfig, err := pgx.ParseConfig(replicaDSN)
+	if err != nil {
+		t.Fatalf("failed to parse replica DSN: %v", err)
+	}
+	replicaSQLDB := stdlib.OpenDB(*replicaConfig)
+	defer replicaSQLDB.Close()
+
+	_, err = replicaSQLDB.Exec(
+		"INSERT INTO groups (id, name, tenant_id, description, type) VALUES ($1, $2, $3, $4, $5)",
+		groupID, "test-group", "test-tenant", "replica-desc", 0,
+	)
+	if err != nil {
+		t.Fatalf("failed to insert test group into replica: %v", err)
+	}
+
+	logger := &integrationLogger{t: t}
+	cfg := Config{
+		DSN:             primaryDSN,
+		MaxConns:        5,
+		MinConns:        1,
+		MaxConnLifetime: time.Hour,
+		MaxConnIdleTime: 30 * time.Minute,
+		ReplicaDSN:      replicaDSN,
+		MaxReplicaLagMs: 500, // threshold is 500ms
+	}
+
+	dbClient, err := NewDBClient(cfg, &noopTracer{}, &noopMonitor{}, logger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer dbClient.Close()
+
+	// Stop the background replication lag monitor
+	dbClient.replicaCancel()
+
+	ctx := context.Background()
+	readOnlyCtx := WithReadOnly(ctx)
+
+	// Case 1: Low lag (e.g. 0ms) -> should route to replica
+	atomic.StoreInt64(&dbClient.replicaLagMs, 0)
+	var desc1 string
+	err = dbClient.Statement(readOnlyCtx).
+		Select("description").
+		From("groups").
+		Where(sq.Eq{"id": groupID}).
+		QueryRowContext(readOnlyCtx).
+		Scan(&desc1)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if desc1 != "replica-desc" {
+		t.Errorf("expected read from replica ('replica-desc'), got %q", desc1)
+	}
+
+	// Case 2: High lag (e.g. 1000ms > threshold 500ms) -> should route to primary
+	atomic.StoreInt64(&dbClient.replicaLagMs, 1000)
+	var desc2 string
+	err = dbClient.Statement(readOnlyCtx).
+		Select("description").
+		From("groups").
+		Where(sq.Eq{"id": groupID}).
+		QueryRowContext(readOnlyCtx).
+		Scan(&desc2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if desc2 != "primary-desc" {
+		t.Errorf("expected read fallback to primary ('primary-desc'), got %q", desc2)
 	}
 }
 
