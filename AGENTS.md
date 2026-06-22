@@ -7,7 +7,43 @@ This file governs the behavioral execution loops, domain knowledge indexing, and
 
 ---
 
-## 1. Core Agent Personas
+## 1. Project Overview & Architecture
+
+### Project Overview
+This is an identity platform webhook service that integrates with Ory Kratos for identity management, Ory Hydra for OAuth2/OIDC flows, OpenFGA for fine-grained authorization, and optional Salesforce for group management. The service acts as a token hook endpoint that enriches OAuth tokens with user groups and enforces authorization policies.
+
+### Core Architecture Components
+- **pkg/hooks**: OAuth token hook handlers and orchestration - the main business logic entry point
+- **pkg/authorization**: App-level authorization service with gRPC handlers exposing OpenFGA operations
+- **pkg/groups**: Group management service with gRPC handlers for CRUD operations
+- **internal/authorization**: OpenFGA authorization model management and client wrapper
+- **internal/openfga**: Low-level OpenFGA client implementation with batching and model comparison
+- **internal/salesforce**: Optional external group provider integration
+- **pkg/web**: HTTP router setup using chi, wires all services together with middleware
+- **cmd/serve.go**: Application bootstrap - dependency injection happens here
+
+### Service Initialization Pattern
+All services follow this constructor signature:
+```go
+func NewService(dependencies..., tracer TracingInterface, monitor MonitorInterface, logger LoggerInterface) *Service
+```
+The last three parameters (tracer, monitor, logger) are **always** in this order. This is a project-wide convention.
+
+### Interface-Driven Design
+- Every package defines `interfaces.go` with all dependencies as interfaces
+- Concrete implementations are in `internal/` (e.g., `openfga.Client` implements `AuthzClientInterface`)
+- Noop implementations exist for optional features (e.g., `openfga.NewNoopClient`)
+- Mocks are generated via `go:generate` directives in test files using `go.uber.org/mock/mockgen`
+
+### Data Flow
+1. Hydra calls `/api/v0/hook/hydra` during token issuance
+2. `hooks.Service.FetchUserGroups()` queries all registered `ClientInterface` implementations (e.g., Salesforce)
+3. `hooks.Service.AuthorizeRequest()` checks OpenFGA for access based on user, client, and groups
+4. Response enriches token with groups or denies request
+
+---
+
+## 2. Core Agent Personas
 
 ### 🧱 Core Architect
 * **Role**: Evaluates systemic changes, enforces clean-architecture layering, and verifies `openspec/config.yaml` guardrails.
@@ -35,7 +71,7 @@ This file governs the behavioral execution loops, domain knowledge indexing, and
 
 ---
 
-## 2. Technical Stack Context
+## 3. Technical Stack Context
 
 ```json
 {
@@ -61,7 +97,7 @@ This file governs the behavioral execution loops, domain knowledge indexing, and
 
 ---
 
-## 3. Strict Code-Generation Protocols
+## 4. Strict Code-Generation Protocols
 
 ### 🚫 Non-Negotiable Anti-Patterns (Immediate Task Failure)
 1. **No Naked Contexts**: Passing `context.Background()` or `context.TODO()` past the entry-point `cmd/` or HTTP/gRPC delivery layer is strictly forbidden.
@@ -75,7 +111,7 @@ This file governs the behavioral execution loops, domain knowledge indexing, and
 
 ---
 
-## 4. Code & Architecture Conventions
+## 5. Code & Architecture Conventions
 
 All code in this project follows strict conventions derived from Canonical's Go best practices. These are **mandatory** and non-negotiable.
 
@@ -274,12 +310,12 @@ func MustFoo(input string) *Result {
 
 ---
 
-## 5. Database and Storage Layer
+## 6. Database and Storage Layer
 
 ### Architecture
 
 The project uses a 3-layer architecture for data access:
-1. **Storage Layer** (`internal/storage/`): Database operations using Squirrel SQL builder.
+1. **Storage Layer** (`internal/storage/` or `internal/db/`): Database operations using Squirrel SQL builder.
 2. **Service Layer** (`pkg/*/service.go`): Business logic that maps storage errors to domain errors.
 3. **Handler Layer** (`pkg/*/grpc_handlers.go`): Maps domain errors to HTTP/gRPC status codes.
 
@@ -437,7 +473,104 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) {
 
 ---
 
-## 6. Required Idiomatic Test Snippets
+## 7. Key Environment Variables
+
+See `internal/config/specs.go` for complete list:
+- `AUTHORIZATION_ENABLED`: Enable OpenFGA checks (default: false)
+- `OPENFGA_API_HOST`, `OPENFGA_STORE_ID`, `OPENFGA_API_TOKEN`: OpenFGA connection details
+- `SALESFORCE_ENABLED`: Enable Salesforce group provider (default: true)
+- `SALESFORCE_DOMAIN`, `SALESFORCE_CONSUMER_KEY`, `SALESFORCE_CONSUMER_SECRET`: Salesforce OAuth configuration
+- `API_TOKEN`: Optional bearer token for webhook endpoint protection
+- `LOG_LEVEL`: debug, info, error (default: error)
+- `TRACING_ENABLED`: Enable OpenTelemetry (default: true)
+
+---
+
+## 8. Common Patterns & Guidelines
+
+### Adding a New Service
+1. Create `pkg/newservice/interfaces.go` with `ServiceInterface`, `DatabaseInterface`, etc.
+2. Implement `pkg/newservice/service.go` with `NewService()` constructor
+3. Add gRPC handlers in `pkg/newservice/grpc_handlers.go` if exposing via API
+4. Wire into `pkg/web/router.go` using `NewService()` and `NewGrpcServer()`
+5. Add `//go:generate mockgen` directives in test files
+6. Run `go generate ./...`
+
+### Adding Authorization Checks
+```go
+// Check single object access
+allowed, err := authorizer.Check(ctx, "user:123", "can_access", "client:abc")
+
+// List all allowed objects of type
+objects, err := authorizer.ListObjects(ctx, "user:123", "can_access", "client")
+
+// Filter existing list
+filtered, err := authorizer.FilterObjects(ctx, "user:123", "can_access", "client", candidateIDs)
+```
+
+### Adding Tracing
+Every public method should start with:
+```go
+ctx, span := s.tracer.Start(ctx, "package.Service.MethodName")
+defer span.End()
+```
+
+---
+
+## 9. Development Workflow & Testing Strategy
+
+### Setup & Local Development
+```bash
+# Starts docker-compose with Kratos, Hydra, OpenFGA, Postgres
+# This creates an environment that resembles production
+./start.sh
+
+# Or manually
+make dev
+```
+The `start.sh` script provides a complete local development environment:
+- Launches all dependencies via `docker-compose.dev.yml` (Kratos, Hydra, OpenFGA, Postgres, Mailslurper)
+- Creates a test OAuth client in Hydra
+- Starts an OIDC client for testing OAuth flows
+- Sets environment variables for the service
+- Use this to test the full integration stack locally
+
+### Building
+```bash
+make build  # Produces ./app binary
+```
+
+### Testing Strategy
+- Use table-driven tests with `tests := []struct{...}{{...}}`
+- **Use ONLY the standard library `testing` package for assertions.** The use of external assertion libraries such as `github.com/stretchr/testify` (both `assert` and `require`) is strictly forbidden.
+- Mock all interfaces using gomock: `NewMock<Interface>(ctrl)`
+- Always expect tracer.Start() calls with the correct span name format: `"package.Type.Method"`
+- Test error paths explicitly - don't just test happy paths
+- See `pkg/hooks/service_test.go` for canonical examples
+
+Example test structure:
+```go
+tests := []struct{
+    name           string
+    input          InputType
+    mockedDeps     func(*gomock.Controller) DependencyType
+    expectedResult ResultType
+    expectedError  error
+}{{
+    name: "descriptive test case name",
+    input: ...,
+    mockedDeps: func(ctrl *gomock.Controller) DependencyType {
+        mock := NewMockInterface(ctrl)
+        mock.EXPECT().Method(gomock.Any(), ...).Return(value, nil)
+        return mock
+    },
+    expectedResult: ...,
+}}
+```
+
+---
+
+## 10. Required Test & Execution Snippets
 
 Every business operation must deploy table-driven layouts testing happy paths, perimeter bounds, and systematic error states using standard `testing` assertions:
 
@@ -486,7 +619,7 @@ func TestUsecase_Execute(t *testing.T) {
 
 ---
 
-## 7. Verification Workflow & CI Protocols
+## 11. Verification Workflow & CI Protocols
 
 Before returning code changes, submitting PRs, or updating an OpenSpec task checklist, the agent and CI pipeline must execute the following strict sequence.
 
@@ -498,7 +631,7 @@ Before returning code changes, submitting PRs, or updating an OpenSpec task chec
 
 ```mermaid
 graph TD
-    A[Generate Layer Code] --> B[Run Local Compiles: go build ./...]
+    A[Generate Layer Code] --> B[Run Local Commiles: go build ./...]
     B --> C[Execute Code Vet: go vet ./...]
     C --> D[Execute Strict Linters: golangci-lint run]
     D --> E[Run Test Suite Matrix with Race Detector: go test -race ./...]
@@ -509,3 +642,17 @@ graph TD
     E -->|Failures Found| G2[Analyze Trace & Auto-Correct]
     G2 --> A
 ```
+
+---
+
+## 12. Troubleshooting & Documentation Maintenance
+
+### Troubleshooting
+- **Missing mocks**: Run `go generate ./...` - generates all `mock_*.go` files.
+- **Test failures**: Check mock expectations match actual calls, especially tracer.Start() span names.
+- **Docker issues**: `docker compose -f docker-compose.dev.yml down -v` to reset state.
+
+### Self-Correction & Documentation Maintenance Directive
+- If you establish a new pattern or convention during a conversation that isn't documented here, **you must update this file (`AGENTS.md`)**.
+- This ensures the instructions remain a living document and the single source of truth for project standards.
+- Examples of updates: new error handling patterns, CLI output standards, testing conventions, or architectural decisions.
