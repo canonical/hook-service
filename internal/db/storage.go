@@ -379,6 +379,12 @@ func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring
 		if cfg.ReplicaPoolSizeMultiplier > 0 && replicaMaxConns == 0 {
 			replicaMaxConns = int32(float64(cfg.MaxConns) * cfg.ReplicaPoolSizeMultiplier)
 		}
+		if replicaMaxConns <= 0 {
+			replicaMaxConns = cfg.MaxConns
+		}
+		if replicaMaxConns <= 0 {
+			replicaMaxConns = 5
+		}
 		replicaCfg.MaxConns = replicaMaxConns
 		replicaCfg.MinConns = cfg.ReplicaMinConns
 		replicaCfg.MaxConnLifetime = cfg.ReplicaMaxConnLifetime
