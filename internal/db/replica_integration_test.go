@@ -249,6 +249,7 @@ func TestIntegration_ReplicaLagFallback(t *testing.T) {
 		MaxConnLifetime: time.Hour,
 		MaxConnIdleTime: 30 * time.Minute,
 		ReplicaDSN:      replicaDSN,
+		ReplicaMaxConns: 5,
 		MaxReplicaLagMs: 500, // threshold is 500ms
 	}
 
@@ -258,8 +259,14 @@ func TestIntegration_ReplicaLagFallback(t *testing.T) {
 	}
 	defer dbClient.Close()
 
-	// Stop the background replication lag monitor
-	dbClient.replicaCancel()
+	if dbClient.replicaRunner == nil {
+		t.Fatalf("expected replicaRunner to be initialized, got nil")
+	}
+
+	// Stop the background replication lag monitor safely
+	if dbClient.replicaCancel != nil {
+		dbClient.replicaCancel()
+	}
 
 	ctx := context.Background()
 	readOnlyCtx := WithReadOnly(ctx)
