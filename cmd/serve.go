@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package cmd
@@ -266,7 +266,20 @@ func serve() error {
 			}
 			return nil
 		case <-ctx.Done():
-			grpcSrv.GracefulStop()
+			stopped := make(chan struct{})
+			go func() {
+				grpcSrv.GracefulStop()
+				close(stopped)
+			}()
+
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer shutdownCancel()
+
+			select {
+			case <-stopped:
+			case <-shutdownCtx.Done():
+				grpcSrv.Stop()
+			}
 			return nil
 		}
 	})
