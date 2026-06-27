@@ -7,7 +7,7 @@ on:
 jobs:
   build:
     name: Build rock
-    uses: canonical/oci-factory/.github/workflows/Build-Rock.yaml@569743523f83d27ffb7af3dd58527cf8148e2e8a # main
+    uses: canonical/oci-factory/.github/workflows/Build-Rock.yaml@f179a19f81e396075c379d997e2643693d5e8925 # main
     with:
       oci-archive-name: "hook-service"
       rock-repo: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}
@@ -18,7 +18,7 @@ jobs:
       source-github-token: ${{ secrets.PAT_TOKEN }}
       host-github-token: ${{ secrets.PAT_TOKEN }}
   test:
-    uses: canonical/oci-factory/.github/workflows/Test-Rock.yaml@569743523f83d27ffb7af3dd58527cf8148e2e8a # main
+    uses: canonical/oci-factory/.github/workflows/Test-Rock.yaml@f179a19f81e396075c379d997e2643693d5e8925 # main
     name: Test rock
     needs: [build]
     with:
