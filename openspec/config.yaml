@@ -16,8 +16,15 @@ context: |
   - pkg/web: HTTP router (chi), wires services + middleware
   - cmd/: cobra CLI (serve, import, groups, users, migrate)
 
+  Use conventional commits
+  You are an expert Go backend engineer operating on a highly concurrent identity management service.
+  Always create documentation for new features.
+  Always create tests for new features.
 
 rules:
+  global:
+    - "All code must adhere to standard Go Project Layout structures."
+    - "Concurrence patterns must strictly leverage context.Context for timeouts and cancellations."    
   spec:
     - Every capability spec under openspec/specs/ must include a ## Purpose section before ## Requirements
     - The ## Purpose section is the single source of truth for design rationale (ADR-style); capture intent, goals, non-goals, and key decisions (with brief alternatives) so no separate ADR or design file is needed
@@ -31,3 +38,5 @@ rules:
     - Break tasks into single-package units of work
     - Each task must reference the file(s) it touches
     - Always include a task for updating/adding tests
+    - "Ensure there are integration tests using testcontainers for external dependencies (e.g. Hydra, Postgres)."
+    - "Race Detection: Execution of `go test -race ./...` must output zero diagnostic failures."

@@ -22,6 +22,8 @@ The application is configured via environment variables.
 | `LOG_LEVEL` | Log level (`debug`, `info`, `warn`, `error`) | `error` |
 | `DEBUG` | Enable debug mode | `false` |
 | `PORT` | HTTP server port | `8080` |
+| `GRPC_PORT` | Native gRPC server port for internal groups mapping API | `9090` |
+| `GRPC_MAX_CONCURRENT_STREAMS` | Max concurrent streams allowed per gRPC connection | `100` |
 | `API_TOKEN` | Token for API authentication | |
 | `OPENFGA_API_SCHEME` | OpenFGA API scheme | |
 | `OPENFGA_API_HOST` | OpenFGA API host | |
@@ -41,6 +43,13 @@ The application is configured via environment variables.
 | `DB_MIN_CONNS` | Min DB connections | `2` |
 | `DB_MAX_CONN_LIFETIME` | Max DB connection lifetime | `1h` |
 | `DB_MAX_CONN_IDLE_TIME` | Max DB connection idle time | `30m` |
+| `REPLICA_DSN` | Replica database connection string (empty = primary-only) | |
+| `REPLICA_DB_MAX_CONNS` | Max replica pool connections | `25` |
+| `REPLICA_DB_MIN_CONNS` | Min replica pool connections | `2` |
+| `REPLICA_DB_MAX_CONN_LIFETIME` | Max replica connection lifetime | `1h` |
+| `REPLICA_DB_MAX_CONN_IDLE_TIME` | Max replica connection idle time | `30m` |
+| `MAX_REPLICA_LAG_MS` | Max replication lag before falling back to primary | `1000` |
+| `REPLICA_POOL_SIZE_MULTIPLIER` | Multiplier for sizing replica pool relative to primary pool | `1.0` |
 
 ## Features
 
@@ -76,6 +85,45 @@ A request is authorized if **either**:
 # Include JWT token in Authorization header
 curl -H "Authorization: Bearer <jwt-token>" http://localhost:8080/api/v0/authz/groups
 ```
+
+### Database Replica Support
+
+Read-only database queries (HTTP `GET`/`HEAD` requests) can be routed to a PostgreSQL read replica to reduce primary load. When `REPLICA_DSN` is empty, the service operates in primary-only mode with no behavior changes.
+
+**Routing rules:**
+
+- `GET`/`HEAD` requests are routed to the replica pool when configured and healthy
+- All transactions (`WithTx`, `BeginTx`, `TxStatement`) always use the primary pool
+- If replica replication lag exceeds `MAX_REPLICA_LAG_MS`, queries fall back to the primary with a logged warning
+- gRPC and internal callers can opt into replica routing using `db.WithReadOnly(ctx)`
+
+**Monitoring metrics:**
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `hook_service_replica_queries_total` | Counter | Queries routed to the replica |
+| `hook_service_replica_lag_ms` | Gauge | Current replication lag in milliseconds |
+| `hook_service_primary_fallback_total` | Counter | Fallbacks to the primary pool |
+
+### gRPC Groups Mapping API
+
+A native gRPC server runs on `GRPC_PORT` (default `9090`) for internal service-to-service communication. It exposes server-streaming RPCs for querying user-to-group mappings with tenant-scoped filtering, secured by a JWT stream interceptor.
+
+**Service:** `hook.groups.v1.GroupsMappingService`
+
+| RPC | Request | Response | Description |
+|-----|---------|----------|-------------|
+| `GetGroupsForUser` | `user_id`, optional `tenant_id` | `stream GroupMapping` | Streams all groups for a user within a tenant |
+| `GetUsersInGroup` | `group_id`, optional `tenant_id` | `stream UserMapping` | Streams all users in a group within a tenant |
+
+**Streaming behavior:**
+
+- Results are streamed one message at a time, maintaining O(1) memory per request
+- Each database query is wrapped in a `context.WithTimeout` (30s default) to bound stream duration
+- Client disconnect aborts the database cursor immediately via context cancellation
+- All streams require a valid JWT in the `authorization` gRPC metadata (`Bearer <token>`)
+
+**Proto definition:** `proto/hook/groups/v1/mapping.proto`
 
 ### Import Command
 

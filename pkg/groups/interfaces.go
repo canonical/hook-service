@@ -1,5 +1,6 @@
 // Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0
+
 
 package groups
 
@@ -22,6 +23,9 @@ type ServiceInterface interface {
 
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
+
+	StreamGroupsForUser(context.Context, string, string, func(*types.Group) error) error
+	StreamUsersInGroup(context.Context, string, string, func(string) error) error
 }
 
 type DatabaseInterface interface {
@@ -37,6 +41,9 @@ type DatabaseInterface interface {
 
 	GetGroupsForUser(context.Context, string) ([]*types.Group, error)
 	UpdateGroupsForUser(context.Context, string, []string) error
+
+	StreamGroupsForUser(context.Context, string, string, func(*types.Group) error) error
+	StreamUsersInGroup(context.Context, string, string, func(string) error) error
 }
 
 type AuthorizerInterface interface {

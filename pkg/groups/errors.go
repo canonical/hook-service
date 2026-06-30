@@ -1,5 +1,6 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
+
 
 package groups
 
@@ -14,4 +15,7 @@ var (
 	ErrInternalServerError = errors.New("internal server error")
 	ErrUserAlreadyInGroup  = errors.New("user already in group")
 	ErrInvalidGroupID      = errors.New("invalid group id")
+	ErrInvalidUserID       = errors.New("invalid user id")
+	ErrStreamInterrupted   = errors.New("stream interrupted")
+	ErrUnauthorizedStream  = errors.New("unauthorized stream access")
 )

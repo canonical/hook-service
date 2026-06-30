@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package db
@@ -8,12 +8,16 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
+	"sync/atomic"
 	"time"
 
 	sq "github.com/Masterminds/squirrel"
 	"github.com/exaring/otelpgx"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -28,9 +32,40 @@ const (
 
 type TxContextKey struct{}
 type LazyTxContextKey struct{}
+type ReadOnlyContextKey struct{}
 
 var txContextKey TxContextKey
 var lazyTxContextKey LazyTxContextKey
+var readOnlyContextKey ReadOnlyContextKey
+
+var (
+	replicaQueries = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hook_service_replica_queries_total",
+		Help: "Total number of queries routed to the replica",
+	})
+	replicaLagGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "hook_service_replica_lag_ms",
+		Help: "Current replication lag in milliseconds",
+	})
+	primaryFallbacks = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "hook_service_primary_fallback_total",
+		Help: "Total number of fallbacks to the primary pool",
+	})
+)
+
+func registerMetrics(logger logging.LoggerInterface) {
+	for _, collector := range []prometheus.Collector{replicaQueries, replicaLagGauge, primaryFallbacks} {
+		err := prometheus.Register(collector)
+		switch err.(type) {
+		case nil:
+			continue
+		case prometheus.AlreadyRegisteredError:
+			logger.Debugf("metric %v already registered", collector)
+		default:
+			logger.Errorf("metric %v could not be registered", collector)
+		}
+	}
+}
 
 type Config struct {
 	DSN             string
@@ -39,6 +74,14 @@ type Config struct {
 	MaxConnLifetime time.Duration
 	MaxConnIdleTime time.Duration
 	TracingEnabled  bool
+
+	ReplicaDSN              string
+	ReplicaMaxConns         int32
+	ReplicaMinConns         int32
+	ReplicaMaxConnLifetime  time.Duration
+	ReplicaMaxConnIdleTime  time.Duration
+	MaxReplicaLagMs         int64
+	ReplicaPoolSizeMultiplier float64
 }
 
 // Offset calculates the offset for pagination based on the provided page parameter and page size.
@@ -93,12 +136,17 @@ func (lt *lazyTx) isStarted() bool {
 }
 
 type DBClient struct {
-	// pool is the native PGX pool we hold to allow closing
-	pool *pgxpool.Pool
-	// db original instance to handle transactions
-	db *sql.DB
-	// dbRunner is the runner instance of choice
+	pool     *pgxpool.Pool
+	db       *sql.DB
 	dbRunner sq.BaseRunner
+
+	replicaPool   *pgxpool.Pool
+	replicaDB     *sql.DB
+	replicaRunner sq.BaseRunner
+	replicaLagMs  int64
+	maxLagMs      int64
+
+	replicaCancel context.CancelFunc
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -108,11 +156,9 @@ type DBClient struct {
 // Statement provides a StatementBuilderType configured to use the DBClient's database connection.
 // If a transaction exists in the context, it will be used (created lazily on first use).
 func (d *DBClient) Statement(ctx context.Context) sq.StatementBuilderType {
-	// Check for lazy transaction first
 	if lazyTx := lazyTxFromContext(ctx); lazyTx != nil {
 		tx, err := lazyTx.get()
 		if err != nil {
-			// Log error but fall back to regular connection
 			d.logger.Errorf("failed to create lazy transaction: %v", err)
 		} else {
 			return sq.StatementBuilder.
@@ -121,11 +167,25 @@ func (d *DBClient) Statement(ctx context.Context) sq.StatementBuilderType {
 		}
 	}
 
-	// Check for regular transaction
 	if tx := TxFromContext(ctx); tx != nil {
 		return sq.StatementBuilder.
 			PlaceholderFormat(sq.Dollar).
 			RunWith(tx)
+	}
+
+	if readOnlyFromContext(ctx) && d.replicaRunner != nil {
+		currentLag := atomic.LoadInt64(&d.replicaLagMs)
+		if currentLag > d.maxLagMs {
+			d.logger.Warnf("replica lag %dms exceeds threshold %dms, falling back to primary", currentLag, d.maxLagMs)
+			primaryFallbacks.Inc()
+			return sq.StatementBuilder.
+				PlaceholderFormat(sq.Dollar).
+				RunWith(d.dbRunner)
+		}
+		replicaQueries.Inc()
+		return sq.StatementBuilder.
+			PlaceholderFormat(sq.Dollar).
+			RunWith(d.replicaRunner)
 	}
 
 	return sq.StatementBuilder.
@@ -179,6 +239,15 @@ func contextWithLazyTx(ctx context.Context, lt *lazyTx) context.Context {
 	return context.WithValue(ctx, lazyTxContextKey, lt)
 }
 
+func contextWithReadOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, readOnlyContextKey, struct{}{})
+}
+
+func readOnlyFromContext(ctx context.Context) bool {
+	_, ok := ctx.Value(readOnlyContextKey).(struct{})
+	return ok
+}
+
 // WithTx executes a function within a transaction context.
 // The transaction is created lazily on first database access.
 // If the function returns an error, the transaction is rolled back.
@@ -219,6 +288,18 @@ func (d *DBClient) WithTx(ctx context.Context, fn func(context.Context) error) e
 }
 
 func (d *DBClient) Close() {
+	if d.replicaCancel != nil {
+		d.replicaCancel()
+	}
+
+	if d.replicaDB != nil {
+		_ = d.replicaDB.Close()
+	}
+
+	if d.replicaPool != nil {
+		d.replicaPool.Close()
+	}
+
 	if d.db != nil {
 		_ = d.db.Close()
 	}
@@ -259,7 +340,10 @@ func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring
 	}
 
 	db := stdlib.OpenDBFromPool(pool)
-	if err := db.Ping(); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	err = db.PingContext(pingCtx)
+	pingCancel()
+	if err != nil {
 		return nil, fmt.Errorf("failed to connect to the database: %v", err)
 	}
 
@@ -267,10 +351,116 @@ func NewDBClient(cfg Config, tracer tracing.TracingInterface, monitor monitoring
 	d.pool = pool
 	d.db = db
 	d.dbRunner = db
+	d.replicaLagMs = math.MaxInt64
+
+	d.maxLagMs = cfg.MaxReplicaLagMs
+	if d.maxLagMs <= 0 {
+		d.maxLagMs = 1000
+	}
 
 	d.tracer = tracer
 	d.monitor = monitor
 	d.logger = logger
 
+	registerMetrics(logger)
+
+	if cfg.ReplicaDSN != "" {
+		replicaCfg, err := pgxpool.ParseConfig(cfg.ReplicaDSN)
+		if err != nil {
+			logger.Warnf("failed to parse replica DSN, falling back to primary-only mode: %v", err)
+			return d, nil
+		}
+
+		if cfg.TracingEnabled {
+			replicaCfg.ConnConfig.Tracer = otelpgx.NewTracer()
+		}
+
+		replicaMaxConns := cfg.ReplicaMaxConns
+		if cfg.ReplicaPoolSizeMultiplier > 0 && replicaMaxConns == 0 {
+			replicaMaxConns = int32(float64(cfg.MaxConns) * cfg.ReplicaPoolSizeMultiplier)
+		}
+		if replicaMaxConns <= 0 {
+			replicaMaxConns = cfg.MaxConns
+		}
+		if replicaMaxConns <= 0 {
+			replicaMaxConns = 5
+		}
+		replicaCfg.MaxConns = replicaMaxConns
+		replicaCfg.MinConns = cfg.ReplicaMinConns
+		replicaCfg.MaxConnLifetime = cfg.ReplicaMaxConnLifetime
+		replicaCfg.MaxConnLifetimeJitter = cfg.ReplicaMaxConnLifetime / 10
+		replicaCfg.MaxConnIdleTime = cfg.ReplicaMaxConnIdleTime
+
+		replicaPool, err := pgxpool.NewWithConfig(context.Background(), replicaCfg)
+		if err != nil {
+			logger.Warnf("failed to create replica pool, falling back to primary-only mode: %v", err)
+			return d, nil
+		}
+
+		replicaDB := stdlib.OpenDBFromPool(replicaPool)
+		pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err = replicaDB.PingContext(pingCtx)
+		pingCancel()
+		if err != nil {
+			logger.Warnf("failed to ping replica database, falling back to primary-only mode: %v", err)
+			replicaDB.Close()
+			replicaPool.Close()
+			return d, nil
+		}
+
+		d.replicaPool = replicaPool
+		d.replicaDB = replicaDB
+		d.replicaRunner = replicaDB
+
+		lagCtx, lagCancel := context.WithCancel(context.Background())
+		d.replicaCancel = lagCancel
+		go d.monitorReplicationLag(lagCtx)
+	}
+
 	return d, nil
+}
+
+func (d *DBClient) monitorReplicationLag(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			var count int
+			var lagMs int64
+			err := d.db.QueryRowContext(queryCtx,
+				"SELECT COUNT(*), COALESCE(MAX(EXTRACT(EPOCH FROM replay_lag) * 1000), 0) FROM pg_stat_replication WHERE state = 'streaming'",
+			).Scan(&count, &lagMs)
+			cancel()
+			if err != nil {
+				if isMissingRelation(err) {
+					d.logger.Warnf("pg_stat_replication not available (not a primary), stopping replication lag monitor")
+					return
+				}
+				d.logger.Warnf("failed to query replication lag: %v", err)
+				atomic.StoreInt64(&d.replicaLagMs, math.MaxInt64)
+				continue
+			}
+			if count == 0 {
+				lagMs = math.MaxInt64
+			}
+			atomic.StoreInt64(&d.replicaLagMs, lagMs)
+			replicaLagGauge.Set(float64(lagMs))
+		}
+	}
+}
+
+func isMissingRelation(err error) bool {
+	if err == nil {
+		return false
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return pgErr.Code == "42P01"
+	}
+	return false
 }
