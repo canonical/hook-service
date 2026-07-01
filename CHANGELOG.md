@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.2](https://github.com/canonical/hook-service/compare/v1.3.1...v1.3.2) (2026-07-01)
+
+
+### Bug Fixes
+
+* add grpc timeout and keepalive ([f9a9710](https://github.com/canonical/hook-service/commit/f9a9710e949cc5c76c9dc849d1414cd250d03b4f))
+* use grpc to call tenant service ([640f198](https://github.com/canonical/hook-service/commit/640f198133c8f099bf36077f4fd19318674f8ad3))
+
 ## [1.3.1](https://github.com/canonical/hook-service/compare/v1.3.0...v1.3.1) (2026-06-08)
 
 
