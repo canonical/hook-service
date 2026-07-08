@@ -28,7 +28,7 @@ jobs:
     needs: [ build, unit-test ]
     uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@b5070d98993fa72f429f4fdf8010f6f9a94eb4e0 # v1.14.2
     with:
-      rock: "hook-service"
+      rock: ${{ needs.build.outputs.rock }}
   scan:
     permissions:
       packages: read
