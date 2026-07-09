@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package cmd
@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,7 +18,10 @@ import (
 	tenantpb "github.com/canonical/identity-platform-api/v0/tenant"
 	"github.com/kelseyhightower/envconfig"
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc"
 
+	pb "github.com/canonical/hook-service/gen/hook/groups/v1"
 	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
@@ -29,6 +33,7 @@ import (
 	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/pkg/authentication"
+	groups_api "github.com/canonical/hook-service/pkg/groups"
 	"github.com/canonical/hook-service/pkg/web"
 )
 
@@ -45,6 +50,8 @@ func init() {
 	rootCmd.AddCommand(serveCmd)
 }
 
+var errShutdownSignal = errors.New("shutdown signal received")
+
 func serve() error {
 	specs := new(config.EnvSpec)
 	if err := envconfig.Process("", specs); err != nil {
@@ -59,12 +66,19 @@ func serve() error {
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
 	dbConfig := db.Config{
-		DSN:             specs.DSN,
-		MaxConns:        specs.DBMaxConns,
-		MinConns:        specs.DBMinConns,
-		MaxConnLifetime: specs.DBMaxConnLifetime,
-		MaxConnIdleTime: specs.DBMaxConnIdleTime,
-		TracingEnabled:  specs.TracingEnabled,
+		DSN:                      specs.DSN,
+		MaxConns:                 specs.DBMaxConns,
+		MinConns:                 specs.DBMinConns,
+		MaxConnLifetime:          specs.DBMaxConnLifetime,
+		MaxConnIdleTime:          specs.DBMaxConnIdleTime,
+		TracingEnabled:           specs.TracingEnabled,
+		ReplicaDSN:               specs.ReplicaDSN,
+		ReplicaMaxConns:          specs.ReplicaDBMaxConns,
+		ReplicaMinConns:          specs.ReplicaDBMinConns,
+		ReplicaMaxConnLifetime:   specs.ReplicaDBMaxConnLifetime,
+		ReplicaMaxConnIdleTime:   specs.ReplicaDBMaxConnIdleTime,
+		MaxReplicaLagMs:          specs.MaxReplicaLagMs,
+		ReplicaPoolSizeMultiplier: specs.ReplicaPoolSizeMultiplier,
 	}
 	dbClient, err := db.NewDBClient(dbConfig, tracer, monitor, logger)
 	if err != nil {
@@ -72,6 +86,7 @@ func serve() error {
 	}
 	defer dbClient.Close()
 	s := storage.NewStorage(dbClient, tracer, monitor, logger)
+	s.SetStreamTimeout(specs.StreamTimeout)
 
 	var authorizer *authorization.Authorizer
 	if specs.AuthorizationEnabled {
@@ -131,7 +146,6 @@ func serve() error {
 
 	var jwtVerifier authentication.TokenVerifierInterface
 	if specs.AuthenticationEnabled {
-		// Parse allowed subjects from comma-separated string
 		var allowedSubjects []string
 		if specs.AuthenticationAllowedSubjects != "" {
 			subjects := strings.Split(specs.AuthenticationAllowedSubjects, ",")
@@ -178,9 +192,10 @@ func serve() error {
 		monitor,
 		logger,
 	)
-	logger.Infof("Starting server on port %v", specs.Port)
 
-	srv := &http.Server{
+	groupService := groups_api.NewService(s, authorizer, tracer, monitor, logger)
+
+	httpServer := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%v", specs.Port),
 		WriteTimeout: time.Second * 60,
 		ReadTimeout:  time.Second * 15,
@@ -188,30 +203,102 @@ func serve() error {
 		Handler:      router,
 	}
 
-	var serverError error
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	grpcSrv := grpc.NewServer(
+		grpc.MaxConcurrentStreams(specs.GRPCMaxConcurrentStreams),
+		grpc.ChainUnaryInterceptor(
+			db.UnaryReplicaRoutingInterceptor(),
+		),
+		grpc.ChainStreamInterceptor(
+			authentication.NewGrpcInterceptor(jwtVerifier, tracer, monitor, logger).StreamAuthenticate(),
+			db.StreamReplicaRoutingInterceptor(),
+		),
+	)
+	mappingServer := groups_api.NewMappingGrpcServer(groupService, tracer, monitor, logger)
+	pb.RegisterGroupsMappingServiceServer(grpcSrv, mappingServer)
 
-	go func() {
-		logger.Security().SystemStartup()
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverError = fmt.Errorf("server error: %w", err)
-			c <- os.Interrupt
-		}
-	}()
-
-	<-c
-
-	// Create a deadline to wait for.
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
-
-	logger.Security().SystemShutdown()
-	if err := srv.Shutdown(ctx); err != nil {
-		serverError = fmt.Errorf("server shutdown error: %w", err)
+	grpcLis, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%v", specs.GRPCPort))
+	if err != nil {
+		return fmt.Errorf("failed to listen on gRPC port %v: %v", specs.GRPCPort, err)
 	}
 
-	return serverError
+	logger.Infof("Starting HTTP server on port %v", specs.Port)
+	logger.Infof("Starting gRPC server on port %v", specs.GRPCPort)
+
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+
+	eg, ctx := errgroup.WithContext(context.Background())
+
+	eg.Go(func() error {
+		logger.Security().SystemStartup()
+
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- httpServer.ListenAndServe()
+		}()
+
+		select {
+		case err := <-errChan:
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				return fmt.Errorf("HTTP server error: %w", err)
+			}
+			return nil
+		case <-ctx.Done():
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer shutdownCancel()
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				return fmt.Errorf("HTTP server shutdown error: %w", err)
+			}
+			return nil
+		}
+	})
+
+	eg.Go(func() error {
+		errChan := make(chan error, 1)
+		go func() {
+			errChan <- grpcSrv.Serve(grpcLis)
+		}()
+
+		select {
+		case err := <-errChan:
+			if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
+				return fmt.Errorf("gRPC server error: %w", err)
+			}
+			return nil
+		case <-ctx.Done():
+			stopped := make(chan struct{})
+			go func() {
+				grpcSrv.GracefulStop()
+				close(stopped)
+			}()
+
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer shutdownCancel()
+
+			select {
+			case <-stopped:
+			case <-shutdownCtx.Done():
+				grpcSrv.Stop()
+			}
+			return nil
+		}
+	})
+
+	eg.Go(func() error {
+		select {
+		case <-sigCh:
+			return errShutdownSignal
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+
+	if err := eg.Wait(); err == nil || errors.Is(err, errShutdownSignal) {
+		logger.Security().SystemShutdown()
+		return nil
+	}
+
+	return err
 }
 
 func main() {

@@ -1,5 +1,6 @@
 // Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: AGPL-3.0
+
 
 package authorization
 
@@ -42,11 +43,6 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"google.golang.org/protobuf/encoding/protojson"
 )
-
-//go:generate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_authorization.go -source=./interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
-//goʻgenerate mockgen -build_flags=--mod=mod -package authorization -destination ./mock_tracing.go -source=../../internal/tracing/interfaces.go
 
 // testClient wraps an httptest.Server with helper methods for the authorization API.
 type testClient struct {
