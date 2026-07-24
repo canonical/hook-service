@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.4.0](https://github.com/canonical/hook-service/compare/v1.3.1...v1.4.0) (2026-07-24)
+
+
+### Features
+
+* **auth:** add gRPC stream JWT interceptor ([791529c](https://github.com/canonical/hook-service/commit/791529cd29327cd872edd487baea40580537cc33))
+* **cmd:** wire dual-server lifecycle with graceful shutdown ([b7c8f8c](https://github.com/canonical/hook-service/commit/b7c8f8cb7a708100f84baa6a71f084fbfb0f5091))
+* **config:** add replica database environment variables to EnvSpec ([12234e2](https://github.com/canonical/hook-service/commit/12234e2c1159e4450f9c5180815f6e28d5f3323b))
+* **db:** add read-only replica pool with context-based routing and lag awareness ([0960972](https://github.com/canonical/hook-service/commit/0960972a8a39ea3acff5f8babe3adcaf5f8a4a01))
+* **groups:** add gRPC mapping handlers with error mapping ([98730f7](https://github.com/canonical/hook-service/commit/98730f7e440deb33770054fc79b48566f7dbb17b))
+* **groups:** add streaming interfaces and domain errors ([b5a7847](https://github.com/canonical/hook-service/commit/b5a78472dbebe5c9a54ee21a6e96a7ef8bdc5264))
+* **grpc:** add database replica routing interceptors and configurable concurrent streams ([6b6ac9c](https://github.com/canonical/hook-service/commit/6b6ac9c747c22c61ac4245eea1233d1560bfcc90))
+* **proto:** stage GroupsMappingService streaming RPC definition ([f7cc04c](https://github.com/canonical/hook-service/commit/f7cc04c9fe73e0b8bc1fe393287fd02b419176d6))
+* **storage:** add callback-based streaming with tenant filtering ([5f4ffbe](https://github.com/canonical/hook-service/commit/5f4ffbefe079b2247a14b9e752d9abaf48bd0bc9))
+
+
+### Bug Fixes
+
+* add grpc timeout and keepalive ([f9a9710](https://github.com/canonical/hook-service/commit/f9a9710e949cc5c76c9dc849d1414cd250d03b4f))
+* ci artifact name ([2718efe](https://github.com/canonical/hook-service/commit/2718efe46e92637873816363b6d21d81d32e3e4d))
+* ci artifact name ([#309](https://github.com/canonical/hook-service/issues/309)) ([57d2e79](https://github.com/canonical/hook-service/commit/57d2e7918444336a1aef1b7dc337d56addcc5257))
+* **cmd:** bound gRPC graceful shutdown with 15s deadline ([2d1b6b1](https://github.com/canonical/hook-service/commit/2d1b6b1f90d5badae855ea546efd1ac230ec573a))
+* **db:** default ReplicaMaxConns to MaxConns if unspecified ([1c9740d](https://github.com/canonical/hook-service/commit/1c9740d7168b419a123afd59cd839fc091277b06))
+* **db:** resolve replication lag monitor silent bypass and add fail-safe ([a2213e8](https://github.com/canonical/hook-service/commit/a2213e8dab739624b7e04c2f898dcdeec2cc8652))
+* **deps:** update go deps ([ae85780](https://github.com/canonical/hook-service/commit/ae85780d1646726d704eab242d3060987ceb4b46))
+* **deps:** update go deps ([6877a00](https://github.com/canonical/hook-service/commit/6877a008f23f31fae8d5db6f82602cb288178bc1))
+* **deps:** update go deps ([#269](https://github.com/canonical/hook-service/issues/269)) ([0a74960](https://github.com/canonical/hook-service/commit/0a74960e009c24dd84b0e327076d11f1b6960742))
+* **deps:** update go deps (minor) ([#306](https://github.com/canonical/hook-service/issues/306)) ([75ae19f](https://github.com/canonical/hook-service/commit/75ae19ff1cbca8c18bb7071b85b41c544f0616c7))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.3.1 ([f1da71d](https://github.com/canonical/hook-service/commit/f1da71db84df8fba66eab03a13ece97ee2689677))
+* **deps:** update module github.com/go-chi/chi/v5 to v5.3.1 ([#297](https://github.com/canonical/hook-service/issues/297)) ([db437e8](https://github.com/canonical/hook-service/commit/db437e80ee30f5f2c70bad622a18fb228416c796))
+* **deps:** update module google.golang.org/grpc to v1.82.1 [security] ([0177585](https://github.com/canonical/hook-service/commit/017758563ded1f93355c471b7e11cf89bbc03fc7))
+* **deps:** update module google.golang.org/grpc to v1.82.1 [security] ([#321](https://github.com/canonical/hook-service/issues/321)) ([c6c2881](https://github.com/canonical/hook-service/commit/c6c28819db4835c3288a1c9529a1d6b378a8531e))
+* dynamic tenant filtering in groups streaming ([bdc7f2d](https://github.com/canonical/hook-service/commit/bdc7f2dfa7b17f069aeb62b58610bb02ef8705cc))
+* **groups:** wrap stream send errors with ErrStreamInterrupted ([6a8d8bd](https://github.com/canonical/hook-service/commit/6a8d8bda4d2790026cd478723b55708ec0c382d6))
+* **test:** configure ReplicaMaxConns and perform safe nil checks in lag fallback test ([ecbb235](https://github.com/canonical/hook-service/commit/ecbb2352349077b8026e0bb5bf6acfe197f60959))
+* use grpc to call tenant service ([640f198](https://github.com/canonical/hook-service/commit/640f198133c8f099bf36077f4fd19318674f8ad3))
+
 ## [1.3.1](https://github.com/canonical/hook-service/compare/v1.3.0...v1.3.1) (2026-06-08)
 
 
