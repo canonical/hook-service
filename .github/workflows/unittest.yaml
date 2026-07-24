@@ -8,13 +8,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: '1.26'
 
       - name: Install Podman
-        uses: redhat-actions/podman-install@60b05ab5b050c9f8ec8dff7e0377f8bf36c39207 # main
+        uses: redhat-actions/podman-install@389aecfff6b6e2fabd3e6053672d9c6439073562 # main
 
       - name: Setup podman for rootless (standard GitHub runner user)
         run: systemctl --user enable --now podman.socket
