@@ -14,7 +14,7 @@ jobs:
           go-version: '1.26'
 
       - name: Install Podman
-        uses: redhat-actions/podman-install@389aecfff6b6e2fabd3e6053672d9c6439073562 # main
+        uses: redhat-actions/podman-install@3f1ebd22b7a54499b9787ca69a487d38bbb7fe9c # main
 
       - name: Setup podman for rootless (standard GitHub runner user)
         run: systemctl --user enable --now podman.socket
