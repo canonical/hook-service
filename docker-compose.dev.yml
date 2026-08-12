@@ -20,7 +20,7 @@ services:
       - intranet
     restart: on-failure
   kratos-migrate:
-    image: ghcr.io/canonical/kratos:25.4.0
+    image: ghcr.io/canonical/kratos:26.2.0
     pull_policy: missing
     environment:
       - DSN=postgres://kratos:kratos@postgres:5432/kratos?sslmode=disable
@@ -35,7 +35,7 @@ services:
   kratos:
     depends_on:
       - kratos-migrate
-    image: ghcr.io/canonical/kratos:25.4.0
+    image: ghcr.io/canonical/kratos:26.2.0
     pull_policy: missing
     ports:
       - '4433:4433' # public
@@ -56,7 +56,7 @@ services:
     extra_hosts:
     - "host.docker.internal:host-gateway"
   kratos-setup:
-    image: ghcr.io/canonical/kratos:25.4.0
+    image: ghcr.io/canonical/kratos:26.2.0
     pull_policy: missing
     depends_on:
       - kratos
