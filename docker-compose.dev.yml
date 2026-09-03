@@ -80,7 +80,7 @@ services:
         source: ./docker/hydra
         target: /etc/config/hydra
     environment:
-      - DSN=postgres://hydra:hydra@postgres/hydra?sslmode=disable
+      - DSN=postgres://hydra:hydra@postgres:5432/hydra?sslmode=disable
       - CORS_DEBUG=1
     restart: unless-stopped
     depends_on:
@@ -93,7 +93,7 @@ services:
     image: ghcr.io/canonical/hydra:2.3.0-canonical
     pull_policy: missing
     environment:
-      - DSN=postgres://hydra:hydra@postgres/hydra?sslmode=disable
+      - DSN=postgres://hydra:hydra@postgres:5432/hydra?sslmode=disable
     command: exec hydra migrate -c /etc/config/hydra/hydra.yml sql -e --yes
     volumes:
       - type: bind
@@ -115,7 +115,7 @@ services:
     pull_policy: missing
     restart: always
     ports:
-      - 5432:5432
+      - 5433:5432
     volumes:
       - ./docker/postgres/init-database.sql:/docker-entrypoint-initdb.d/init-database.sql
     environment:
