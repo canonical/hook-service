@@ -115,7 +115,10 @@ func setupTestEnvironment() (*TestEnvironment, error) {
 	}
 
 	// Run Migrations (retries until Postgres is ready)
-	dsn := "postgres://groups:groups@localhost:5432/groups?sslmode=disable"
+	dsn := os.Getenv("DSN")
+	if dsn == "" {
+		dsn = "postgres://groups:groups@localhost:5433/groups?sslmode=disable"
+	}
 	if err := runMigrations(ctx, binPath, dsn); err != nil {
 		cleanup()
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
@@ -237,17 +240,22 @@ func runMigrations(ctx context.Context, binPath, dsn string) error {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	timeout := time.After(60 * time.Second)
+	var lastErr error
+	var lastOutput []byte
 
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-timeout:
+			if lastErr != nil {
+				return fmt.Errorf("timeout waiting for migrations: %w (output: %s)", lastErr, string(lastOutput))
+			}
 			return fmt.Errorf("timeout waiting for migrations")
 		case <-ticker.C:
 			cmd := exec.CommandContext(ctx, binPath, "migrate", "up", "--dsn", dsn)
-			_, err := cmd.CombinedOutput()
-			if err == nil {
+			lastOutput, lastErr = cmd.CombinedOutput()
+			if lastErr == nil {
 				return nil
 			}
 		}
