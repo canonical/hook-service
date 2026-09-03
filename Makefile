@@ -7,7 +7,7 @@ UI_FOLDER?=
 MICROK8S_REGISTRY_FLAG?=SKAFFOLD_DEFAULT_REPO=localhost:32000
 SKAFFOLD?=skaffold
 CONFIGMAP?=deployments/kubectl/configMap.yaml
-DSN?=postgresql://groups:groups@localhost:5432/groups?sslmode=disable
+DSN?=postgresql://groups:groups@localhost:5433/groups?sslmode=disable
 
 
 .EXPORT_ALL_VARIABLES:
