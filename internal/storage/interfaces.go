@@ -19,6 +19,8 @@ type StorageInterface interface {
 	DeleteGroup(ctx context.Context, id string) error
 
 	// Group membership operations
+	AddGroupOwner(ctx context.Context, groupID, userID string) error
+	ListOwnersInGroup(ctx context.Context, groupID string) ([]string, error)
 	AddUsersToGroup(ctx context.Context, groupID string, userIDs []string) error
 	ListUsersInGroup(ctx context.Context, groupID string) ([]string, error)
 	RemoveUsersFromGroup(ctx context.Context, groupID string, users []string) error

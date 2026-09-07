@@ -100,15 +100,16 @@ func runMigrationsOnDSN(t *testing.T, connStr string) {
 	sqlDB := stdlib.OpenDB(*config)
 	defer sqlDB.Close()
 
-	goose.SetBaseFS(migrations.EmbedMigrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatalf("Failed to set dialect: %v", err)
+	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.EmbedMigrations)
+	if err != nil {
+		t.Fatalf("Failed to create goose provider: %v", err)
 	}
 
-	if err := goose.Up(sqlDB, "."); err != nil {
+	if _, err := provider.Up(context.Background()); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 }
+
 
 func TestIntegration_ReplicaUnconfigured(t *testing.T) {
 	if testing.Short() {

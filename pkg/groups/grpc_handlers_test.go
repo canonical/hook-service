@@ -927,9 +927,10 @@ func TestMapErrorToStatus(t *testing.T) {
 
 // testClient wraps an httptest.Server with helper methods for the authorization API.
 type testClient struct {
-	t      *testing.T
-	server *httptest.Server
-	http   *http.Client
+	t       *testing.T
+	server  *httptest.Server
+	http    *http.Client
+	storage *storage.Storage
 }
 
 func (c *testClient) Request(method, path string, body interface{}) (int, []byte) {
@@ -1033,11 +1034,11 @@ func runMigrations(t *testing.T, connStr string) {
 	sqlDB := stdlib.OpenDB(*cfg)
 	defer sqlDB.Close()
 
-	goose.SetBaseFS(migrations.EmbedMigrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatalf("Failed to set dialect: %v", err)
+	provider, err := goose.NewProvider(goose.DialectPostgres, sqlDB, migrations.EmbedMigrations)
+	if err != nil {
+		t.Fatalf("Failed to create goose provider: %v", err)
 	}
-	if err := goose.Up(sqlDB, "."); err != nil {
+	if _, err := provider.Up(context.Background()); err != nil {
 		t.Fatalf("Failed to run migrations: %v", err)
 	}
 }
@@ -1079,7 +1080,7 @@ func newIntegrationServer(t *testing.T) (*testClient, func()) {
 	)
 
 	authzSvc := authorization_api.NewService(s, authz, tracer, monitor, logger)
-	groupSvc := NewService(s, authz, tracer, monitor, logger)
+	groupSvc := NewService(s, authz, nil, tracer, monitor, logger)
 
 	ctx := context.Background()
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(ctx, gwMux,
@@ -1099,7 +1100,7 @@ func newIntegrationServer(t *testing.T) (*testClient, func()) {
 		}
 	}
 
-	return &testClient{t: t, server: srv, http: srv.Client()}, cleanup
+	return &testClient{t: t, server: srv, http: srv.Client(), storage: s}, cleanup
 }
 
 // createTestGroup creates a group via the groups API and returns its ID.
@@ -1480,4 +1481,168 @@ func TestUserMembershipErrors(t *testing.T) {
 			t.Error("expected error for adding user to non-existent group, got 200")
 		}
 	})
+}
+
+// TestDualRoleUserLifecycle verifies that a user can simultaneously hold both Owner and Member
+// roles in PostgreSQL without mutual interference (preventing OpenFGA zombie owner tuples).
+func TestDualRoleUserLifecycle(t *testing.T) {
+	t.Parallel()
+
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	client, teardown := newIntegrationServer(t)
+	if client == nil {
+		return
+	}
+	defer teardown()
+
+	ctx := context.Background()
+	groupID := createTestGroup(t, client, fmt.Sprintf("dual-role-grp-%d", time.Now().UnixNano()))
+	alice := fmt.Sprintf("alice-%d@canonical.com", time.Now().UnixNano())
+	bob := fmt.Sprintf("bob-%d@canonical.com", time.Now().UnixNano())
+
+	// Step 1: Alice creates the group and is recorded as Owner
+	if err := client.storage.AddGroupOwner(ctx, groupID, alice); err != nil {
+		t.Fatalf("failed to record Alice as group owner: %v", err)
+	}
+
+	owners, err := client.storage.ListOwnersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list group owners: %v", err)
+	}
+	if len(owners) != 1 || owners[0] != alice {
+		t.Fatalf("expected [Alice] as owner, got %v", owners)
+	}
+
+	// Verify Alice is not yet a member
+	members, err := client.storage.ListUsersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list group members: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("expected 0 members initially, got %v", members)
+	}
+
+	// Verify GetGroupsForUser does not return the group for owner-only Alice (Decision D2)
+	groupsForAlice, err := client.storage.GetGroupsForUser(ctx, alice)
+	if err != nil {
+		t.Fatalf("failed to get groups for user: %v", err)
+	}
+	if len(groupsForAlice) != 0 {
+		t.Fatalf("expected 0 groups for owner-only Alice in token claims, got %d", len(groupsForAlice))
+	}
+
+	// Step 2: Add Alice and Bob via the members endpoint
+	statusCode, respBody := client.Request(http.MethodPost, fmt.Sprintf("%s/%s/users", groupsBase, groupID), []string{alice, bob})
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected 200 adding Alice and Bob as members, got %d. Body: %s", statusCode, string(respBody))
+	}
+
+	// Verify both Alice and Bob are returned as members
+	members, err = client.storage.ListUsersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list members: %v", err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("expected 2 members, got %d: %v", len(members), members)
+	}
+
+	// Verify Alice is STILL recorded as Owner in PostgreSQL
+	owners, err = client.storage.ListOwnersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list owners: %v", err)
+	}
+	if len(owners) != 1 || owners[0] != alice {
+		t.Fatalf("expected Alice to remain owner after adding as member, got %v", owners)
+	}
+
+	// Verify GetGroupsForUser returns the group once (not duplicated) for Alice
+	groupsForAlice, err = client.storage.GetGroupsForUser(ctx, alice)
+	if err != nil {
+		t.Fatalf("failed to get groups for user: %v", err)
+	}
+	if len(groupsForAlice) != 1 || groupsForAlice[0].ID != groupID {
+		t.Fatalf("expected exactly 1 group for dual-role Alice, got %d", len(groupsForAlice))
+	}
+
+	// Step 3: Remove Alice via the members endpoint
+	statusCode, respBody = client.Request(http.MethodDelete, fmt.Sprintf("%s/%s/users/%s", groupsBase, groupID, alice), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected 200 removing Alice from members, got %d. Body: %s", statusCode, string(respBody))
+	}
+
+	// Verify Alice is removed from members
+	members, err = client.storage.ListUsersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list members: %v", err)
+	}
+	if len(members) != 1 || members[0] != bob {
+		t.Fatalf("expected only Bob in members after Alice removal, got %v", members)
+	}
+
+	// CRITICAL TEST: Verify Alice's owner row was NOT deleted from PostgreSQL!
+	owners, err = client.storage.ListOwnersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list owners after member removal: %v", err)
+	}
+	if len(owners) != 1 || owners[0] != alice {
+		t.Fatalf("REGRESSION: Alice's owner row was deleted when removed as member! Owners: %v", owners)
+	}
+
+	// Verify GetGroupsForUser no longer returns the group for Alice
+	groupsForAlice, err = client.storage.GetGroupsForUser(ctx, alice)
+	if err != nil {
+		t.Fatalf("failed to get groups for user: %v", err)
+	}
+	if len(groupsForAlice) != 0 {
+		t.Fatalf("expected 0 groups for Alice after member removal, got %d", len(groupsForAlice))
+	}
+
+	// Step 4: Verify SyncGroupMembers does not delete owner
+	if err := client.storage.SyncGroupMembers(ctx, groupID, []string{bob}); err != nil {
+		t.Fatalf("failed to sync group members: %v", err)
+	}
+	owners, err = client.storage.ListOwnersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list owners after sync: %v", err)
+	}
+	if len(owners) != 1 || owners[0] != alice {
+		t.Fatalf("REGRESSION: SyncGroupMembers deleted Alice's owner row! Owners: %v", owners)
+	}
+
+	// Step 5: Verify UpdateGroupsForUser does not delete ownership
+	if err := client.storage.UpdateGroupsForUser(ctx, alice, []string{}); err != nil {
+		t.Fatalf("failed to update groups for user: %v", err)
+	}
+	owners, err = client.storage.ListOwnersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list owners after UpdateGroupsForUser: %v", err)
+	}
+	if len(owners) != 1 || owners[0] != alice {
+		t.Fatalf("REGRESSION: UpdateGroupsForUser deleted Alice's owner row! Owners: %v", owners)
+	}
+
+	// Step 6: Delete group cascades and removes both owner and member rows
+	statusCode, respBody = client.Request(http.MethodDelete, fmt.Sprintf("%s/%s", groupsBase, groupID), nil)
+	if statusCode != http.StatusOK {
+		t.Fatalf("expected 200 deleting group, got %d. Body: %s", statusCode, string(respBody))
+	}
+
+	owners, err = client.storage.ListOwnersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list owners after group deletion: %v", err)
+	}
+	if len(owners) != 0 {
+		t.Fatalf("expected 0 owners after group deletion, got %v", owners)
+	}
+
+	members, err = client.storage.ListUsersInGroup(ctx, groupID)
+	if err != nil {
+		t.Fatalf("failed to list members after group deletion: %v", err)
+	}
+	if len(members) != 0 {
+		t.Fatalf("expected 0 members after group deletion, got %v", members)
+	}
 }
