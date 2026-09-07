@@ -56,3 +56,19 @@ db:
 db-down:
 	$(GO) run . migrate --dsn $(DSN) down
 .PHONY: db-down
+
+authz-setup:
+	./scripts/setup-centralized-authz-e2e.sh
+.PHONY: authz-setup
+
+authz-test:
+	./scripts/test-centralized-authz-e2e.sh
+.PHONY: authz-test
+
+authz-down:
+	./scripts/teardown-centralized-authz-e2e.sh
+.PHONY: authz-down
+
+authz-e2e:
+	./scripts/run-centralized-authz-e2e.sh
+.PHONY: authz-e2e
