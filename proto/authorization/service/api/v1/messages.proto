@@ -1,0 +1,35 @@
+// Copyright 2026 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only
+
+syntax = "proto3";
+package authorization.service.api.v1;
+option go_package = "github.com/canonical/hook-service/gen/authorization/service/api/v1;v1";
+
+import "google/protobuf/timestamp.proto";
+
+// Permission update event published by federated services to <service>.permissions
+message PermissionUpdateEnvelope {
+  string version = 1; // payload schema version
+  string service = 2; // service slug/name
+  string message_id = 3; // reference to this message to be used in case of errors
+  string idempotency_key = 4;
+  google.protobuf.Timestamp event_time = 5; // business time of the event (producer)
+  google.protobuf.Timestamp ingestion_time = 6; // populated by Authorization-service listener at ingestion
+  optional string correlation_id = 7; // optional trace/correlation id
+  repeated PermissionOperation operations = 8; // list of atomic operations to apply
+}
+
+// Single operation that maps to one or more OpenFGA tuple writes/deletes
+message PermissionOperation {
+  PermissionOp op = 1; // write, delete, replace, ...
+  string subject = 2; // "type:id" e.g. "user:u2"
+  string relation = 3; // relation name e.g. "viewer", "owner"
+  string object = 4; // "type:id" e.g. "invoice:inv-1"
+}
+
+// Enum for operation types; includes unspecified zero value
+enum PermissionOp {
+  PERMISSION_OP_UNSPECIFIED = 0; // Zero value to notice when an operation wasn't explicitly set
+  PERMISSION_OP_WRITE = 1;
+  PERMISSION_OP_DELETE = 2;
+}

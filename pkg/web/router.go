@@ -1,9 +1,10 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package web
 
 import (
+	"context"
 	"net/http"
 
 	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
@@ -11,7 +12,6 @@ import (
 	chi "github.com/go-chi/chi/v5"
 	middleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"golang.org/x/net/context"
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/canonical/hook-service/internal/authorization"
@@ -40,6 +40,7 @@ func NewRouter(
 	authz authorization.AuthorizerInterface,
 	tenantValidator tenants.TenantValidatorInterface,
 	jwtVerifier authentication.TokenVerifierInterface,
+	publisher groups_api.PermissionPublisherInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -72,7 +73,7 @@ func NewRouter(
 	}
 
 	authzService := authz_api.NewService(s, authz, tracer, monitor, logger)
-	groupService := groups_api.NewService(s, authz, tracer, monitor, logger)
+	groupService := groups_api.NewService(s, authz, publisher, tracer, monitor, logger)
 
 	groupClients := []hooks.ClientInterface{}
 	if s != nil {
@@ -101,6 +102,8 @@ func NewRouter(
 	if authenticationEnabled {
 		jwtAuthMiddleware := authentication.NewMiddleware(jwtVerifier, tracer, monitor, logger)
 		authzRouter.Use(jwtAuthMiddleware.Authenticate())
+	} else {
+		authzRouter.Use(authentication.UserContextMiddleware())
 	}
 	authzRouter.Mount("/", gRPCGatewayMux)
 

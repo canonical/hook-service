@@ -5,6 +5,9 @@ package config
 
 import (
 	"flag"
+	"fmt"
+	"net"
+	"strings"
 	"time"
 )
 
@@ -54,17 +57,32 @@ type EnvSpec struct {
 	TenantServiceGRPCTimeout time.Duration `envconfig:"tenant_service_grpc_timeout" default:"5s"`
 	TenantServiceTLSEnabled  bool          `envconfig:"tenant_service_tls_enabled" default:"false"`
 
-	ReplicaDSN              string        `envconfig:"replica_dsn" default:""`
-	ReplicaDBMaxConns       int32         `envconfig:"replica_db_max_conns" default:"25"`
-	ReplicaDBMinConns       int32         `envconfig:"replica_db_min_conns" default:"2"`
-	ReplicaDBMaxConnLifetime time.Duration `envconfig:"replica_db_max_conn_lifetime" default:"1h"`
-	ReplicaDBMaxConnIdleTime time.Duration `envconfig:"replica_db_max_conn_idle_time" default:"30m"`
-	MaxReplicaLagMs         int64         `envconfig:"max_replica_lag_ms" default:"1000"`
-	ReplicaPoolSizeMultiplier float64     `envconfig:"replica_pool_size_multiplier" default:"1.0"`
-
-	StreamTimeout        time.Duration `envconfig:"stream_timeout" default:"30s"`
+	ReplicaDSN                 string        `envconfig:"replica_dsn" default:""`
+	ReplicaDBMaxConns          int32         `envconfig:"replica_db_max_conns" default:"25"`
+	ReplicaDBMinConns          int32         `envconfig:"replica_db_min_conns" default:"2"`
+	ReplicaDBMaxConnLifetime   time.Duration `envconfig:"replica_db_max_conn_lifetime" default:"1h"`
+	ReplicaDBMaxConnIdleTime   time.Duration `envconfig:"replica_db_max_conn_idle_time" default:"30m"`
+	MaxReplicaLagMs            int64         `envconfig:"max_replica_lag_ms" default:"1000"`
+	ReplicaPoolSizeMultiplier  float64       `envconfig:"replica_pool_size_multiplier" default:"1.0"`
+	StreamTimeout              time.Duration `envconfig:"stream_timeout" default:"30s"`
+	KafkaBrokers               []string      `envconfig:"kafka_brokers" default:""`
 
 	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"150"`
+}
+
+// ValidateKafkaBrokers checks that all non-empty broker addresses have valid host:port format.
+func ValidateKafkaBrokers(brokers []string) error {
+	for _, b := range brokers {
+		trimmed := strings.TrimSpace(b)
+		if trimmed == "" {
+			continue
+		}
+		host, port, err := net.SplitHostPort(trimmed)
+		if err != nil || host == "" || port == "" {
+			return fmt.Errorf("invalid kafka broker address %q: %v", b, err)
+		}
+	}
+	return nil
 }
 
 type Flags struct {

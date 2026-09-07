@@ -227,7 +227,7 @@ func setupMappingIntegrationServer(t *testing.T) (pb.GroupsMappingServiceClient,
 		tracer, monitor, logger,
 	)
 
-	groupSvc := NewService(s, authz, tracer, monitor, logger)
+	groupSvc := NewService(s, authz, nil, tracer, monitor, logger)
 	mappingSrv := NewMappingGrpcServer(groupSvc, tracer, monitor, logger)
 
 	grpcSrv := grpc.NewServer()
