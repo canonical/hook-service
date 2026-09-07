@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package groups
@@ -31,12 +31,19 @@ func TestService_CreateGroup(t *testing.T) {
 
 	testCases := []struct {
 		name          string
+		inputGroup    *types.Group
 		setupMocks    func(mockStorage *MockDatabaseInterface)
 		expectedGroup *types.Group
 		expectedErr   error
 	}{
 		{
 			name: "success",
+			inputGroup: &types.Group{
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(_ context.Context, g *types.Group) (*types.Group, error) {
@@ -69,7 +76,26 @@ func TestService_CreateGroup(t *testing.T) {
 			expectedErr: nil,
 		},
 		{
+			name: "invalid group id",
+			inputGroup: &types.Group{
+				ID:          "existing-id",
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
+			setupMocks:    func(mockStorage *MockDatabaseInterface) {},
+			expectedGroup: nil,
+			expectedErr:   ErrInvalidGroupID,
+		},
+		{
 			name: "db error",
+			inputGroup: &types.Group{
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).Return(nil, dbErr)
 			},
@@ -78,6 +104,12 @@ func TestService_CreateGroup(t *testing.T) {
 		},
 		{
 			name: "duplicate group name",
+			inputGroup: &types.Group{
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).Return(nil, storage.ErrDuplicateKey)
 			},
@@ -93,6 +125,7 @@ func TestService_CreateGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
@@ -100,15 +133,9 @@ func TestService_CreateGroup(t *testing.T) {
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
-			g := &types.Group{
-				Name:        groupName,
-				TenantId:    org,
-				Description: description,
-				Type:        groupType,
-			}
-			createdGroup, err := s.CreateGroup(context.Background(), g)
+			createdGroup, err := s.CreateGroup(context.Background(), tc.inputGroup)
 
 			if tc.expectedErr != nil {
 				if !errors.Is(err, tc.expectedErr) {
@@ -122,13 +149,10 @@ func TestService_CreateGroup(t *testing.T) {
 					t.Fatalf("unexpected error: %v", err)
 				}
 				if createdGroup == nil {
-					t.Fatalf("expected createdGroup not nil")
+					t.Fatal("expected createdGroup, got nil")
 				}
-				if tc.expectedGroup.Name != createdGroup.Name {
-					t.Fatalf("expected group name %q, got %q", tc.expectedGroup.Name, createdGroup.Name)
-				}
-				if createdGroup.ID == "" {
-					t.Fatalf("expected createdGroup ID to be set")
+				if createdGroup.ID != tc.expectedGroup.ID {
+					t.Fatalf("expected ID %s, got %s", tc.expectedGroup.ID, createdGroup.ID)
 				}
 			}
 		})
@@ -160,16 +184,16 @@ func TestService_GetGroup(t *testing.T) {
 			name:    "not found",
 			groupID: "not-found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().GetGroup(gomock.Any(), "not-found").Return(nil, ErrGroupNotFound)
+				mockStorage.EXPECT().GetGroup(gomock.Any(), "not-found").Return(nil, storage.ErrNotFound)
 			},
 			expectedGroup: nil,
 			expectedErr:   ErrGroupNotFound,
 		},
 		{
 			name:    "db error",
-			groupID: "db-error-id",
+			groupID: groupID,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().GetGroup(gomock.Any(), "db-error-id").Return(nil, dbErr)
+				mockStorage.EXPECT().GetGroup(gomock.Any(), groupID).Return(nil, dbErr)
 			},
 			expectedGroup: nil,
 			expectedErr:   dbErr,
@@ -183,11 +207,12 @@ func TestService_GetGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -213,83 +238,10 @@ func TestService_GetGroup(t *testing.T) {
 	}
 }
 
-func TestService_ListGroups(t *testing.T) {
-	expectedGroups := []*types.Group{{ID: "1", Name: "group1"}, {ID: "2", Name: "group2"}}
-	dbErr := errors.New("db error")
-
-	testCases := []struct {
-		name           string
-		setupMocks     func(mockStorage *MockDatabaseInterface)
-		expectedGroups []*types.Group
-		expectedErr    error
-	}{
-		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(expectedGroups, nil)
-			},
-			expectedGroups: expectedGroups,
-			expectedErr:    nil,
-		},
-		{
-			name: "success empty",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListGroups(gomock.Any()).Return([]*types.Group{}, nil)
-			},
-			expectedGroups: []*types.Group{},
-			expectedErr:    nil,
-		},
-		{
-			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(nil, dbErr)
-			},
-			expectedGroups: nil,
-			expectedErr:    dbErr,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockStorage := NewMockDatabaseInterface(ctrl)
-			mockAuthz := NewMockAuthorizerInterface(ctrl)
-			mockTracer := NewMockTracingInterface(ctrl)
-			mockLogger := NewMockLoggerInterface(ctrl)
-			mockMonitor := NewMockMonitorInterface(ctrl)
-
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
-
-			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
-
-			groups, err := s.ListGroups(context.Background())
-
-			if tc.expectedErr != nil {
-				if !errors.Is(err, tc.expectedErr) {
-					t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
-				}
-				if groups != nil {
-					t.Fatalf("expected groups to be nil, got %+v", groups)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if !reflect.DeepEqual(tc.expectedGroups, groups) {
-					t.Fatalf("expected groups %+v, got %+v", tc.expectedGroups, groups)
-				}
-			}
-		})
-	}
-}
-
 func TestService_UpdateGroup(t *testing.T) {
 	groupID := "test-id"
-	groupToUpdate := &types.Group{Name: "updated-name"}
-	updatedGroup := &types.Group{ID: groupID, Name: "updated-name"}
+	groupToUpdate := &types.Group{Name: "updated-group", Description: "updated description"}
+	updatedGroup := &types.Group{ID: groupID, Name: "updated-group", Description: "updated description"}
 	dbErr := errors.New("db error")
 
 	testCases := []struct {
@@ -339,11 +291,12 @@ func TestService_UpdateGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -415,11 +368,12 @@ func TestService_DeleteGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage, mockAuthz)
@@ -439,6 +393,7 @@ func TestService_DeleteGroup(t *testing.T) {
 	}
 }
 
+
 func TestService_AddUsersToGroup(t *testing.T) {
 	groupID := "group-id"
 	userIDs := []string{"user1", "user2"}
@@ -446,25 +401,40 @@ func TestService_AddUsersToGroup(t *testing.T) {
 
 	testCases := []struct {
 		name        string
+		groupID     string
+		userIDs     []string
 		setupMocks  func(mockStorage *MockDatabaseInterface)
 		expectedErr error
 	}{
 		{
-			name: "success",
+			name:    "success",
+			groupID: groupID,
+			userIDs: userIDs,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(nil)
 			},
 			expectedErr: nil,
 		},
 		{
-			name: "invalid group id",
+			name:        "empty userIDs",
+			groupID:     groupID,
+			userIDs:     []string{},
+			setupMocks:  func(mockStorage *MockDatabaseInterface) {},
+			expectedErr: nil,
+		},
+		{
+			name:    "invalid group id",
+			groupID: groupID,
+			userIDs: userIDs,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(storage.ErrForeignKeyViolation)
 			},
 			expectedErr: ErrInvalidGroupID,
 		},
 		{
-			name: "db error",
+			name:    "db error",
+			groupID: groupID,
+			userIDs: userIDs,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(dbErr)
 			},
@@ -479,16 +449,17 @@ func TestService_AddUsersToGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
 
-			err := s.AddUsersToGroup(context.Background(), groupID, userIDs)
+			err := s.AddUsersToGroup(context.Background(), tc.groupID, tc.userIDs)
 
 			if tc.expectedErr != nil {
 				if err == nil || err.Error() != tc.expectedErr.Error() {
@@ -555,11 +526,12 @@ func TestService_ListUsersInGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -592,25 +564,24 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 
 	testCases := []struct {
 		name        string
+		groupID     string
+		userIDs     []string
 		setupMocks  func(mockStorage *MockDatabaseInterface)
 		expectedErr error
 	}{
 		{
-			name: "success",
+			name:    "success",
+			groupID: groupID,
+			userIDs: userIDs,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(nil)
 			},
 			expectedErr: nil,
 		},
 		{
-			name: "not found",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(ErrGroupNotFound)
-			},
-			expectedErr: ErrGroupNotFound,
-		},
-		{
-			name: "db error",
+			name:    "db error",
+			groupID: groupID,
+			userIDs: userIDs,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
 				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(dbErr)
 			},
@@ -625,16 +596,17 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
 
-			err := s.RemoveUsersFromGroup(context.Background(), groupID, userIDs)
+			err := s.RemoveUsersFromGroup(context.Background(), tc.groupID, tc.userIDs)
 
 			if tc.expectedErr != nil {
 				if !errors.Is(err, tc.expectedErr) {
@@ -693,11 +665,12 @@ func TestService_GetGroupsForUser(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -763,11 +736,12 @@ func TestService_UpdateGroupsForUser(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -775,12 +749,83 @@ func TestService_UpdateGroupsForUser(t *testing.T) {
 			err := s.UpdateGroupsForUser(context.Background(), userID, groupIDs)
 
 			if tc.expectedErr != nil {
-				if err == nil || err.Error() != tc.expectedErr.Error() {
-					t.Fatalf("expected error %q, got %v", tc.expectedErr.Error(), err)
+				if !errors.Is(err, tc.expectedErr) {
+					t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
 				}
 			} else {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestService_ListGroups(t *testing.T) {
+	expectedGroups := []*types.Group{{ID: "g1", Name: "group-1"}, {ID: "g2", Name: "group-2"}}
+	dbErr := errors.New("db error")
+
+	testCases := []struct {
+		name           string
+		setupMocks     func(mockStorage *MockDatabaseInterface)
+		expectedGroups []*types.Group
+		expectedErr    error
+	}{
+		{
+			name: "success",
+			setupMocks: func(mockStorage *MockDatabaseInterface) {
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(expectedGroups, nil)
+			},
+			expectedGroups: expectedGroups,
+			expectedErr:    nil,
+		},
+		{
+			name: "success empty",
+			setupMocks: func(mockStorage *MockDatabaseInterface) {
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return([]*types.Group{}, nil)
+			},
+			expectedGroups: []*types.Group{},
+			expectedErr:    nil,
+		},
+		{
+			name: "db error",
+			setupMocks: func(mockStorage *MockDatabaseInterface) {
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(nil, dbErr)
+			},
+			expectedGroups: nil,
+			expectedErr:    dbErr,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockStorage := NewMockDatabaseInterface(ctrl)
+			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockLogger := NewMockLoggerInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
+
+			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
+			tc.setupMocks(mockStorage)
+
+			groups, err := s.ListGroups(context.Background())
+
+			if tc.expectedErr != nil {
+				if !errors.Is(err, tc.expectedErr) {
+					t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !reflect.DeepEqual(tc.expectedGroups, groups) {
+					t.Fatalf("expected groups %+v, got %+v", tc.expectedGroups, groups)
 				}
 			}
 		})

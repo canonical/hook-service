@@ -102,6 +102,7 @@ func TestIntegration_JWTAuthentication(t *testing.T) {
 		authorizer,
 		tenantValidator,
 		verifier,
+		nil,
 		tracer,
 		monitor,
 		logger,
