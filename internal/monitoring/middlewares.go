@@ -43,7 +43,7 @@ func (mdw *Middleware) ResponseTime() func(http.Handler) http.Handler {
 					"status": strconv.Itoa(ww.Status()),
 				}
 
-				mdw.monitor.SetResponseTimeMetric(tags, time.Since(startTime).Seconds())
+				_ = mdw.monitor.SetResponseTimeMetric(tags, time.Since(startTime).Seconds())
 			},
 		)
 	}
