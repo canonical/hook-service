@@ -50,12 +50,20 @@ The application is configured via environment variables.
 | `REPLICA_DB_MAX_CONN_IDLE_TIME` | Max replica connection idle time | `30m` |
 | `MAX_REPLICA_LAG_MS` | Max replication lag before falling back to primary | `1000` |
 | `REPLICA_POOL_SIZE_MULTIPLIER` | Multiplier for sizing replica pool relative to primary pool | `1.0` |
+| `KAFKA_BROKERS` | Comma-separated Kafka broker addresses for Cerberus permission event publishing (empty = disabled) | |
 
 ## Features
+
+### Cerberus Authorization Federation (Kafka Permission Publishing)
+
+When `KAFKA_BROKERS` is configured, `hook-service` publishes permission lifecycle events (`owner` and `member` relationship tuples) to the `hook-service.permissions` Kafka topic whenever groups and group memberships are created, updated, or deleted. These protobuf-encoded events (`PermissionUpdateEnvelope`) are consumed by Cerberus (`authorization-service`) to synchronize fine-grained authorization state in OpenFGA.
+
+Publishing is resilient and decoupled from PostgreSQL transactions: if Kafka is unavailable or returns an error, the database operation still succeeds, and the failure is logged as a warning.
 
 ### JWT Authentication
 
 The Groups and Authorization APIs (`/api/v0/authz`) are protected by JWT authentication middleware. When enabled, all requests to these endpoints must include a valid JWT token in the `Authorization` header.
+
 
 **Configuration:**
 
@@ -190,6 +198,22 @@ This command will:
 1. Switch to the `tests/e2e` directory.
 2. Spin up the required environment (Postgres, Hydra, Kratos, OpenFGA) using Testcontainers.
 3. Run the tests.
+
+### Centralized Authorization End-to-End Testing
+
+For comprehensive E2E testing of the Centralized Authorization architecture (Envoy Gateway, Cerberus/Authorization Service, STS, OpenFGA, and Hook Service with Kafka event streaming):
+
+```bash
+# Run the complete automated test suite (setup -> 45 tests -> teardown)
+make authz-e2e
+
+# Or run interactively for debugging
+make authz-setup
+make authz-test
+make authz-down
+```
+
+For the complete architectural specification, multi-persona permission matrices, and verified test results (45/45 passed), see [`docs/CENTRALIZED_AUTHZ_E2E_TESTING.md`](docs/CENTRALIZED_AUTHZ_E2E_TESTING.md).
 
 ### Local Development Environment
 

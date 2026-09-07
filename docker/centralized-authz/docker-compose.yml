@@ -1,0 +1,131 @@
+name: dependencies
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: authz-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=openfga
+      - POSTGRES_USER=authorization-service
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - authz-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U authorization-service -d openfga"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrateopenfga:
+    image: openfga/openfga:v1.14.1
+    container_name: authz-migrateopenfga
+    command: migrate --datastore-engine postgres --datastore-uri 'postgresql://authorization-service:password@postgres/openfga?sslmode=disable'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - authz-network
+
+  openfga:
+    image: openfga/openfga:v1.14.1
+    container_name: authz-openfga
+    ports:
+      - "8082:8080"  # HTTP API
+      - "8081:8081"  # gRPC API
+    command: "run"
+    environment:
+      OPENFGA_DATASTORE_ENGINE: "postgres"
+      OPENFGA_DATASTORE_URI: "postgresql://authorization-service:password@postgres/openfga?sslmode=disable"
+      OPENFGA_AUTHN_PRESHARED_KEYS: "42"
+      OPENFGA_LOG_FORMAT: text
+      OPENFGA_HTTP_ADDR: "0.0.0.0:8080"
+    networks:
+      - authz-network
+    depends_on:
+      migrateopenfga:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/grpc_health_probe", "-addr=localhost:8081"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  insert-hardcoded-store:
+    image: governmentpaas/psql
+    container_name: authz-insert-hardcoded-store
+    command: psql -Atx postgresql://authorization-service:password@postgres/openfga?sslmode=disable -c "INSERT INTO store (id,name,created_at,updated_at) VALUES ('01GP1254CHWJC1MNGVB0WDG1T0','cerberos',NOW(),NOW()) ON CONFLICT DO NOTHING;"
+    depends_on:
+      openfga:
+        condition: service_healthy
+    networks:
+      - authz-network
+
+  valkey:
+    image: valkey/valkey:latest
+    container_name: authz-valkey
+    ports:
+      - "${VALKEY_PORT:-6380}:6379"
+    command: valkey-server --save 60 1 --loglevel warning
+    volumes:
+      - valkey-data:/data
+    networks:
+      - authz-network
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  kafka:
+    image: apache/kafka:3.8.0
+    container_name: authz-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - authz-network
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  envoy:
+    image: envoyproxy/envoy:v1.30-latest
+    container_name: authz-envoy
+    ports:
+      - "10000:10000"
+      - "9901:9901"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: -c /etc/envoy/envoy.yaml --log-level info
+    networks:
+      - authz-network
+    depends_on:
+      - openfga
+
+networks:
+  authz-network:
+    name: authz-network
+    external: true
+
+volumes:
+  valkey-data:
+  postgres-data:
