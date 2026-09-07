@@ -953,7 +953,7 @@ func newIntegrationServer(t *testing.T) (*testClient, func()) {
 	)
 
 	authzSvc := authorization_api.NewService(s, authz, tracer, monitor, logger)
-	groupSvc := NewService(s, authz, tracer, monitor, logger)
+	groupSvc := NewService(s, authz, nil, tracer, monitor, logger)
 
 	ctx := context.Background()
 	v0_authz.RegisterAppAuthorizationServiceHandlerServer(ctx, gwMux,
