@@ -1,11 +1,10 @@
-// Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0
+// Copyright 2026 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package authentication
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"google.golang.org/grpc"
@@ -15,6 +14,8 @@ import (
 
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
+
+	"github.com/canonical/hook-service/pkg/groups"
 )
 
 func TestGrpcInterceptor_StreamAuthenticate(t *testing.T) {
@@ -59,7 +60,7 @@ func TestGrpcInterceptor_StreamAuthenticate(t *testing.T) {
 			},
 			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "bad-token").Return(false, fmt.Errorf("invalid token"))
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "bad-token").Return(nil, ErrInvalidToken)
 				return mockVerifier
 			},
 			wantCode: codes.Unauthenticated,
@@ -71,7 +72,7 @@ func TestGrpcInterceptor_StreamAuthenticate(t *testing.T) {
 			},
 			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-but-unauthorized").Return(false, nil)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-but-unauthorized").Return(nil, ErrUnauthorized)
 				return mockVerifier
 			},
 			wantCode: codes.Unauthenticated,
@@ -83,7 +84,7 @@ func TestGrpcInterceptor_StreamAuthenticate(t *testing.T) {
 			},
 			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(true, nil)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(&Claims{Subject: "valid-user"}, nil)
 				return mockVerifier
 			},
 			wantCode: codes.OK,
@@ -177,7 +178,7 @@ func TestGrpcInterceptor_StreamAuthenticate_Integration(t *testing.T) {
 		mdctx := metadata.NewIncomingContext(context.Background(), md)
 		mockTracer.EXPECT().Start(gomock.Any(), "authentication.GrpcInterceptor.StreamAuthenticate").Return(mdctx, trace.SpanFromContext(mdctx))
 		mockLogger.EXPECT().Debugf(gomock.Any(), gomock.Any()).AnyTimes()
-		mockVerifier.EXPECT().VerifyToken(gomock.Any(), "good-token").Return(true, nil)
+		mockVerifier.EXPECT().VerifyToken(gomock.Any(), "good-token").Return(&Claims{Subject: "good-user"}, nil)
 
 		interceptor := NewGrpcInterceptor(mockVerifier, mockTracer, mockMonitor, mockLogger)
 		stream := &testServerStream{ctx: mdctx}
@@ -185,6 +186,9 @@ func TestGrpcInterceptor_StreamAuthenticate_Integration(t *testing.T) {
 		called := false
 		err := interceptor.StreamAuthenticate()(nil, stream, nil, func(srv interface{}, ss grpc.ServerStream) error {
 			called = true
+			if uid := groups.UserIDFromContext(ss.Context()); uid != "good-user" {
+				t.Errorf("expected user ID %q, got %q", "good-user", uid)
+			}
 			return nil
 		})
 		if err != nil {

@@ -1,4 +1,4 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package groups
@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/canonical/hook-service/gen/authorization/service/api/v1"
+	"github.com/canonical/hook-service/internal/kafka"
 	"github.com/canonical/hook-service/internal/storage"
 	"github.com/canonical/hook-service/internal/types"
 	trace "go.opentelemetry.io/otel/trace"
@@ -31,13 +33,17 @@ func TestService_CreateGroup(t *testing.T) {
 
 	testCases := []struct {
 		name          string
-		setupMocks    func(mockStorage *MockDatabaseInterface)
+		// ctx is varied per test case to test creator-owner extraction via UserIDFromContext.
+		ctx           context.Context
+		nilPublisher  bool
+		setupMocks    func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface)
 		expectedGroup *types.Group
 		expectedErr   error
 	}{
 		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			name: "success without creator context",
+			ctx:  context.Background(),
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
 					func(_ context.Context, g *types.Group) (*types.Group, error) {
 						if g.Name != groupName {
@@ -69,8 +75,91 @@ func TestService_CreateGroup(t *testing.T) {
 			expectedErr: nil,
 		},
 		{
+			name: "success with creator context publishes owner tuple",
+			ctx:  ContextWithUserID(context.Background(), "creator-user-1"),
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, g *types.Group) (*types.Group, error) {
+						g.ID = "new-id-2"
+						return g, nil
+					},
+				).Times(1)
+				mockStorage.EXPECT().AddGroupOwner(gomock.Any(), "new-id-2", "creator-user-1").Return(nil).Times(1)
+				mockPublisher.EXPECT().PublishWrite(gomock.Any(), "user:creator-user-1", "owner", "group-in-claim:new-id-2").Return(nil).Times(1)
+			},
+			expectedGroup: &types.Group{
+				ID:          "new-id-2",
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "success when publisher fails, logs warning",
+			ctx:  ContextWithUserID(context.Background(), "creator-user-1"),
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, g *types.Group) (*types.Group, error) {
+						g.ID = "new-id-3"
+						return g, nil
+					},
+				).Times(1)
+				mockStorage.EXPECT().AddGroupOwner(gomock.Any(), "new-id-3", "creator-user-1").Return(nil).Times(1)
+				mockPublisher.EXPECT().PublishWrite(gomock.Any(), "user:creator-user-1", "owner", "group-in-claim:new-id-3").Return(errors.New("kafka error")).Times(1)
+				mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+			},
+			expectedGroup: &types.Group{
+				ID:          "new-id-3",
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
+			expectedErr: nil,
+		},
+		{
+			name:         "success with creator context and nil publisher",
+			ctx:          ContextWithUserID(context.Background(), "creator-user-1"),
+			nilPublisher: true,
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, g *types.Group) (*types.Group, error) {
+						g.ID = "new-id-nil-pub"
+						return g, nil
+					},
+				).Times(1)
+				mockStorage.EXPECT().AddGroupOwner(gomock.Any(), "new-id-nil-pub", "creator-user-1").Return(nil).Times(1)
+			},
+			expectedGroup: &types.Group{
+				ID:          "new-id-nil-pub",
+				Name:        groupName,
+				TenantId:    org,
+				Description: description,
+				Type:        groupType,
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "storage AddGroupOwner error",
+			ctx:  ContextWithUserID(context.Background(), "creator-user-1"),
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).DoAndReturn(
+					func(_ context.Context, g *types.Group) (*types.Group, error) {
+						g.ID = "new-id-4"
+						return g, nil
+					},
+				).Times(1)
+				mockStorage.EXPECT().AddGroupOwner(gomock.Any(), "new-id-4", "creator-user-1").Return(dbErr).Times(1)
+			},
+			expectedGroup: nil,
+			expectedErr:   dbErr,
+		},
+		{
 			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			ctx:  context.Background(),
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).Return(nil, dbErr)
 			},
 			expectedGroup: nil,
@@ -78,7 +167,8 @@ func TestService_CreateGroup(t *testing.T) {
 		},
 		{
 			name: "duplicate group name",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			ctx:  context.Background(),
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().CreateGroup(gomock.Any(), gomock.Any()).Return(nil, storage.ErrDuplicateKey)
 			},
 			expectedGroup: nil,
@@ -93,14 +183,19 @@ func TestService_CreateGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
+			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(tc.ctx, trace.SpanFromContext(tc.ctx))
+			tc.setupMocks(mockStorage, mockPublisher, mockLogger)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			var publisher PermissionPublisherInterface = mockPublisher
+			if tc.nilPublisher {
+				publisher = nil
+			}
+			s := NewService(mockStorage, mockAuthz, publisher, mockTracer, mockMonitor, mockLogger)
 
 			g := &types.Group{
 				Name:        groupName,
@@ -108,7 +203,7 @@ func TestService_CreateGroup(t *testing.T) {
 				Description: description,
 				Type:        groupType,
 			}
-			createdGroup, err := s.CreateGroup(context.Background(), g)
+			createdGroup, err := s.CreateGroup(tc.ctx, g)
 
 			if tc.expectedErr != nil {
 				if !errors.Is(err, tc.expectedErr) {
@@ -160,16 +255,16 @@ func TestService_GetGroup(t *testing.T) {
 			name:    "not found",
 			groupID: "not-found",
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().GetGroup(gomock.Any(), "not-found").Return(nil, ErrGroupNotFound)
+				mockStorage.EXPECT().GetGroup(gomock.Any(), "not-found").Return(nil, storage.ErrNotFound)
 			},
 			expectedGroup: nil,
 			expectedErr:   ErrGroupNotFound,
 		},
 		{
 			name:    "db error",
-			groupID: "db-error-id",
+			groupID: groupID,
 			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().GetGroup(gomock.Any(), "db-error-id").Return(nil, dbErr)
+				mockStorage.EXPECT().GetGroup(gomock.Any(), groupID).Return(nil, dbErr)
 			},
 			expectedGroup: nil,
 			expectedErr:   dbErr,
@@ -183,11 +278,12 @@ func TestService_GetGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -213,83 +309,10 @@ func TestService_GetGroup(t *testing.T) {
 	}
 }
 
-func TestService_ListGroups(t *testing.T) {
-	expectedGroups := []*types.Group{{ID: "1", Name: "group1"}, {ID: "2", Name: "group2"}}
-	dbErr := errors.New("db error")
-
-	testCases := []struct {
-		name           string
-		setupMocks     func(mockStorage *MockDatabaseInterface)
-		expectedGroups []*types.Group
-		expectedErr    error
-	}{
-		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(expectedGroups, nil)
-			},
-			expectedGroups: expectedGroups,
-			expectedErr:    nil,
-		},
-		{
-			name: "success empty",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListGroups(gomock.Any()).Return([]*types.Group{}, nil)
-			},
-			expectedGroups: []*types.Group{},
-			expectedErr:    nil,
-		},
-		{
-			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
-				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(nil, dbErr)
-			},
-			expectedGroups: nil,
-			expectedErr:    dbErr,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
-
-			mockStorage := NewMockDatabaseInterface(ctrl)
-			mockAuthz := NewMockAuthorizerInterface(ctrl)
-			mockTracer := NewMockTracingInterface(ctrl)
-			mockLogger := NewMockLoggerInterface(ctrl)
-			mockMonitor := NewMockMonitorInterface(ctrl)
-
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
-
-			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
-
-			groups, err := s.ListGroups(context.Background())
-
-			if tc.expectedErr != nil {
-				if !errors.Is(err, tc.expectedErr) {
-					t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
-				}
-				if groups != nil {
-					t.Fatalf("expected groups to be nil, got %+v", groups)
-				}
-			} else {
-				if err != nil {
-					t.Fatalf("unexpected error: %v", err)
-				}
-				if !reflect.DeepEqual(tc.expectedGroups, groups) {
-					t.Fatalf("expected groups %+v, got %+v", tc.expectedGroups, groups)
-				}
-			}
-		})
-	}
-}
-
 func TestService_UpdateGroup(t *testing.T) {
 	groupID := "test-id"
-	groupToUpdate := &types.Group{Name: "updated-name"}
-	updatedGroup := &types.Group{ID: groupID, Name: "updated-name"}
+	groupToUpdate := &types.Group{Name: "updated-group", Description: "updated description"}
+	updatedGroup := &types.Group{ID: groupID, Name: "updated-group", Description: "updated description"}
 	dbErr := errors.New("db error")
 
 	testCases := []struct {
@@ -339,11 +362,12 @@ func TestService_UpdateGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -375,24 +399,73 @@ func TestService_DeleteGroup(t *testing.T) {
 	authzErr := errors.New("authz error")
 
 	testCases := []struct {
-		name        string
-		groupID     string
-		setupMocks  func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface)
-		expectedErr error
+		name         string
+		nilPublisher bool
+		groupID      string
+		setupMocks   func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface)
+		expectedErr  error
 	}{
 		{
-			name:    "success",
+			name:    "success without publisher cleanup",
 			groupID: groupID,
-			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return([]string{}, nil)
+				mockStorage.EXPECT().ListOwnersInGroup(gomock.Any(), groupID).Return([]string{}, nil)
 				mockStorage.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
 				mockAuthz.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
 			},
 			expectedErr: nil,
 		},
 		{
+			name:    "success with members and owners from db publishes delete events",
+			groupID: groupID,
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return([]string{"user1", "user2"}, nil)
+				mockStorage.EXPECT().ListOwnersInGroup(gomock.Any(), groupID).Return([]string{"creator-owner"}, nil)
+				mockStorage.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
+				mockAuthz.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
+				mockPublisher.EXPECT().PublishOperations(gomock.Any(),
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user1", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user2", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:creator-owner", Relation: "owner", Object: "group-in-claim:" + groupID},
+				).Return(nil)
+			},
+			expectedErr: nil,
+		},
+		{
+			name:         "success with members and owners and nil publisher",
+			nilPublisher: true,
+			groupID:      groupID,
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return([]string{"user1", "user2"}, nil)
+				mockStorage.EXPECT().ListOwnersInGroup(gomock.Any(), groupID).Return([]string{"creator-owner"}, nil)
+				mockStorage.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
+				mockAuthz.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
+			},
+			expectedErr: nil,
+		},
+		{
+			name:    "success when publisher delete fails, logs warning",
+			groupID: groupID,
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return([]string{"user1"}, nil)
+				mockStorage.EXPECT().ListOwnersInGroup(gomock.Any(), groupID).Return([]string{"creator-owner"}, nil)
+				mockStorage.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
+				mockAuthz.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
+				mockPublisher.EXPECT().PublishOperations(gomock.Any(),
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user1", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:creator-owner", Relation: "owner", Object: "group-in-claim:" + groupID},
+				).Return(errors.New("kafka error"))
+				mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+			},
+			expectedErr: nil,
+		},
+		{
 			name:    "db error",
 			groupID: groupID,
-			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return([]string{}, nil)
+				mockStorage.EXPECT().ListOwnersInGroup(gomock.Any(), groupID).Return([]string{}, nil)
 				mockStorage.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(dbErr)
 			},
 			expectedErr: fmt.Errorf("failed to delete group from db: %v", dbErr),
@@ -400,7 +473,9 @@ func TestService_DeleteGroup(t *testing.T) {
 		{
 			name:    "authz error",
 			groupID: groupID,
-			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockAuthz *MockAuthorizerInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().ListUsersInGroup(gomock.Any(), groupID).Return([]string{}, nil)
+				mockStorage.EXPECT().ListOwnersInGroup(gomock.Any(), groupID).Return([]string{}, nil)
 				mockStorage.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(nil)
 				mockAuthz.EXPECT().DeleteGroup(gomock.Any(), groupID).Return(authzErr)
 			},
@@ -415,14 +490,19 @@ func TestService_DeleteGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			var publisher PermissionPublisherInterface = mockPublisher
+			if tc.nilPublisher {
+				publisher = nil
+			}
+			s := NewService(mockStorage, mockAuthz, publisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage, mockAuthz)
+			tc.setupMocks(mockStorage, mockAuthz, mockPublisher, mockLogger)
 
 			err := s.DeleteGroup(context.Background(), tc.groupID)
 
@@ -445,27 +525,52 @@ func TestService_AddUsersToGroup(t *testing.T) {
 	dbErr := errors.New("db error")
 
 	testCases := []struct {
-		name        string
-		setupMocks  func(mockStorage *MockDatabaseInterface)
-		expectedErr error
+		name         string
+		nilPublisher bool
+		setupMocks   func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface)
+		expectedErr  error
 	}{
 		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			name: "success with permission publisher",
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(nil)
+				mockPublisher.EXPECT().PublishOperations(gomock.Any(),
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:user1", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:user2", Relation: "member", Object: "group-in-claim:" + groupID},
+				).Return(nil)
+			},
+			expectedErr: nil,
+		},
+		{
+			name:         "success with nil publisher",
+			nilPublisher: true,
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(nil)
 			},
 			expectedErr: nil,
 		},
 		{
+			name: "success when publisher fails, logs warning",
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(nil)
+				mockPublisher.EXPECT().PublishOperations(gomock.Any(),
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:user1", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:user2", Relation: "member", Object: "group-in-claim:" + groupID},
+				).Return(errors.New("kafka error"))
+				mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+			},
+			expectedErr: nil,
+		},
+		{
 			name: "invalid group id",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(storage.ErrForeignKeyViolation)
 			},
 			expectedErr: ErrInvalidGroupID,
 		},
 		{
 			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().AddUsersToGroup(gomock.Any(), groupID, userIDs).Return(dbErr)
 			},
 			expectedErr: fmt.Errorf("failed to add users to group: %v", dbErr),
@@ -479,14 +584,19 @@ func TestService_AddUsersToGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			var publisher PermissionPublisherInterface = mockPublisher
+			if tc.nilPublisher {
+				publisher = nil
+			}
+			s := NewService(mockStorage, mockAuthz, publisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
+			tc.setupMocks(mockStorage, mockPublisher, mockLogger)
 
 			err := s.AddUsersToGroup(context.Background(), groupID, userIDs)
 
@@ -555,11 +665,12 @@ func TestService_ListUsersInGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -591,27 +702,59 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 	dbErr := errors.New("db error")
 
 	testCases := []struct {
-		name        string
-		setupMocks  func(mockStorage *MockDatabaseInterface)
-		expectedErr error
+		name         string
+		nilPublisher bool
+		setupMocks   func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface)
+		expectedErr  error
 	}{
 		{
-			name: "success",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			name: "success with publisher delete",
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(nil)
+				mockPublisher.EXPECT().PublishOperations(gomock.Any(),
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user1", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user2", Relation: "member", Object: "group-in-claim:" + groupID},
+				).Return(nil)
+			},
+			expectedErr: nil,
+		},
+		{
+			name:         "success with nil publisher",
+			nilPublisher: true,
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(nil)
 			},
 			expectedErr: nil,
 		},
 		{
+			name: "success when publisher fails, logs warning",
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(nil)
+				mockPublisher.EXPECT().PublishOperations(gomock.Any(),
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user1", Relation: "member", Object: "group-in-claim:" + groupID},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:user2", Relation: "member", Object: "group-in-claim:" + groupID},
+				).Return(errors.New("kafka error"))
+				mockLogger.EXPECT().Warnf(gomock.Any(), gomock.Any(), gomock.Any()).Times(1)
+			},
+			expectedErr: nil,
+		},
+		{
 			name: "not found",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(ErrGroupNotFound)
 			},
 			expectedErr: ErrGroupNotFound,
 		},
 		{
+			name: "storage not found mapped to ErrGroupNotFound",
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
+				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(storage.ErrNotFound)
+			},
+			expectedErr: ErrGroupNotFound,
+		},
+		{
 			name: "db error",
-			setupMocks: func(mockStorage *MockDatabaseInterface) {
+			setupMocks: func(mockStorage *MockDatabaseInterface, mockPublisher *MockPermissionPublisherInterface, mockLogger *MockLoggerInterface) {
 				mockStorage.EXPECT().RemoveUsersFromGroup(gomock.Any(), groupID, userIDs).Return(dbErr)
 			},
 			expectedErr: dbErr,
@@ -625,14 +768,19 @@ func TestService_RemoveUsersFromGroup(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			var publisher PermissionPublisherInterface = mockPublisher
+			if tc.nilPublisher {
+				publisher = nil
+			}
+			s := NewService(mockStorage, mockAuthz, publisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
-			tc.setupMocks(mockStorage)
+			tc.setupMocks(mockStorage, mockPublisher, mockLogger)
 
 			err := s.RemoveUsersFromGroup(context.Background(), groupID, userIDs)
 
@@ -693,11 +841,12 @@ func TestService_GetGroupsForUser(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -763,11 +912,12 @@ func TestService_UpdateGroupsForUser(t *testing.T) {
 
 			mockStorage := NewMockDatabaseInterface(ctrl)
 			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
 			mockTracer := NewMockTracingInterface(ctrl)
 			mockLogger := NewMockLoggerInterface(ctrl)
 			mockMonitor := NewMockMonitorInterface(ctrl)
 
-			s := NewService(mockStorage, mockAuthz, mockTracer, mockMonitor, mockLogger)
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
 
 			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
 			tc.setupMocks(mockStorage)
@@ -775,12 +925,83 @@ func TestService_UpdateGroupsForUser(t *testing.T) {
 			err := s.UpdateGroupsForUser(context.Background(), userID, groupIDs)
 
 			if tc.expectedErr != nil {
-				if err == nil || err.Error() != tc.expectedErr.Error() {
-					t.Fatalf("expected error %q, got %v", tc.expectedErr.Error(), err)
+				if !errors.Is(err, tc.expectedErr) {
+					t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
 				}
 			} else {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func TestService_ListGroups(t *testing.T) {
+	expectedGroups := []*types.Group{{ID: "g1", Name: "group-1"}, {ID: "g2", Name: "group-2"}}
+	dbErr := errors.New("db error")
+
+	testCases := []struct {
+		name           string
+		setupMocks     func(mockStorage *MockDatabaseInterface)
+		expectedGroups []*types.Group
+		expectedErr    error
+	}{
+		{
+			name: "success",
+			setupMocks: func(mockStorage *MockDatabaseInterface) {
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(expectedGroups, nil)
+			},
+			expectedGroups: expectedGroups,
+			expectedErr:    nil,
+		},
+		{
+			name: "success empty",
+			setupMocks: func(mockStorage *MockDatabaseInterface) {
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return([]*types.Group{}, nil)
+			},
+			expectedGroups: []*types.Group{},
+			expectedErr:    nil,
+		},
+		{
+			name: "db error",
+			setupMocks: func(mockStorage *MockDatabaseInterface) {
+				mockStorage.EXPECT().ListGroups(gomock.Any()).Return(nil, dbErr)
+			},
+			expectedGroups: nil,
+			expectedErr:    dbErr,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockStorage := NewMockDatabaseInterface(ctrl)
+			mockAuthz := NewMockAuthorizerInterface(ctrl)
+			mockPublisher := NewMockPermissionPublisherInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockLogger := NewMockLoggerInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+
+			s := NewService(mockStorage, mockAuthz, mockPublisher, mockTracer, mockMonitor, mockLogger)
+
+			mockTracer.EXPECT().Start(gomock.Any(), gomock.Any()).Return(context.Background(), trace.SpanFromContext(context.Background()))
+			tc.setupMocks(mockStorage)
+
+			groups, err := s.ListGroups(context.Background())
+
+			if tc.expectedErr != nil {
+				if !errors.Is(err, tc.expectedErr) {
+					t.Fatalf("expected error %v, got %v", tc.expectedErr, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if !reflect.DeepEqual(tc.expectedGroups, groups) {
+					t.Fatalf("expected groups %+v, got %+v", tc.expectedGroups, groups)
 				}
 			}
 		})

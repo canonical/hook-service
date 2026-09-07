@@ -189,6 +189,67 @@ func (s *Storage) DeleteGroup(ctx context.Context, id string) error {
 	return nil
 }
 
+// AddGroupOwner records a user as the owner of a group.
+func (s *Storage) AddGroupOwner(ctx context.Context, groupID, userID string) error {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.AddGroupOwner")
+	defer span.End()
+
+	if groupID == "" || userID == "" {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	_, err := s.db.Statement(ctx).
+		Insert("group_members").
+		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at").
+		Values(groupID, userID, "default", types.RoleOwner, now, now).
+		Suffix("ON CONFLICT (group_id, role, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at").
+		ExecContext(ctx)
+	if err != nil {
+		if IsForeignKeyViolation(err) {
+			return WrapForeignKeyError(err, "group does not exist")
+		}
+		return fmt.Errorf("failed to insert group owner: %v", err)
+	}
+
+	return nil
+}
+
+// ListOwnersInGroup retrieves all user IDs that are owners of a group.
+func (s *Storage) ListOwnersInGroup(ctx context.Context, groupID string) ([]string, error) {
+	ctx, span := s.tracer.Start(ctx, "storage.Storage.ListOwnersInGroup")
+	defer span.End()
+
+	rows, err := s.db.Statement(ctx).
+		Select("user_id").
+		From("group_members").
+		Where(sq.Eq{
+			"group_id": groupID,
+			"role":     types.RoleOwner,
+		}).
+		OrderBy("user_id ASC").
+		QueryContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query group owners: %v", err)
+	}
+	defer rows.Close()
+
+	userIDs := make([]string, 0)
+	for rows.Next() {
+		var userID string
+		if err := rows.Scan(&userID); err != nil {
+			return nil, fmt.Errorf("failed to scan user ID: %v", err)
+		}
+		userIDs = append(userIDs, userID)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating group owners: %v", err)
+	}
+
+	return userIDs, nil
+}
+
 // AddUsersToGroup adds multiple users to a group.
 func (s *Storage) AddUsersToGroup(ctx context.Context, groupID string, userIDs []string) error {
 	ctx, span := s.tracer.Start(ctx, "storage.Storage.AddUsersToGroup")
@@ -220,7 +281,7 @@ func (s *Storage) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 	}
 
 	_, err := insert.
-		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at").
+		Suffix("ON CONFLICT (group_id, role, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at").
 		ExecContext(ctx)
 	if err != nil {
 		if IsForeignKeyViolation(err) {
@@ -240,7 +301,10 @@ func (s *Storage) ListUsersInGroup(ctx context.Context, groupID string) ([]strin
 	rows, err := s.db.Statement(ctx).
 		Select("user_id").
 		From("group_members").
-		Where(sq.Eq{"group_id": groupID}).
+		Where(sq.Eq{
+			"group_id": groupID,
+			"role":     types.RoleMember,
+		}).
 		OrderBy("user_id ASC").
 		QueryContext(ctx)
 	if err != nil {
@@ -271,7 +335,11 @@ func (s *Storage) RemoveUsersFromGroup(ctx context.Context, groupID string, user
 
 	_, err := s.db.Statement(ctx).
 		Delete("group_members").
-		Where(sq.Eq{"group_id": groupID, "user_id": users}).
+		Where(sq.Eq{
+			"group_id": groupID,
+			"user_id":  users,
+			"role":     types.RoleMember,
+		}).
 		ExecContext(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to remove users from group: %v", err)
@@ -289,7 +357,10 @@ func (s *Storage) GetGroupsForUser(ctx context.Context, userID string) ([]*types
 		Select("g.id", "g.name", "g.tenant_id", "g.description", "g.type", "g.created_at", "g.updated_at").
 		From("groups g").
 		Join("group_members gm ON g.id = gm.group_id").
-		Where(sq.Eq{"gm.user_id": userID}).
+		Where(sq.Eq{
+			"gm.user_id": userID,
+			"gm.role":    types.RoleMember,
+		}).
 		OrderBy("g.name ASC").
 		QueryContext(ctx)
 	if err != nil {
@@ -330,7 +401,10 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	// Remove groups that are not in the provided list
 	delBuilder := s.db.Statement(ctx).
 		Delete("group_members").
-		Where(sq.Eq{"user_id": userID})
+		Where(sq.Eq{
+			"user_id": userID,
+			"role":    types.RoleMember,
+		})
 
 	if len(uniqueGroupIDs) > 0 {
 		delBuilder = delBuilder.Where(sq.NotEq{"group_id": uniqueGroupIDs})
@@ -349,7 +423,7 @@ func (s *Storage) UpdateGroupsForUser(ctx context.Context, userID string, groupI
 	insert := s.db.Statement(ctx).
 		Insert("group_members").
 		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at").
-		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
+		Suffix("ON CONFLICT (group_id, role, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
 
 	for _, groupID := range uniqueGroupIDs {
 		insert = insert.Values(groupID, userID, "default", types.RoleMember, now, now)
@@ -441,7 +515,10 @@ func (s *Storage) SyncGroupMembers(ctx context.Context, groupID string, userIDs 
 	// Remove members that are not in the provided list
 	delBuilder := s.db.Statement(ctx).
 		Delete("group_members").
-		Where(sq.Eq{"group_id": groupID})
+		Where(sq.Eq{
+			"group_id": groupID,
+			"role":     types.RoleMember,
+		})
 
 	if len(uniqueUserIDs) > 0 {
 		delBuilder = delBuilder.Where(sq.NotEq{"user_id": uniqueUserIDs})
@@ -460,7 +537,7 @@ func (s *Storage) SyncGroupMembers(ctx context.Context, groupID string, userIDs 
 	insert := s.db.Statement(ctx).
 		Insert("group_members").
 		Columns("group_id", "user_id", "tenant_id", "role", "created_at", "updated_at").
-		Suffix("ON CONFLICT (group_id, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
+		Suffix("ON CONFLICT (group_id, role, user_id) DO UPDATE SET updated_at = EXCLUDED.updated_at")
 
 	for _, userID := range uniqueUserIDs {
 		insert = insert.Values(groupID, userID, "default", types.RoleMember, now, now)
@@ -484,7 +561,10 @@ func (s *Storage) StreamGroupsForUser(ctx context.Context, tenantID, userID stri
 	ctx, cancel := context.WithTimeout(ctx, s.streamTimeout)
 	defer cancel()
 
-	whereClause := sq.Eq{"gm.user_id": userID}
+	whereClause := sq.Eq{
+		"gm.user_id": userID,
+		"gm.role":    types.RoleMember,
+	}
 	if tenantID != "" {
 		whereClause["g.tenant_id"] = tenantID
 	}
@@ -527,7 +607,10 @@ func (s *Storage) StreamUsersInGroup(ctx context.Context, tenantID, groupID stri
 	ctx, cancel := context.WithTimeout(ctx, s.streamTimeout)
 	defer cancel()
 
-	whereClause := sq.Eq{"group_id": groupID}
+	whereClause := sq.Eq{
+		"group_id": groupID,
+		"role":     types.RoleMember,
+	}
 	if tenantID != "" {
 		whereClause["tenant_id"] = tenantID
 	}

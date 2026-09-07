@@ -5,6 +5,7 @@ package authentication
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"google.golang.org/grpc"
@@ -15,8 +16,10 @@ import (
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
+	"github.com/canonical/hook-service/pkg/groups"
 )
 
+// GrpcInterceptor provides gRPC authentication interceptors using a TokenVerifierInterface.
 type GrpcInterceptor struct {
 	verifier TokenVerifierInterface
 
@@ -25,6 +28,7 @@ type GrpcInterceptor struct {
 	logger  logging.LoggerInterface
 }
 
+// StreamAuthenticate returns a gRPC StreamServerInterceptor that validates incoming Bearer JWT tokens.
 func (i *GrpcInterceptor) StreamAuthenticate() grpc.StreamServerInterceptor {
 	return func(srv interface{}, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		ctx, span := i.tracer.Start(ss.Context(), "authentication.GrpcInterceptor.StreamAuthenticate")
@@ -47,14 +51,17 @@ func (i *GrpcInterceptor) StreamAuthenticate() grpc.StreamServerInterceptor {
 
 		token := strings.TrimPrefix(bearer, "Bearer ")
 
-		authorized, err := i.verifier.VerifyToken(ctx, token)
+		claims, err := i.verifier.VerifyToken(ctx, token)
 		if err != nil {
-			i.logger.Debugf("gRPC JWT verification failed: %v", err)
-			return status.Errorf(codes.Unauthenticated, "invalid token")
+			if errors.Is(err, ErrInvalidToken) {
+				i.logger.Debugf("gRPC JWT verification failed: %v", err)
+				return status.Errorf(codes.Unauthenticated, "invalid token")
+			}
+			return status.Errorf(codes.Unauthenticated, "unauthorized")
 		}
 
-		if !authorized {
-			return status.Errorf(codes.Unauthenticated, "unauthorized")
+		if claims != nil && claims.Subject != "" {
+			ctx = groups.ContextWithUserID(ctx, claims.Subject)
 		}
 
 		return handler(srv, &contextedServerStream{ServerStream: ss, ctx: ctx})
@@ -70,6 +77,7 @@ func (s *contextedServerStream) Context() context.Context {
 	return s.ctx
 }
 
+// NewGrpcInterceptor creates a new GrpcInterceptor instance.
 func NewGrpcInterceptor(verifier TokenVerifierInterface, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *GrpcInterceptor {
 	return &GrpcInterceptor{
 		verifier: verifier,
