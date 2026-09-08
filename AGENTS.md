@@ -68,6 +68,8 @@ The last three parameters (tracer, monitor, logger) are **always** in this order
   * Generate explicit table-driven mock layouts detailing input/output matrix variations.
   * No mocks are to be included in version-controlled code. The usage of `go:generate` annotations for dynamic mock generation is an absolute must.
   * Integration tests MUST isolate external dependencies (databases like Postgres, external APIs like Hydra) dynamically using the `testcontainers` library. Relying on local host-bound dependencies or static docker-compose setups in integration tests is forbidden.
+  * Shared container fixtures live in `internal/testhelpers` (`SetupPostgres`, `SetupHydra`, `SetupOpenFGA`, `RunMigrations`, `CreateHydraClient`, `GetAccessToken`). New integration tests MUST use these helpers instead of defining local container setup; helpers register teardown via `t.Cleanup` and fail hard on any error.
+  * A container runtime (Docker or rootless Podman socket via `DOCKER_HOST`) is a hard prerequisite for integration tests. Container-start failure is fatal (`t.Fatalf`), never skipped — a silently skipped integration suite masks exactly the failures CI exists to catch. Unit-only runs use `go test -short ./...`; every container-dependent test MUST guard on `testing.Short()`.
 
 ---
 
