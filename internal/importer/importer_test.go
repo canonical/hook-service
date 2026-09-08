@@ -8,22 +8,13 @@ import (
 	"errors"
 	"testing"
 
-	"fmt"
-	"strings"
-	"time"
-
 	"github.com/canonical/hook-service/internal/types"
 	trace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/storage"
-	"github.com/canonical/hook-service/migrations"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/canonical/hook-service/internal/testhelpers"
 )
 
 //go:generate mockgen -build_flags=--mod=mod -package importer -destination ./mock_importer.go -source=./interfaces.go
@@ -119,94 +110,6 @@ func TestImporterRun(t *testing.T) {
 	}
 }
 
-// sanitizeName converts test names to valid container names.
-func sanitizeName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, " ", "-")
-	name = strings.ToLower(name)
-	return name
-}
-
-func setupTestPostgres(t *testing.T) (string, *postgres.PostgresContainer) {
-	t.Helper()
-	ctx := context.Background()
-
-	containerName := fmt.Sprintf("hook-importer-%s", sanitizeName(t.Name()))
-
-	var pgContainer *postgres.PostgresContainer
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Skipf("Skipping: Docker not available (%v)", r)
-			}
-		}()
-		var err error
-		pgContainer, err = postgres.Run(ctx,
-			"postgres:16-alpine",
-			postgres.WithDatabase("testdb"),
-			postgres.WithUsername("testuser"),
-			postgres.WithPassword("testpass"),
-			testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
-				ContainerRequest: testcontainers.ContainerRequest{
-					Name: containerName,
-				},
-			}),
-		)
-		if err != nil {
-			t.Fatalf("Failed to start PostgreSQL container: %v", err)
-		}
-	}()
-
-	if pgContainer == nil {
-		return "", nil
-	}
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("Failed to get connection string: %v", err)
-	}
-
-	// Wait for PostgreSQL to be ready
-	maxRetries := 10
-	for i := 0; i < maxRetries; i++ {
-		config, err := pgx.ParseConfig(connStr)
-		if err != nil {
-			t.Fatalf("Failed to parse config: %v", err)
-		}
-		sqlDB := stdlib.OpenDB(*config)
-		if err := sqlDB.Ping(); err == nil {
-			sqlDB.Close()
-			break
-		}
-		sqlDB.Close()
-		if i < maxRetries-1 {
-			time.Sleep(time.Second)
-		}
-	}
-
-	return connStr, pgContainer
-}
-
-func runMigrations(t *testing.T, connStr string) {
-	t.Helper()
-	config, err := pgx.ParseConfig(connStr)
-	if err != nil {
-		t.Fatalf("Failed to parse DSN: %v", err)
-	}
-
-	sqlDB := stdlib.OpenDB(*config)
-	defer sqlDB.Close()
-
-	goose.SetBaseFS(migrations.EmbedMigrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatalf("Failed to set dialect: %v", err)
-	}
-
-	if err := goose.Up(sqlDB, "."); err != nil {
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
-}
-
 func TestImporterIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -214,18 +117,7 @@ func TestImporterIntegration(t *testing.T) {
 
 	t.Parallel()
 
-	connStr, container := setupTestPostgres(t)
-	if container == nil {
-		return // skipped due to Docker unavailability
-	}
-	defer func() {
-		if err := container.Terminate(context.Background()); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	// Run migrations to create schema
-	runMigrations(t, connStr)
+	connStr := testhelpers.SetupPostgres(t)
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
@@ -504,17 +396,7 @@ func TestImporterSyncIntegration(t *testing.T) {
 
 	t.Parallel()
 
-	connStr, container := setupTestPostgres(t)
-	if container == nil {
-		return // skipped due to Docker unavailability
-	}
-	defer func() {
-		if err := container.Terminate(context.Background()); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
-	}()
-
-	runMigrations(t, connStr)
+	connStr := testhelpers.SetupPostgres(t)
 
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
