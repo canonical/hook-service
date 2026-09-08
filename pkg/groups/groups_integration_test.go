@@ -75,6 +75,10 @@ func setupIntegrationEnv(t *testing.T) (string, func()) {
 }
 
 func TestGroupLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	baseURL, cleanup := setupIntegrationEnv(t)
 	defer cleanup()
 
@@ -154,6 +158,10 @@ func TestGroupLifecycle(t *testing.T) {
 }
 
 func TestUserMembership(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	baseURL, cleanup := setupIntegrationEnv(t)
 	defer cleanup()
 

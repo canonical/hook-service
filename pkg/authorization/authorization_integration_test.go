@@ -77,6 +77,10 @@ func setupIntegrationEnv(t *testing.T) (string, func()) {
 }
 
 func TestAppAuthorization(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
 	baseURL, cleanup := setupIntegrationEnv(t)
 	defer cleanup()
 
