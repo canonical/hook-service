@@ -4,10 +4,8 @@
 package groups_test
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,79 +24,6 @@ import (
 	"github.com/canonical/hook-service/pkg/authentication"
 	"github.com/canonical/hook-service/pkg/web"
 )
-
-type IntegrationClient struct {
-	t       *testing.T
-	baseURL string
-	client  *http.Client
-}
-
-func (c *IntegrationClient) Request(method, path string, body interface{}) (int, []byte) {
-	var bodyReader io.Reader
-	if body != nil {
-		jsonBody, err := json.Marshal(body)
-		if err != nil {
-			c.t.Fatalf("failed to marshal body: %v", err)
-		}
-		bodyReader = bytes.NewReader(jsonBody)
-	}
-
-	req, err := http.NewRequest(method, c.baseURL+path, bodyReader)
-	if err != nil {
-		c.t.Fatalf("failed to create request: %v", err)
-	}
-
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		c.t.Fatalf("failed to execute request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.t.Fatalf("failed to read response body: %v", err)
-	}
-
-	return resp.StatusCode, respBody
-}
-
-func (c *IntegrationClient) CreateGroup() string {
-	name := fmt.Sprintf("test-group-%d", time.Now().UnixNano())
-	body := map[string]interface{}{
-		"name":        name,
-		"description": "A test group",
-		"type":        "local",
-	}
-	status, respBody := c.Request(http.MethodPost, "/groups", body)
-	if status != http.StatusOK {
-		c.t.Fatalf("expected status OK, got %d. Body: %s", status, string(respBody))
-	}
-
-	var resp struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	err := json.Unmarshal(respBody, &resp)
-	if err != nil {
-		c.t.Fatalf("failed to unmarshal response: %v", err)
-	}
-	if len(resp.Data) == 0 {
-		c.t.Fatal("expected created group data, got empty list")
-	}
-	return resp.Data[0].ID
-}
-
-func (c *IntegrationClient) DeleteGroup(groupID string) {
-	status, _ := c.Request(http.MethodDelete, "/groups/"+groupID, nil)
-	if status != http.StatusOK {
-		c.t.Fatalf("failed to delete group %s, status: %d", groupID, status)
-	}
-}
 
 func setupIntegrationEnv(t *testing.T) (string, func()) {
 	t.Helper()
@@ -153,11 +78,7 @@ func TestGroupLifecycle(t *testing.T) {
 	baseURL, cleanup := setupIntegrationEnv(t)
 	defer cleanup()
 
-	client := &IntegrationClient{
-		t:       t,
-		baseURL: baseURL + "/api/v0/authz",
-		client:  &http.Client{Timeout: 10 * time.Second},
-	}
+	client := testhelpers.NewIntegrationClient(t, baseURL+"/api/v0/authz")
 	groupID := client.CreateGroup()
 	defer client.DeleteGroup(groupID)
 
@@ -236,11 +157,7 @@ func TestUserMembership(t *testing.T) {
 	baseURL, cleanup := setupIntegrationEnv(t)
 	defer cleanup()
 
-	client := &IntegrationClient{
-		t:       t,
-		baseURL: baseURL + "/api/v0/authz",
-		client:  &http.Client{Timeout: 10 * time.Second},
-	}
+	client := testhelpers.NewIntegrationClient(t, baseURL+"/api/v0/authz")
 	groupID := client.CreateGroup()
 	defer client.DeleteGroup(groupID)
 

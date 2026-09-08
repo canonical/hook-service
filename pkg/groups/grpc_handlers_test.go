@@ -4,12 +4,10 @@
 package groups
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	reflect "reflect"
@@ -918,41 +916,9 @@ func TestMapErrorToStatus(t *testing.T) {
 	}
 }
 
-// testClient wraps an httptest.Server with helper methods for the authorization API.
+// testClient embeds the shared integration HTTP client for the authorization API.
 type testClient struct {
-	t      *testing.T
-	server *httptest.Server
-	http   *http.Client
-}
-
-func (c *testClient) Request(method, path string, body interface{}) (int, []byte) {
-	c.t.Helper()
-
-	var reqBody io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			c.t.Fatalf("failed to marshal request body: %v", err)
-		}
-		reqBody = bytes.NewReader(b)
-	}
-
-	req, err := http.NewRequestWithContext(context.Background(), method, c.server.URL+path, reqBody)
-	if err != nil {
-		c.t.Fatalf("failed to create request: %v", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		c.t.Fatalf("request to %s %s failed: %v", method, path, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, respBody
+	*testhelpers.IntegrationClient
 }
 
 // newIntegrationServer spins up Postgres, runs migrations, and wires all gRPC-gateway
@@ -1004,7 +970,7 @@ func newIntegrationServer(t *testing.T) (*testClient, func()) {
 		dbClient.Close()
 	}
 
-	return &testClient{t: t, server: srv, http: srv.Client()}, cleanup
+	return &testClient{IntegrationClient: testhelpers.NewIntegrationClient(t, srv.URL)}, cleanup
 }
 
 // createTestGroup creates a group via the groups API and returns its ID.
@@ -1044,9 +1010,6 @@ func TestGroupsLifecycle(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	groupName := fmt.Sprintf("test-group-%d", time.Now().UnixNano())
@@ -1148,9 +1111,6 @@ func TestUserMembership(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	groupID := createTestGroup(t, client, fmt.Sprintf("um-group-%d", time.Now().UnixNano()))
@@ -1259,9 +1219,6 @@ func TestAddUserToMultipleGroups(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	group1ID := createTestGroup(t, client, fmt.Sprintf("multi-1-%d", time.Now().UnixNano()))
@@ -1313,9 +1270,6 @@ func TestSetUserGroups(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	group1ID := createTestGroup(t, client, fmt.Sprintf("set-1-%d", time.Now().UnixNano()))
@@ -1364,9 +1318,6 @@ func TestUserMembershipErrors(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	t.Run("ListUsersInNonExistentGroup", func(t *testing.T) {
