@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"math"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +19,16 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// shared holds lazily-started containers for the whole test binary. Tests
+// needing a single database get an isolated schema in one shared container.
+var shared testhelpers.SharedContainers
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	shared.Close() // no-op if no container was started
+	os.Exit(code)
+}
+
 func TestIntegration_ReplicaUnconfigured(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
@@ -25,7 +36,7 @@ func TestIntegration_ReplicaUnconfigured(t *testing.T) {
 
 	t.Parallel()
 
-	connStr := testhelpers.SetupPostgres(t)
+	connStr := shared.Postgres.IsolatedDB(t)
 
 	logger := &integrationLogger{t: t}
 
@@ -191,7 +202,7 @@ func TestIntegration_MetricsValidation(t *testing.T) {
 
 	t.Parallel()
 
-	connStr := testhelpers.SetupPostgres(t)
+	connStr := shared.Postgres.IsolatedDB(t)
 
 	logger := &integrationLogger{t: t}
 
