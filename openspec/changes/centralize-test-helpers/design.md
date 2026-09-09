@@ -98,4 +98,10 @@ Amendments agreed during PR review, superseding the earlier decisions noted:
 - **`SetupPostgres` returns a bare DSN**: `connStr := testhelpers.SetupPostgres(t)` with migrations folded into the helper; the `PostgresEnv` struct was deleted. `RunMigrations(t, connStr)` remains available for callers that manage their own containers.
 - **`RunMigrations` uses `goose.NewProvider`**: a per-call provider instead of the package-level goose API, so parallel tests cannot race on goose's global base FS and dialect.
 - **`HydraEnv.Issuer` added**: carries the configured issuer URL (the claim issued tokens bear), distinct from the mapped public address clients reach Hydra through.
-- **Scope expanded**: `internal/importer` migration was brought into this PR (previously a Non-Goal).
+- **`OpenFGAEnv` deleted**: `SetupOpenFGA` returns `*openfga.Client` directly (only the client was ever used by callers).
+- **Dead nil-guards deleted**: 13 unreachable `if client == nil` guards removed across `pkg/authorization` and `pkg/groups` test files.
+- **`IntegrationClient` fully consolidated**: `testClient` in `pkg/groups` and `pkg/authorization` embeds `*testhelpers.IntegrationClient`, deleting redundant in-file `Request` implementations.
+- **Redundant Hydra tests merged**: `pkg/authentication/authenticator_test.go` deleted; single surviving test in `authentication_integration_test.go` uses `HydraEnv.Issuer`.
+- **Scope expanded**: `internal/importer` migration was brought into this PR (previously a Non-Goal), eliminating `recover` -> `t.Skipf` repo-wide.
+- **`make test-unit` added**: provides the documented unit-only path (`go test -short ./...`) for environments without a container runtime.
+- **Obsolete E2E workflow & make target removed**: `.github/workflows/e2e-test.yaml`, `ci.yaml` e2e job, and `test-e2e` in `Makefile` deleted following `tests/e2e/` removal.

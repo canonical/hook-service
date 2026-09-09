@@ -15,7 +15,7 @@
 - [x] 2.7 `internal/testhelpers/sanitize.go` — `SanitizeName(name string) string` (canonical implementation; container names built internally as `<prefix>-<SanitizeName(t.Name())>-<nano>`, no caller suffix param)
 - [x] 2.8 AGPL-3.0-only headers on all new files; doc comments on every exported function; standard-library assertions only
 
-Note: API amended during review — `SetupPostgres` returns a bare DSN (`PostgresEnv` deleted, migrations folded in), `sanitize.go`/`SanitizeName` removed (2.7 superseded), `HydraEnv.Issuer` added. See design.md "Review Amendments".
+Note: API amended during review — `SetupPostgres` returns a bare DSN (`PostgresEnv` deleted, migrations folded in), `OpenFGAEnv` deleted (`SetupOpenFGA` returns `*openfga.Client`), `sanitize.go`/`SanitizeName` removed (2.7 superseded), `HydraEnv.Issuer` added. See design.md "Review Amendments".
 
 ## 3. Phase 1, Commit 2 — Migrate Call Sites
 
@@ -23,7 +23,7 @@ Note: API amended during review — `SetupPostgres` returns a bare DSN (`Postgre
 - [x] 3.2 `pkg/authorization/authorization_integration_test.go` — additionally delete `setupTestOpenFGA` and the inline store/model wiring; use `SetupOpenFGA`
 - [x] 3.3 `pkg/authentication/authentication_integration_test.go` — additionally delete `setupTestHydra`, `setupHydraClient`, `getJWTToken`; drop the `suffix` parameter plumbing
 - [x] 3.4 `internal/db/replica_integration_test.go` — delete local copies; note in commit message that start-failure stays fail-hard (now uniform across packages) and skip-on-no-Docker is removed
-- [x] 3.5 Migrate remaining in-package duplicates found during implementation: `pkg/groups/grpc_handlers_test.go`, `pkg/authorization/grpc_handlers_test.go`, `pkg/authentication/authenticator_test.go`, `pkg/groups/mapping_grpc_handlers_test.go` (reuses groups helpers)
+- [x] 3.5 Migrate remaining in-package duplicates found during implementation: `pkg/groups/grpc_handlers_test.go`, `pkg/authorization/grpc_handlers_test.go`, `pkg/authentication/authenticator_test.go` (deleted/merged into `authentication_integration_test.go`), `pkg/groups/mapping_grpc_handlers_test.go` (reuses groups helpers)
 - [x] 3.6 Verify no `setupTestPostgres`, `runMigrations`, `runMigrationsOnDSN`, `sanitizeName`, `setupTestOpenFGA`, `setupTestHydra`, `setupHydraClient`, or `getJWTToken` remain in the four packages
 - [x] 3.7 `internal/importer/importer_test.go` — delete `setupTestPostgres`, `runMigrations`, `sanitizeName`; use `internal/testhelpers` (scope expanded per review; `salesforce_driver_test.go` is unit-only and needed no changes)
 
@@ -38,6 +38,8 @@ Note: API amended during review — `SetupPostgres` returns a bare DSN (`Postgre
 - [x] 5.3 Coverage per package within 5% of baseline (expect net improvement from deleted duplicates)
 - [x] 5.4 Update `AGENTS.md` testing section: integration tests require a Docker/Podman socket; `go test -short` is the unit-only mode; fail-fast (no skip) semantics are intentional
 - [x] 5.5 PR description flags the Hydra image divergence (`oryd/hydra:v25.4.0` vs `ghcr.io/canonical/hydra:2.3.0-canonical`) as a follow-up
+- [x] 5.6 Add `make test-unit` target (`go test -short ./...`)
+- [x] 5.7 Remove obsolete `.github/workflows/e2e-test.yaml`, `ci.yaml` e2e job, and `Makefile:test-e2e`
 
 ## 6. Phase 2 — Shared Fixtures (Follow-up PR)
 

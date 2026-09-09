@@ -57,9 +57,12 @@ None. This change touches test infrastructure only; no runtime behavior, API con
 | `pkg/authorization/authorization_integration_test.go` | Delete local helpers + OpenFGA store/model wiring, use `internal/testhelpers` |
 | `pkg/authorization/grpc_handlers_test.go` | Delete local helpers, use `internal/testhelpers` |
 | `pkg/authentication/authentication_integration_test.go` | Delete local helpers + Hydra/OAuth helpers, drop `suffix` plumbing |
-| `pkg/authentication/authenticator_test.go` | Delete local Hydra/OAuth helpers, use `internal/testhelpers` |
+| `pkg/authentication/authenticator_test.go` | Deleted (redundant Hydra test merged into `authentication_integration_test.go` per review) |
 | `internal/db/replica_integration_test.go` | Delete local helpers; start-failure semantics change `t.Fatalf` → same fail-hard behavior, now uniform |
 | `internal/importer/importer_test.go` | Delete local helpers, use `internal/testhelpers` (scope expanded per review) |
+| `Makefile` | Add `test-unit` target (`go test -short`), remove obsolete `test-e2e` |
+| `.github/workflows/ci.yaml` | Remove obsolete `e2e-test` job |
+| `.github/workflows/e2e-test.yaml` | Deleted (obsolete workflow) |
 | `AGENTS.md` | Document the integration-test prerequisites (Docker/Podman socket) and the `-short` unit-only convention |
 
 ### Dependencies
@@ -72,7 +75,7 @@ This work is a follow-up to [#286](https://github.com/canonical/hook-service/pul
 
 ### CI Impact
 
-None structurally: `unittest.yaml` already installs Podman and exposes a rootless socket before `make test`, so fail-fast semantics hold in CI. Local developer docs must state that integration tests require a Docker/Podman socket and that `go test -short ./...` runs unit tests only.
+`unittest.yaml` already installs Podman and exposes a rootless socket before `make test`, so fail-fast semantics hold in CI. The obsolete `.github/workflows/e2e-test.yaml` workflow and the `test-e2e` Makefile target were removed, as all tests are now run via `make test` (or `make test-unit` for unit-only runs). Local developer docs state that integration tests require a Docker/Podman socket and that `go test -short ./...` runs unit tests only.
 
 ### Performance Regressions
 
