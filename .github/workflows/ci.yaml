@@ -14,6 +14,9 @@ on:
       - "*"
 
 jobs:
+  openspec-check:
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: ./.github/workflows/openspec-check.yaml
   unit-test:
     uses: ./.github/workflows/unittest.yaml
   e2e-test:

@@ -1,42 +1,55 @@
 schema: spec-driven
 
 context: |
-  hook-service: Go OAuth token hook endpoint integrating Ory Kratos (identity), Ory Hydra (OAuth2/OIDC), OpenFGA (authorization), and Salesforce (optional group provider).
+  hook-service: Identity platform webhook service integrating Ory Kratos (identity management), Ory Hydra (OAuth2/OIDC), OpenFGA (fine-grained authorization), and optional Salesforce (group management).
+  The service acts as a token hook endpoint that enriches OAuth tokens with user groups and enforces authorization policies.
 
-  Tech stack: Go, PostgreSQL (squirrel SQL builder), gRPC/gRPC-gateway, OpenFGA, cobra CLI, OpenTelemetry.
+  Tech stack: Go (1.24+), PostgreSQL (squirrel SQL builder, jackc/pgx/v5), Chi router, gRPC/gRPC-gateway (protobuf/v3), OpenFGA, Cobra CLI, OpenTelemetry, Prometheus.
 
-  Packages:
-  - pkg/hooks: OAuth token hook handlers (main business logic)
-  - pkg/authorization: app-level OpenFGA authorization, gRPC handlers
-  - pkg/groups: group CRUD, gRPC handlers
-  - internal/authorization: OpenFGA model management
-  - internal/openfga: low-level OpenFGA client
+  Core Architecture Components:
+  - pkg/hooks: OAuth token hook handlers and orchestration (main business logic entry point)
+  - pkg/authorization: App-level authorization service with gRPC handlers exposing OpenFGA operations
+  - pkg/groups: Group management service with gRPC handlers for CRUD operations
+  - internal/authorization: OpenFGA authorization model management and client wrapper
+  - internal/openfga: Low-level OpenFGA client implementation with batching and model comparison
   - internal/importer: Salesforce import driver + sync logic
-  - internal/storage: PostgreSQL storage layer
-  - pkg/web: HTTP router (chi), wires services + middleware
-  - cmd/: cobra CLI (serve, import, groups, users, migrate)
+  - internal/storage: PostgreSQL storage layer using Squirrel SQL builder
+  - pkg/web: HTTP router setup using Chi, wires services + middleware
+  - cmd/: Cobra CLI commands (serve, import, groups, users, migrate)
 
-  Use conventional commits
-  You are an expert Go backend engineer operating on a highly concurrent identity management service.
-  Always create documentation for new features.
-  Always create tests for new features.
+  We follow Canonical Go best practices as outlined in AGENTS.md.
+  All Go source files must begin with the standard AGPL-3.0-only header.
+  Use conventional commits.
+
+  Product language:
+  - Write OpenSpec proposals and specs in user-facing product behavior language
+  - Requirements should describe the experience, observable behavior, and product contract
+  - Put internal mechanisms in design.md or tasks.md unless the mechanism is itself part of the user-facing contract
+  - Avoid technical jargon in proposals and specs when possible
 
 rules:
-  global:
-    - "All code must adhere to standard Go Project Layout structures."
-    - "Concurrence patterns must strictly leverage context.Context for timeouts and cancellations."    
-  spec:
-    - Every capability spec under openspec/specs/ must include a ## Purpose section before ## Requirements
-    - The ## Purpose section is the single source of truth for design rationale (ADR-style); capture intent, goals, non-goals, and key decisions (with brief alternatives) so no separate ADR or design file is needed
-    - Keep the ## Purpose human-readable: prose and decisions, not machine-generated task lists or file-path dumps
-    - Requirements stay behaviour-driven (SHALL/MUST + #### Scenario blocks); the "why" lives in ## Purpose, the "what" in ## Requirements
   proposal:
-    - Keep proposals concise (under 400 words)
-    - Always include a Non-goals section
+    - Include a "Non-goals" section to clarify what is out of scope for the proposal
+    - Include a "Success Metrics" section defining how we will measure the impact of this feature
     - Reference affected packages by name
+    - Keep proposals concise (under 400 words)
+  specs:
+    - Include a "Purpose" section for each spec to explain the rationale behind the spec
+    - The "Purpose" section is the single source of truth for design rationale (ADR-style); capture intent, goals, non-goals, and key decisions (with brief alternatives)
+    - Cover happy path, validation errors, and edge cases in the spec
+    - Requirements stay behaviour-driven (SHALL/MUST + #### Scenario blocks); the "why" lives in ## Purpose, the "what" in ## Requirements
+    - Explicitly state any breaking changes or backward compatibility requirements
+  design:
+    - All design decisions should be justified with trade-offs and alternatives considered
+    - Include database schema modifications (e.g., tables, indexes, migrations) explicitly when applicable
+    - Include diagrams (Mermaid) or visual aids when describing complex designs
+    - Include security, performance, observability, scalability, migration considerations as applicable to the design
   tasks:
     - Break tasks into single-package units of work
+    - Every task must be independently completable (no implicit ordering within a group)
     - Each task must reference the file(s) it touches
-    - Always include a task for updating/adding tests
-    - "Ensure there are integration tests using testcontainers for external dependencies (e.g. Hydra, Postgres)."
-    - "Race Detection: Execution of `go test -race ./...` must output zero diagnostic failures."
+    - Explicitly list unit, integration, or e2e testing requirements for each task
+    - Include integration tests using testcontainers for external dependencies (Hydra, Postgres, OpenFGA)
+    - Include a verification suite section (e.g. `go test -race ./...` must output zero diagnostic failures)
+    - Include a documentation & rollout section covering any necessary documentation updates and rollout steps
+    - Record deviations from the plan in an "Implementation Notes" section at the end
