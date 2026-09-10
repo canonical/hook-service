@@ -41,12 +41,6 @@ Note: API amended during review — `SetupPostgres` returns a bare DSN (`Postgre
 - [x] 5.6 Add `make test-unit` target (`go test -short ./...`)
 - [x] 5.7 Remove obsolete `.github/workflows/e2e-test.yaml`, `ci.yaml` e2e job, and `Makefile:test-e2e`
 
-## 6. Phase 2 — Shared Fixtures (Follow-up PR)
+## 6. Phase 2 — Shared Fixtures
 
-Phase 2 (`shared.go` / `SharedContainers` / `IsolatedDB`) was REMOVED from this PR per review and returned to follow-up status.
-
-- [ ] 6.1 `internal/testhelpers/shared.go` — `SharedContainers` with `LazyPostgres`/`LazyHydra`/`LazyOpenFGA`, each `sync.Once`-initialized with stored error replayed via `t.Fatalf` on every call after a failed start (deferred to follow-up PR per review)
-- [ ] 6.2 `LazyPostgres.IsolatedDB(t *testing.T) string` — fresh database per test in the shared container, migrations applied, dropped in `t.Cleanup` (template cloning only if timing proves it necessary) (deferred to follow-up PR per review)
-- [ ] 6.3 `SharedContainers.Close()` — no-op when nothing started; called from `TestMain` in adopting packages (deferred to follow-up PR per review)
-- [ ] 6.4 Adopt the pattern in at least one reference package with a `TestMain` cleanup hook (deferred to follow-up PR per review)
-- [ ] 6.5 Verify `go test -run TestPureUnit ./pkg/<adopted>/` starts zero containers; `go test ./pkg/<adopted>/` shares one container across tests (deferred to follow-up PR per review)
+Phase 2 (`shared.go` / `SharedContainers` / `IsolatedDB`) was REMOVED from this PR per review and now lives in the `shared-test-fixtures` change (PR #349), which owns those tasks end-to-end.
