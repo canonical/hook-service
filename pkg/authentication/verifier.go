@@ -1,10 +1,11 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package authentication
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
+// JWTVerifier validates raw JWT tokens against an OIDC verifier and checks subject and scope claims.
 type JWTVerifier struct {
 	verifier        *oidc.IDTokenVerifier
 	allowedSubjects []string
@@ -25,52 +27,50 @@ type JWTVerifier struct {
 	logger  logging.LoggerInterface
 }
 
-func (v *JWTVerifier) VerifyToken(ctx context.Context, rawToken string) (bool, error) {
+// VerifyToken verifies a raw JWT string and validates authorization claims.
+// Returns the extracted claims if valid and authorized, or an error.
+func (v *JWTVerifier) VerifyToken(ctx context.Context, rawToken string) (*Claims, error) {
 	ctx, span := v.tracer.Start(ctx, "authentication.JWTVerifier.VerifyToken")
 	defer span.End()
 
 	token, err := v.verifier.Verify(ctx, rawToken)
 	if err != nil {
-		return false, err
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 
-	var claims struct {
-		Subject string   `json:"sub"`
-		Scope   string   `json:"scope"`
-		Scopes  []string `json:"scp"`
-	}
-
+	var claims Claims
 	if err := token.Claims(&claims); err != nil {
 		v.logger.Debugf("Failed to extract claims: %v", err)
-		return false, err
+		return nil, fmt.Errorf("%w: %v", ErrInvalidToken, err)
 	}
 
 	if len(v.allowedSubjects) > 0 && slices.Contains(v.allowedSubjects, claims.Subject) {
-		return true, nil
+		return &claims, nil
 	}
 
 	if v.requiredScope != "" {
 		if claims.Scope != "" {
 			scopes := strings.Fields(claims.Scope)
 			if slices.Contains(scopes, v.requiredScope) {
-				return true, nil
+				return &claims, nil
 			}
 		}
 		if slices.Contains(claims.Scopes, v.requiredScope) {
-			return true, nil
+			return &claims, nil
 		}
 	}
 
 	if len(v.allowedSubjects) == 0 && v.requiredScope == "" {
 		v.logger.Debugf("No authorization criteria configured")
 		v.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
-		return false, nil
+		return nil, ErrUnauthorized
 	}
 
 	v.logger.Security().AuthzFailure(claims.Subject, "jwt_api_access")
-	return false, nil
+	return nil, ErrUnauthorized
 }
 
+// NewJWTVerifier creates a new JWTVerifier using an OIDC provider.
 func NewJWTVerifier(
 	provider ProviderInterface,
 	issuer string,
@@ -98,6 +98,7 @@ func NewJWTVerifier(
 	return v
 }
 
+// NewJWTVerifierDirect creates a new JWTVerifier directly with an existing IDTokenVerifier.
 func NewJWTVerifierDirect(
 	verifier *oidc.IDTokenVerifier,
 	allowedSubjects []string,
