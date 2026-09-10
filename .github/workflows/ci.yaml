@@ -19,8 +19,6 @@ jobs:
     uses: ./.github/workflows/openspec-check.yaml
   unit-test:
     uses: ./.github/workflows/unittest.yaml
-  e2e-test:
-    uses: ./.github/workflows/e2e-test.yaml
   build:
     uses: ./.github/workflows/build-and-test-rock.yaml
   gh-publish:

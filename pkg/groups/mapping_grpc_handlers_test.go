@@ -22,6 +22,7 @@ import (
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/openfga"
 	"github.com/canonical/hook-service/internal/storage"
+	"github.com/canonical/hook-service/internal/testhelpers"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/internal/types"
 
@@ -191,7 +192,7 @@ type mockGroupMappingServerStream struct {
 	ctx context.Context
 }
 
-func (s *mockGroupMappingServerStream) Context() context.Context { return s.ctx }
+func (s *mockGroupMappingServerStream) Context() context.Context      { return s.ctx }
 func (s *mockGroupMappingServerStream) Send(m *pb.GroupMapping) error { return nil }
 
 type mockUserMappingServerStream struct {
@@ -199,17 +200,13 @@ type mockUserMappingServerStream struct {
 	ctx context.Context
 }
 
-func (s *mockUserMappingServerStream) Context() context.Context { return s.ctx }
+func (s *mockUserMappingServerStream) Context() context.Context     { return s.ctx }
 func (s *mockUserMappingServerStream) Send(m *pb.UserMapping) error { return nil }
 
 func setupMappingIntegrationServer(t *testing.T) (pb.GroupsMappingServiceClient, db.DBClientInterface, func()) {
 	t.Helper()
 
-	connStr, pgContainer := setupTestPostgres(t)
-	if pgContainer == nil {
-		t.Skip("container runtime not available")
-	}
-	runMigrations(t, connStr)
+	connStr := testhelpers.SetupPostgres(t)
 
 	logger := logging.NewNoopLogger()
 	monitor := monitoring.NewNoopMonitor("hook-service-test", logger)
@@ -217,7 +214,6 @@ func setupMappingIntegrationServer(t *testing.T) (pb.GroupsMappingServiceClient,
 
 	dbClient, err := db.NewDBClient(db.Config{DSN: connStr, MaxConns: 5, MinConns: 1}, tracer, monitor, logger)
 	if err != nil {
-		pgContainer.Terminate(context.Background())
 		t.Fatalf("Failed to create DB client: %v", err)
 	}
 
@@ -236,7 +232,6 @@ func setupMappingIntegrationServer(t *testing.T) (pb.GroupsMappingServiceClient,
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		dbClient.Close()
-		pgContainer.Terminate(context.Background())
 		t.Fatalf("Failed to listen: %v", err)
 	}
 
@@ -249,7 +244,6 @@ func setupMappingIntegrationServer(t *testing.T) (pb.GroupsMappingServiceClient,
 	if err != nil {
 		grpcSrv.Stop()
 		dbClient.Close()
-		pgContainer.Terminate(context.Background())
 		t.Fatalf("Failed to dial: %v", err)
 	}
 
@@ -259,7 +253,6 @@ func setupMappingIntegrationServer(t *testing.T) (pb.GroupsMappingServiceClient,
 		conn.Close()
 		grpcSrv.GracefulStop()
 		dbClient.Close()
-		pgContainer.Terminate(context.Background())
 	}
 
 	return client, dbClient, cleanup
@@ -391,7 +384,6 @@ func TestMapMappingErrorToStatus(t *testing.T) {
 		})
 	}
 }
-
 
 func TestMappingGrpcHandler_TenantFiltering_Integration(t *testing.T) {
 	if testing.Short() {

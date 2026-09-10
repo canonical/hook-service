@@ -1,20 +1,16 @@
 // Copyright 2025 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0
 
-
 package groups
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	reflect "reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -33,16 +29,11 @@ import (
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/openfga"
 	"github.com/canonical/hook-service/internal/storage"
+	"github.com/canonical/hook-service/internal/testhelpers"
 	"github.com/canonical/hook-service/internal/tracing"
-	"github.com/canonical/hook-service/migrations"
 	authorization_api "github.com/canonical/hook-service/pkg/authorization"
 	v0_authz "github.com/canonical/identity-platform-api/v0/authorization"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
@@ -925,121 +916,9 @@ func TestMapErrorToStatus(t *testing.T) {
 	}
 }
 
-// testClient wraps an httptest.Server with helper methods for the authorization API.
+// testClient embeds the shared integration HTTP client for the authorization API.
 type testClient struct {
-	t      *testing.T
-	server *httptest.Server
-	http   *http.Client
-}
-
-func (c *testClient) Request(method, path string, body interface{}) (int, []byte) {
-	c.t.Helper()
-
-	var reqBody io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			c.t.Fatalf("failed to marshal request body: %v", err)
-		}
-		reqBody = bytes.NewReader(b)
-	}
-
-	req, err := http.NewRequestWithContext(context.Background(), method, c.server.URL+path, reqBody)
-	if err != nil {
-		c.t.Fatalf("failed to create request: %v", err)
-	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		c.t.Fatalf("request to %s %s failed: %v", method, path, err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, respBody
-}
-
-func sanitizeName(name string) string {
-	name = strings.ReplaceAll(name, "/", "-")
-	name = strings.ReplaceAll(name, " ", "-")
-	return strings.ToLower(name)
-}
-
-func setupTestPostgres(t *testing.T) (string, *postgres.PostgresContainer) {
-	t.Helper()
-
-	ctx := context.Background()
-	containerName := fmt.Sprintf("hook-authz-%s", sanitizeName(t.Name()))
-
-	var pgContainer *postgres.PostgresContainer
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Skipf("Skipping: container runtime not available (%v)", r)
-			}
-		}()
-		var err error
-		pgContainer, err = postgres.Run(ctx,
-			"postgres:16-alpine",
-			postgres.WithDatabase("testdb"),
-			postgres.WithUsername("testuser"),
-			postgres.WithPassword("testpass"),
-			testcontainers.CustomizeRequest(testcontainers.GenericContainerRequest{
-				ContainerRequest: testcontainers.ContainerRequest{Name: containerName},
-			}),
-		)
-		if err != nil {
-			t.Skipf("Skipping: container runtime not available (%v)", err)
-		}
-	}()
-
-	if pgContainer == nil {
-		return "", nil
-	}
-
-	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("Failed to get connection string: %v", err)
-	}
-
-	for i := 0; i < 10; i++ {
-		cfg, err := pgx.ParseConfig(connStr)
-		if err != nil {
-			t.Fatalf("Failed to parse config: %v", err)
-		}
-		sqlDB := stdlib.OpenDB(*cfg)
-		if err := sqlDB.Ping(); err == nil {
-			sqlDB.Close()
-			break
-		}
-		sqlDB.Close()
-		if i < 9 {
-			time.Sleep(time.Second)
-		}
-	}
-
-	return connStr, pgContainer
-}
-
-func runMigrations(t *testing.T, connStr string) {
-	t.Helper()
-	cfg, err := pgx.ParseConfig(connStr)
-	if err != nil {
-		t.Fatalf("Failed to parse DSN: %v", err)
-	}
-	sqlDB := stdlib.OpenDB(*cfg)
-	defer sqlDB.Close()
-
-	goose.SetBaseFS(migrations.EmbedMigrations)
-	if err := goose.SetDialect("postgres"); err != nil {
-		t.Fatalf("Failed to set dialect: %v", err)
-	}
-	if err := goose.Up(sqlDB, "."); err != nil {
-		t.Fatalf("Failed to run migrations: %v", err)
-	}
+	*testhelpers.IntegrationClient
 }
 
 // newIntegrationServer spins up Postgres, runs migrations, and wires all gRPC-gateway
@@ -1047,11 +926,7 @@ func runMigrations(t *testing.T, connStr string) {
 func newIntegrationServer(t *testing.T) (*testClient, func()) {
 	t.Helper()
 
-	connStr, pgContainer := setupTestPostgres(t)
-	if pgContainer == nil {
-		return nil, func() {}
-	}
-	runMigrations(t, connStr)
+	connStr := testhelpers.SetupPostgres(t)
 
 	logger := logging.NewNoopLogger()
 	monitor := monitoring.NewNoopMonitor("hook-service-test", logger)
@@ -1059,7 +934,6 @@ func newIntegrationServer(t *testing.T) (*testClient, func()) {
 
 	dbClient, err := db.NewDBClient(db.Config{DSN: connStr, MaxConns: 5, MinConns: 1}, tracer, monitor, logger)
 	if err != nil {
-		pgContainer.Terminate(context.Background()) //nolint:errcheck
 		t.Fatalf("Failed to create DB client: %v", err)
 	}
 
@@ -1094,12 +968,9 @@ func newIntegrationServer(t *testing.T) (*testClient, func()) {
 	cleanup := func() {
 		srv.Close()
 		dbClient.Close()
-		if err := pgContainer.Terminate(context.Background()); err != nil {
-			t.Logf("Failed to terminate container: %v", err)
-		}
 	}
 
-	return &testClient{t: t, server: srv, http: srv.Client()}, cleanup
+	return &testClient{IntegrationClient: testhelpers.NewIntegrationClient(t, srv.URL)}, cleanup
 }
 
 // createTestGroup creates a group via the groups API and returns its ID.
@@ -1139,9 +1010,6 @@ func TestGroupsLifecycle(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	groupName := fmt.Sprintf("test-group-%d", time.Now().UnixNano())
@@ -1243,9 +1111,6 @@ func TestUserMembership(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	groupID := createTestGroup(t, client, fmt.Sprintf("um-group-%d", time.Now().UnixNano()))
@@ -1354,9 +1219,6 @@ func TestAddUserToMultipleGroups(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	group1ID := createTestGroup(t, client, fmt.Sprintf("multi-1-%d", time.Now().UnixNano()))
@@ -1408,9 +1270,6 @@ func TestSetUserGroups(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	group1ID := createTestGroup(t, client, fmt.Sprintf("set-1-%d", time.Now().UnixNano()))
@@ -1459,9 +1318,6 @@ func TestUserMembershipErrors(t *testing.T) {
 	}
 
 	client, teardown := newIntegrationServer(t)
-	if client == nil {
-		return
-	}
 	defer teardown()
 
 	t.Run("ListUsersInNonExistentGroup", func(t *testing.T) {
