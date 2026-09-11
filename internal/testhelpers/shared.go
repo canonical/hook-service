@@ -5,9 +5,9 @@ package testhelpers
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -58,8 +58,9 @@ type lazyShared struct {
 }
 
 // ensure runs start once and fails the calling test if startup failed. A
-// panic inside start is recovered and recorded as the startup error, so the
-// replay guarantee holds on every path (sync.Once marks done even on panic).
+// panic inside start is recovered and recorded as the startup error; any
+// failure — panic or incomplete start — is replayed to every caller
+// (sync.Once marks done even on panic or runtime.Goexit from t.Fatal).
 func (l *lazyShared) ensure(t *testing.T, start func()) {
 	t.Helper()
 	l.once.Do(func() {
@@ -73,26 +74,16 @@ func (l *lazyShared) ensure(t *testing.T, start func()) {
 	if l.startErr != nil {
 		t.Fatalf("shared container failed to start: %v", l.startErr)
 	}
+	if !l.started {
+		t.Fatalf("shared container start did not complete (fatal called inside start?)")
+	}
 }
 
-// randomDBName returns a short random database name (e.g. "test_a3f9kz").
-// Random rather than test-name-derived so names are always valid identifier
-// length and collision-free; quoting is handled by the caller via
-// pgx.Identifier.Sanitize.
-func randomDBName() string {
-	const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, 6)
-	raw := make([]byte, 6)
-	if _, err := rand.Read(raw); err != nil {
-		// crypto/rand failure is catastrophic and not worth a fallback;
-		// surface it rather than silently weaken uniqueness.
-		panic(fmt.Sprintf("crypto/rand unavailable: %v", err))
-	}
-	for i, v := range raw {
-		b[i] = alphabet[int(v)%len(alphabet)]
-	}
-	return "test_" + string(b)
-}
+// dbNameSeq generates unique database names (test_db_1, test_db_2, ...) for
+// the lifetime of the test binary. The shared container lives for one
+// binary, so a process-wide counter trivially guarantees uniqueness; names
+// stay valid unquoted identifiers.
+var dbNameSeq atomic.Uint64
 
 // LazyPostgres lazily starts a shared Postgres container. The zero value is
 // ready to use.
@@ -144,7 +135,10 @@ func (p *LazyPostgres) connString(t *testing.T) string {
 // IsolatedDB returns a connection string to a fresh database in the shared
 // Postgres container, with all migrations applied. The database is dropped
 // in t.Cleanup. Tests within a package share one container but get fully
-// separate databases, so t.Parallel is safe.
+// separate databases, so t.Parallel is safe. With wider adoption, tests
+// should size MaxConns against the shared container's max_connections
+// (Postgres default 100): a package with ~10 parallel tests at MaxConns 5
+// is fine, but should be revisited if a future package goes higher.
 func (p *LazyPostgres) IsolatedDB(t *testing.T) string {
 	t.Helper()
 
@@ -155,7 +149,7 @@ func (p *LazyPostgres) IsolatedDB(t *testing.T) string {
 		t.Fatalf("failed to parse connection string: %v", err)
 	}
 
-	dbName := randomDBName()
+	dbName := fmt.Sprintf("test_db_%d", dbNameSeq.Add(1))
 	t.Logf("creating isolated database %s for %s", dbName, t.Name())
 
 	adminDB := stdlib.OpenDB(*cfg)
@@ -208,7 +202,7 @@ type LazyHydra struct {
 func (h *LazyHydra) Env(t *testing.T) *HydraEnv {
 	t.Helper()
 	h.shared.ensure(t, func() {
-		env, container, err := startHydra(t)
+		env, container, err := startHydra()
 		if err != nil {
 			h.shared.startErr = err
 			return
@@ -240,7 +234,7 @@ type LazyOpenFGA struct {
 func (f *LazyOpenFGA) Client(t *testing.T) *openfga.Client {
 	t.Helper()
 	f.shared.ensure(t, func() {
-		client, container, err := startOpenFGA(t)
+		client, container, err := startOpenFGA()
 		if err != nil {
 			f.shared.startErr = err
 			return

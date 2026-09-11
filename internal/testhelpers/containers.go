@@ -143,7 +143,7 @@ func SetupPostgres(t *testing.T) string {
 func SetupHydra(t *testing.T) *HydraEnv {
 	t.Helper()
 
-	env, container, err := startHydra(t)
+	env, container, err := startHydra()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -154,9 +154,7 @@ func SetupHydra(t *testing.T) *HydraEnv {
 
 // startHydra starts the Hydra container without registering cleanup, leaving
 // teardown to the caller.
-func startHydra(t *testing.T) (*HydraEnv, testcontainers.Container, error) {
-	t.Helper()
-
+func startHydra() (*HydraEnv, testcontainers.Container, error) {
 	ctx := context.Background()
 
 	req := testcontainers.ContainerRequest{
@@ -218,7 +216,7 @@ func startHydra(t *testing.T) (*HydraEnv, testcontainers.Container, error) {
 func SetupOpenFGA(t *testing.T) *openfga.Client {
 	t.Helper()
 
-	client, container, err := startOpenFGA(t)
+	client, container, err := startOpenFGA()
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -229,9 +227,7 @@ func SetupOpenFGA(t *testing.T) *openfga.Client {
 
 // startOpenFGA starts the OpenFGA container and wires store + model without
 // registering cleanup, leaving teardown to the caller.
-func startOpenFGA(t *testing.T) (*openfga.Client, testcontainers.Container, error) {
-	t.Helper()
-
+func startOpenFGA() (*openfga.Client, testcontainers.Container, error) {
 	ctx := context.Background()
 
 	req := testcontainers.ContainerRequest{
