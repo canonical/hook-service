@@ -10,8 +10,8 @@
 
 ## 2. Reference adoption in `internal/db`
 
-- [x] 2.1 `var shared testhelpers.SharedContainers` + `TestMain(m)` calling `shared.Close()` in `internal/db/replica_integration_test.go`
-- [x] 2.2 `TestIntegration_ReplicaUnconfigured` and `TestIntegration_MetricsValidation` switch to `shared.Postgres.IsolatedDB(t)`
+- [x] 2.1 `var shared testhelpers.SharedContainers` + `TestMain(m)` calling `shared.Close()` in `internal/db/replica_integration_test.go` (reverted per review: parallel package)
+- [x] 2.2 `TestIntegration_ReplicaUnconfigured` and `TestIntegration_MetricsValidation` switch to `shared.Postgres.IsolatedDB(t)` (reverted per review: parallel package)
 - [x] 2.3 `TestIntegration_ReplicaLagFallback` keeps two per-test `SetupPostgres` calls (shared fixtures are single-container by design)
 
 ## 3. Verification
