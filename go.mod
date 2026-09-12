@@ -15,6 +15,7 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
+	github.com/k-capehart/go-salesforce/v3 v3.2.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/openfga/go-sdk v0.7.1
 	github.com/openfga/language/pkg/go v0.3.1
@@ -82,7 +83,7 @@ require (
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
-	github.com/forcedotcom/go-soql v0.0.0-20220705175410-00f698360bee // indirect
+	github.com/forcedotcom/go-soql v0.0.0-20240507183026-011ceab61b9e // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.15 // indirect
 	github.com/go-faker/faker/v4 v4.4.2 // indirect
