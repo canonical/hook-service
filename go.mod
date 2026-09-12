@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/canonical/identity-platform-api v0.0.0-20260609125125-fe6c4040a954
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/exaring/otelpgx v0.11.1
+	github.com/exaring/otelpgx v0.12.0
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/cors v1.2.2
 	github.com/go-playground/validator/v10 v10.30.4
@@ -39,7 +39,7 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/net v0.59.0
 	golang.org/x/sync v0.23.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260908043556-f8649ddbbfe6
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260911204522-f61a6ca850bd
 	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
