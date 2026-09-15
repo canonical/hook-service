@@ -38,6 +38,16 @@ vendor:
 	$(GO) mod vendor
 .PHONY: vendor
 
+govulncheck: vendor
+	govulncheck ./... || true
+.PHONY: govulncheck
+
+vulncheck: govulncheck
+.PHONY: vulncheck
+
+vuln-check: govulncheck
+.PHONY: vuln-check
+
 build:
 	$(GO) build -o $(GO_BIN) ./
 .PHONY: build
