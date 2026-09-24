@@ -1,11 +1,11 @@
-// Copyright 2025 Canonical Ltd.
+// Copyright 2026 Canonical Ltd.
 // SPDX-License-Identifier: AGPL-3.0-only
 
 package authentication
 
 import (
 	"context"
-	"fmt"
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -21,6 +21,7 @@ func TestMiddleware_Authenticate(t *testing.T) {
 		setupMocks         func(*gomock.Controller) TokenVerifierInterface
 		expectedStatusCode int
 		expectedBody       string
+		expectedUserID     string
 	}{
 		{
 			name:       "Missing token - rejects request",
@@ -45,30 +46,43 @@ func TestMiddleware_Authenticate(t *testing.T) {
 			authHeader: "Bearer invalid-token",
 			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token").Return(false, fmt.Errorf("invalid token"))
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "invalid-token").Return(nil, ErrInvalidToken)
 				return mockVerifier
 			},
 			expectedStatusCode: http.StatusUnauthorized,
+			expectedBody:       "{\"message\":\"invalid token\",\"status\":401}\n",
 		},
 		{
 			name:       "Valid token but unauthorized - rejects request",
 			authHeader: "Bearer valid-token",
 			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(false, nil)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(nil, ErrUnauthorized)
 				return mockVerifier
 			},
 			expectedStatusCode: http.StatusUnauthorized,
+			expectedBody:       "{\"message\":\"unauthorized\",\"status\":401}\n",
 		},
 		{
-			name:       "Valid token",
+			name:       "Valid token without subject",
 			authHeader: "Bearer valid-token",
 			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
 				mockVerifier := NewMockTokenVerifierInterface(ctrl)
-				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(true, nil)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(&Claims{}, nil)
 				return mockVerifier
 			},
 			expectedStatusCode: http.StatusOK,
+		},
+		{
+			name:       "Valid token with subject sets user ID in context",
+			authHeader: "Bearer valid-token",
+			setupMocks: func(ctrl *gomock.Controller) TokenVerifierInterface {
+				mockVerifier := NewMockTokenVerifierInterface(ctrl)
+				mockVerifier.EXPECT().VerifyToken(gomock.Any(), "valid-token").Return(&Claims{Subject: "alice@example.com"}, nil)
+				return mockVerifier
+			},
+			expectedStatusCode: http.StatusOK,
+			expectedUserID:     "alice@example.com",
 		},
 	}
 
@@ -89,9 +103,11 @@ func TestMiddleware_Authenticate(t *testing.T) {
 
 			middleware := NewMiddleware(mockVerifier, mockTracer, mockMonitor, mockLogger)
 
+			var receivedUserID string
 			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				receivedUserID = UserIDFromContext(r.Context())
 				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("success"))
+				_, _ = w.Write([]byte("success"))
 			})
 
 			req := httptest.NewRequest(http.MethodGet, "/test", nil)
@@ -104,6 +120,10 @@ func TestMiddleware_Authenticate(t *testing.T) {
 
 			if rr.Code != tt.expectedStatusCode {
 				t.Errorf("expected status %d, got %d", tt.expectedStatusCode, rr.Code)
+			}
+
+			if receivedUserID != tt.expectedUserID {
+				t.Errorf("expected user ID %q in context, got %q", tt.expectedUserID, receivedUserID)
 			}
 
 			if tt.expectedBody != "" && rr.Body.String() != tt.expectedBody {
@@ -168,3 +188,64 @@ func TestMiddleware_GetBearerToken(t *testing.T) {
 		})
 	}
 }
+
+func TestUserContextMiddleware(t *testing.T) {
+	validHeader := base64.RawURLEncoding.EncodeToString([]byte(`{"alg":"RS256"}`))
+	validPayload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"jwt-user@example.com"}`))
+	validJWT := validHeader + "." + validPayload + ".sig"
+
+	tests := []struct {
+		name           string
+		headers        map[string]string
+		expectedUserID string
+	}{
+		{
+			name:           "no headers",
+			headers:        nil,
+			expectedUserID: "",
+		},
+		{
+			name: "Authorization Bearer JWT header present",
+			headers: map[string]string{
+				"Authorization": "Bearer " + validJWT,
+			},
+			expectedUserID: "jwt-user@example.com",
+		},
+		{
+			name: "Authorization header without Bearer prefix is ignored",
+			headers: map[string]string{
+				"Authorization": "Basic " + validJWT,
+			},
+			expectedUserID: "",
+		},
+		{
+			name: "invalid Bearer JWT format is ignored",
+			headers: map[string]string{
+				"Authorization": "Bearer not-a-valid-jwt",
+			},
+			expectedUserID: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var recordedUserID string
+			handler := UserContextMiddleware()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				recordedUserID = UserIDFromContext(r.Context())
+				w.WriteHeader(http.StatusOK)
+			}))
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v0/groups", nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			rr := httptest.NewRecorder()
+			handler.ServeHTTP(rr, req)
+
+			if recordedUserID != tt.expectedUserID {
+				t.Fatalf("expected user ID %q, got %q", tt.expectedUserID, recordedUserID)
+			}
+		})
+	}
+}
+

@@ -7,7 +7,7 @@ UI_FOLDER?=
 MICROK8S_REGISTRY_FLAG?=SKAFFOLD_DEFAULT_REPO=localhost:32000
 SKAFFOLD?=skaffold
 CONFIGMAP?=deployments/kubectl/configMap.yaml
-DSN?=postgresql://groups:groups@localhost:5432/groups?sslmode=disable
+DSN?=postgresql://groups:groups@localhost:5433/groups?sslmode=disable
 
 
 .EXPORT_ALL_VARIABLES:
@@ -56,3 +56,19 @@ db:
 db-down:
 	$(GO) run . migrate --dsn $(DSN) down
 .PHONY: db-down
+
+authz-setup:
+	./scripts/setup-centralized-authz-e2e.sh
+.PHONY: authz-setup
+
+authz-test:
+	./scripts/test-centralized-authz-e2e.sh
+.PHONY: authz-test
+
+authz-down:
+	./scripts/teardown-centralized-authz-e2e.sh
+.PHONY: authz-down
+
+authz-e2e:
+	./scripts/run-centralized-authz-e2e.sh
+.PHONY: authz-e2e

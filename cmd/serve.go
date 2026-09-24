@@ -25,6 +25,7 @@ import (
 	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
+	"github.com/canonical/hook-service/internal/kafka"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
@@ -66,18 +67,18 @@ func serve() error {
 	tracer := tracing.NewTracer(tracing.NewConfig(specs.TracingEnabled, specs.OtelGRPCEndpoint, specs.OtelHTTPEndpoint, logger))
 
 	dbConfig := db.Config{
-		DSN:                      specs.DSN,
-		MaxConns:                 specs.DBMaxConns,
-		MinConns:                 specs.DBMinConns,
-		MaxConnLifetime:          specs.DBMaxConnLifetime,
-		MaxConnIdleTime:          specs.DBMaxConnIdleTime,
-		TracingEnabled:           specs.TracingEnabled,
-		ReplicaDSN:               specs.ReplicaDSN,
-		ReplicaMaxConns:          specs.ReplicaDBMaxConns,
-		ReplicaMinConns:          specs.ReplicaDBMinConns,
-		ReplicaMaxConnLifetime:   specs.ReplicaDBMaxConnLifetime,
-		ReplicaMaxConnIdleTime:   specs.ReplicaDBMaxConnIdleTime,
-		MaxReplicaLagMs:          specs.MaxReplicaLagMs,
+		DSN:                       specs.DSN,
+		MaxConns:                  specs.DBMaxConns,
+		MinConns:                  specs.DBMinConns,
+		MaxConnLifetime:           specs.DBMaxConnLifetime,
+		MaxConnIdleTime:           specs.DBMaxConnIdleTime,
+		TracingEnabled:            specs.TracingEnabled,
+		ReplicaDSN:                specs.ReplicaDSN,
+		ReplicaMaxConns:           specs.ReplicaDBMaxConns,
+		ReplicaMinConns:           specs.ReplicaDBMinConns,
+		ReplicaMaxConnLifetime:    specs.ReplicaDBMaxConnLifetime,
+		ReplicaMaxConnIdleTime:    specs.ReplicaDBMaxConnIdleTime,
+		MaxReplicaLagMs:           specs.MaxReplicaLagMs,
 		ReplicaPoolSizeMultiplier: specs.ReplicaPoolSizeMultiplier,
 	}
 	dbClient, err := db.NewDBClient(dbConfig, tracer, monitor, logger)
@@ -179,6 +180,25 @@ func serve() error {
 	wpool := pool.NewWorkerPool(specs.HookMaxConcurrent, tracer, monitor, logger)
 	defer wpool.Stop()
 
+	var publisher groups_api.PermissionPublisherInterface
+	if len(specs.KafkaBrokers) > 0 {
+		if err := config.ValidateKafkaBrokers(specs.KafkaBrokers); err != nil {
+			return fmt.Errorf("invalid kafka configuration: %w", err)
+		}
+		kafkaWriter := kafka.NewKafkaWriter(specs.KafkaBrokers, "")
+		kafkaPublisher := kafka.NewPermissionPublisher(kafkaWriter, tracer, monitor, logger)
+		defer func() {
+			if err := kafkaPublisher.Close(); err != nil {
+				logger.Errorf("failed to close kafka publisher: %v", err)
+			}
+		}()
+		publisher = kafkaPublisher
+		logger.Infof("Kafka permission publisher initialized with brokers: %v", specs.KafkaBrokers)
+	} else {
+		publisher = kafka.NewNoopPublisher(tracer, monitor, logger)
+		logger.Info("Kafka permission publisher disabled (no brokers configured)")
+	}
+
 	router := web.NewRouter(
 		specs.ApiToken,
 		specs.AuthenticationEnabled,
@@ -188,12 +208,13 @@ func serve() error {
 		authorizer,
 		tenantValidator,
 		jwtVerifier,
+		publisher,
 		tracer,
 		monitor,
 		logger,
 	)
 
-	groupService := groups_api.NewService(s, authorizer, tracer, monitor, logger)
+	groupService := groups_api.NewService(s, authorizer, publisher, tracer, monitor, logger)
 
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf("0.0.0.0:%v", specs.Port),

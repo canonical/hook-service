@@ -1,6 +1,5 @@
-// Copyright 2025 Canonical Ltd.
-// SPDX-License-Identifier: AGPL-3.0
-
+// Copyright 2026 Canonical Ltd.
+// SPDX-License-Identifier: AGPL-3.0-only
 
 package groups
 
@@ -19,8 +18,9 @@ import (
 var _ ServiceInterface = (*Service)(nil)
 
 type Service struct {
-	db    DatabaseInterface
-	authz AuthorizerInterface
+	db        DatabaseInterface
+	authz     AuthorizerInterface
+	publisher PermissionPublisherInterface
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
@@ -31,7 +31,11 @@ func (s *Service) ListGroups(ctx context.Context) ([]*types.Group, error) {
 	ctx, span := s.tracer.Start(ctx, "groups.Service.ListGroups")
 	defer span.End()
 
-	return s.db.ListGroups(ctx)
+	groups, err := s.db.ListGroups(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups: %w", err)
+	}
+	return groups, nil
 }
 
 func (s *Service) CreateGroup(ctx context.Context, group *types.Group) (*types.Group, error) {
@@ -49,6 +53,7 @@ func (s *Service) CreateGroup(ctx context.Context, group *types.Group) (*types.G
 		}
 		return nil, err
 	}
+
 	return createdGroup, nil
 }
 
@@ -90,6 +95,7 @@ func (s *Service) DeleteGroup(ctx context.Context, id string) error {
 	if err := s.authz.DeleteGroup(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete group from authz: %v", err)
 	}
+
 	return nil
 }
 
@@ -107,6 +113,7 @@ func (s *Service) AddUsersToGroup(ctx context.Context, groupID string, userIDs [
 		}
 		return fmt.Errorf("failed to add users to group: %v", err)
 	}
+
 	return nil
 }
 
@@ -128,6 +135,7 @@ func (s *Service) RemoveUsersFromGroup(ctx context.Context, groupID string, user
 	if err := s.db.RemoveUsersFromGroup(ctx, groupID, users); err != nil {
 		return fmt.Errorf("failed to remove users from group: %w", err)
 	}
+
 	return nil
 }
 
@@ -178,6 +186,7 @@ func (s *Service) StreamUsersInGroup(ctx context.Context, tenantID, groupID stri
 func NewService(
 	db DatabaseInterface,
 	authz AuthorizerInterface,
+	publisher PermissionPublisherInterface,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -186,6 +195,7 @@ func NewService(
 
 	s.db = db
 	s.authz = authz
+	s.publisher = publisher
 
 	s.monitor = monitor
 	s.tracer = tracer

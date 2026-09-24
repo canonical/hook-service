@@ -58,6 +58,7 @@ func setupIntegrationEnv(t *testing.T) (string, func()) {
 		authz,
 		tenantValidator,
 		jwtVerifier,
+		nil,
 		tracer,
 		monitor,
 		logger,
