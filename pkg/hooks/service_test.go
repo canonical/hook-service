@@ -14,7 +14,6 @@ import (
 	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/types"
 	"github.com/google/uuid"
-	"github.com/ory/hydra/v2/oauth2"
 	trace "go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
@@ -331,7 +330,7 @@ func TestServiceProcessRequest(t *testing.T) {
 	tests := []struct {
 		name string
 
-		req oauth2.TokenHookRequest
+		req TokenHookRequest
 
 		mockClient func(*gomock.Controller) ClientInterface
 		mockAuthz  func(*gomock.Controller) AuthorizerInterface

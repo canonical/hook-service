@@ -38,6 +38,11 @@ vendor:
 	$(GO) mod vendor
 .PHONY: vendor
 
+govulncheck: vendor
+	$(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+	PATH="$$($(GO) env GOPATH)/bin:$$PATH" govulncheck ./...
+.PHONY: govulncheck
+
 build:
 	$(GO) build -o $(GO_BIN) ./
 .PHONY: build

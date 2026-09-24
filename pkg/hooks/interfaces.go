@@ -7,11 +7,10 @@ import (
 	"context"
 
 	"github.com/canonical/hook-service/internal/types"
-	"github.com/ory/hydra/v2/oauth2"
 )
 
 type ServiceInterface interface {
-	ProcessRequest(context.Context, User, oauth2.TokenHookRequest) (*HookContext, error)
+	ProcessRequest(context.Context, User, TokenHookRequest) (*HookContext, error)
 }
 
 type ClientInterface interface {
