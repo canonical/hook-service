@@ -17,74 +17,73 @@ import (
 	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
-	"github.com/ory/fosite/handler/openid"
-	"github.com/ory/fosite/token/jwt"
-	"github.com/ory/hydra/v2/flow"
-	"github.com/ory/hydra/v2/oauth2"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/mock/gomock"
 )
 
-func createHookRequest(clientId, userId string, grantTypes []string, aud []string) oauth2.TokenHookRequest {
+func createHookRequest(clientId, userId string, grantTypes []string, aud []string) TokenHookRequest {
 	return createHookRequestWithExtra(clientId, userId, grantTypes, aud, nil)
 }
 
 // createHookRequestWithExtra builds a TokenHookRequest optionally populated
 // with session extra data (e.g., {"_tenant_id": "..."}).
-func createHookRequestWithExtra(clientId, userId string, grantTypes []string, aud []string, extra map[string]interface{}) oauth2.TokenHookRequest {
-	r := oauth2.TokenHookRequest{
-		Session: &oauth2.Session{
+func createHookRequestWithExtra(clientId, userId string, grantTypes []string, aud []string, extra map[string]interface{}) TokenHookRequest {
+	r := TokenHookRequest{
+		Session: &Session{
 			Extra: extra,
 		},
-		Request: oauth2.Request{
+		Request: Request{
 			ClientID:        clientId,
 			GrantTypes:      grantTypes,
 			GrantedAudience: aud,
 		},
 	}
 	if userId != "" {
-		r.Session.DefaultSession = &openid.DefaultSession{
+		r.Session.DefaultSession = &DefaultSession{
 			Subject: userId,
-			Claims:  &jwt.IDTokenClaims{Extra: map[string]interface{}{"email": 2134}},
+			Claims:  &IDTokenClaims{Extra: map[string]interface{}{"email": 2134}},
 		}
 	}
 	return r
 }
 
-func createHookRequestWithIDTokenExtra(clientId, userId string, grantTypes []string, idTokenExtra map[string]interface{}) oauth2.TokenHookRequest {
-	return oauth2.TokenHookRequest{
-		Session: &oauth2.Session{
-			DefaultSession: &openid.DefaultSession{
+func createHookRequestWithIDTokenExtra(clientId, userId string, grantTypes []string, idTokenExtra map[string]interface{}) TokenHookRequest {
+	return TokenHookRequest{
+		Session: &Session{
+			DefaultSession: &DefaultSession{
 				Subject: userId,
-				Claims:  &jwt.IDTokenClaims{Extra: idTokenExtra},
+				Claims:  &IDTokenClaims{Extra: idTokenExtra},
 			},
 		},
-		Request: oauth2.Request{
+		Request: Request{
 			ClientID:   clientId,
 			GrantTypes: grantTypes,
 		},
 	}
 }
 
-func createHookRequestWithSessionAndIDTokenExtra(clientId, userId string, grantTypes []string, sessionExtra, idTokenExtra map[string]interface{}) oauth2.TokenHookRequest {
-	return oauth2.TokenHookRequest{
-		Session: &oauth2.Session{
+func createHookRequestWithSessionAndIDTokenExtra(clientId, userId string, grantTypes []string, sessionExtra, idTokenExtra map[string]interface{}) TokenHookRequest {
+	return TokenHookRequest{
+		Session: &Session{
 			Extra: sessionExtra,
-			DefaultSession: &openid.DefaultSession{
+			DefaultSession: &DefaultSession{
 				Subject: userId,
-				Claims:  &jwt.IDTokenClaims{Extra: idTokenExtra},
+				Claims:  &IDTokenClaims{Extra: idTokenExtra},
 			},
 		},
-		Request: oauth2.Request{
+		Request: Request{
 			ClientID:   clientId,
 			GrantTypes: grantTypes,
 		},
 	}
 }
 
-func createHookResponse(groups []*types.Group) *oauth2.TokenHookResponse {
-	r := oauth2.TokenHookResponse{
-		Session: *flow.NewConsentRequestSessionData(),
+func createHookResponse(groups []*types.Group) *TokenHookResponse {
+	r := TokenHookResponse{
+		Session: ConsentRequestSessionData{
+			AccessToken: make(map[string]interface{}),
+			IDToken:     make(map[string]interface{}),
+		},
 	}
 	groupIDs := make([]string, len(groups))
 	for i, g := range groups {
@@ -109,9 +108,9 @@ func TestHandleHydraHook(t *testing.T) {
 		processRequestError  error
 
 		expectedStatus   int
-		expectedResponse *oauth2.TokenHookResponse
-		request          *oauth2.TokenHookRequest
-		assertResponse   func(t *testing.T, resp *oauth2.TokenHookResponse)
+		expectedResponse *TokenHookResponse
+		request          *TokenHookRequest
+		assertResponse   func(t *testing.T, resp *TokenHookResponse)
 	}{
 		{
 			name:                 "Should add groups to user",
@@ -150,7 +149,7 @@ func TestHandleHydraHook(t *testing.T) {
 				[]string{"authorization_code"},
 				map[string]interface{}{"email": "user@example.com", "name": "Alice"},
 			)),
-			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+			assertResponse: func(t *testing.T, resp *TokenHookResponse) {
 				email, ok := resp.Session.IDToken["email"].(string)
 				if !ok || email != "user@example.com" {
 					t.Fatalf("expected id_token email to be %q, got %v", "user@example.com", resp.Session.IDToken["email"])
@@ -176,7 +175,7 @@ func TestHandleHydraHook(t *testing.T) {
 				[]string{"authorization_code"},
 				map[string]interface{}{"groups": []string{"stale-group"}, "email": "user@example.com"},
 			)),
-			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+			assertResponse: func(t *testing.T, resp *TokenHookResponse) {
 				email, ok := resp.Session.IDToken["email"].(string)
 				if !ok || email != "user@example.com" {
 					t.Fatalf("expected id_token email to be %q, got %v", "user@example.com", resp.Session.IDToken["email"])
@@ -221,7 +220,7 @@ func TestHandleHydraHook(t *testing.T) {
 				map[string]interface{}{"scope": "openid", "aud": "app"},
 				map[string]interface{}{"email": "user@example.com"},
 			)),
-			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+			assertResponse: func(t *testing.T, resp *TokenHookResponse) {
 				scope, ok := resp.Session.AccessToken["scope"].(string)
 				if !ok || scope != "openid" {
 					t.Fatalf("expected access_token scope to be %q, got %v", "openid", resp.Session.AccessToken["scope"])
@@ -248,7 +247,7 @@ func TestHandleHydraHook(t *testing.T) {
 				map[string]interface{}{"groups": []string{"stale-group"}, "scope": "openid"},
 				map[string]interface{}{"email": "user@example.com"},
 			)),
-			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+			assertResponse: func(t *testing.T, resp *TokenHookResponse) {
 				scope, ok := resp.Session.AccessToken["scope"].(string)
 				if !ok || scope != "openid" {
 					t.Fatalf("expected access_token scope to be %q, got %v", "openid", resp.Session.AccessToken["scope"])
@@ -286,14 +285,14 @@ func TestHandleHydraHook(t *testing.T) {
 			name:                 "Should not panic when default session is nil",
 			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "g1"}}},
 			expectedStatus:       http.StatusOK,
-			request: &oauth2.TokenHookRequest{
-				Session: &oauth2.Session{},
-				Request: oauth2.Request{
+			request: &TokenHookRequest{
+				Session: &Session{},
+				Request: Request{
 					ClientID:   "client",
 					GrantTypes: []string{"authorization_code"},
 				},
 			},
-			assertResponse: func(t *testing.T, resp *oauth2.TokenHookResponse) {
+			assertResponse: func(t *testing.T, resp *TokenHookResponse) {
 				if resp.Session.IDToken["groups"] == nil {
 					t.Fatal("expected id_token groups to be non-nil")
 				}
@@ -370,7 +369,7 @@ func TestHandleHydraHook(t *testing.T) {
 			}
 
 			if test.expectedResponse != nil || test.assertResponse != nil {
-				resp := new(oauth2.TokenHookResponse)
+				resp := new(TokenHookResponse)
 				if err := json.Unmarshal(data, resp); err != nil {
 					t.Fatalf("expected error to be nil got %v", err)
 				}
@@ -484,7 +483,7 @@ func TestHandleHydraHookTenantValidation(t *testing.T) {
 
 			if test.expectedTenantID != "" {
 				data, _ := io.ReadAll(res.Body)
-				resp := new(oauth2.TokenHookResponse)
+				resp := new(TokenHookResponse)
 				if err := json.Unmarshal(data, resp); err != nil {
 					t.Fatalf("expected error to be nil got %v", err)
 				}
@@ -504,32 +503,32 @@ func TestHandleHydraHookTenantValidation(t *testing.T) {
 func TestExtractTenantID(t *testing.T) {
 	tests := []struct {
 		name     string
-		req      *oauth2.TokenHookRequest
+		req      *TokenHookRequest
 		expected string
 	}{
 		{
 			name:     "nil session",
-			req:      &oauth2.TokenHookRequest{},
+			req:      &TokenHookRequest{},
 			expected: "",
 		},
 		{
 			name:     "nil extra",
-			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{}},
+			req:      &TokenHookRequest{Session: &Session{}},
 			expected: "",
 		},
 		{
 			name:     "no _tenant_id key",
-			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{Extra: map[string]interface{}{"foo": "bar"}}},
+			req:      &TokenHookRequest{Session: &Session{Extra: map[string]interface{}{"foo": "bar"}}},
 			expected: "",
 		},
 		{
 			name:     "_tenant_id present",
-			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{Extra: map[string]interface{}{"_tenant_id": "t-123"}}},
+			req:      &TokenHookRequest{Session: &Session{Extra: map[string]interface{}{"_tenant_id": "t-123"}}},
 			expected: "t-123",
 		},
 		{
 			name:     "_tenant_id wrong type",
-			req:      &oauth2.TokenHookRequest{Session: &oauth2.Session{Extra: map[string]interface{}{"_tenant_id": 42}}},
+			req:      &TokenHookRequest{Session: &Session{Extra: map[string]interface{}{"_tenant_id": 42}}},
 			expected: "",
 		},
 	}

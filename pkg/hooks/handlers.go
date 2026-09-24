@@ -17,8 +17,6 @@ import (
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/internal/types"
 	"github.com/go-chi/chi/v5"
-	"github.com/ory/hydra/v2/flow"
-	"github.com/ory/hydra/v2/oauth2"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -64,7 +62,7 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	req := new(oauth2.TokenHookRequest)
+	req := new(TokenHookRequest)
 	if err = json.Unmarshal(body, req); err != nil {
 		a.logger.Errorf("failed to parse request: %v", err)
 		span.RecordError(err)
@@ -133,7 +131,7 @@ func (a *API) handleHydraHook(w http.ResponseWriter, r *http.Request) {
 
 // composeTokenResponse builds the final TokenHookResponse from a processed hook
 // context, including group names and the tenant_id when present.
-func (a *API) composeTokenResponse(req *oauth2.TokenHookRequest, hctx *HookContext) *oauth2.TokenHookResponse {
+func (a *API) composeTokenResponse(req *TokenHookRequest, hctx *HookContext) *TokenHookResponse {
 	var existingAccessToken map[string]interface{}
 	var existingIDToken map[string]interface{}
 	// Preserve existing Hydra session claims and only overwrite hook-managed claims.
@@ -158,9 +156,12 @@ func (a *API) composeTokenResponse(req *oauth2.TokenHookRequest, hctx *HookConte
 
 // newHookResponse creates a TokenHookResponse with the group names added to both
 // the access token and ID token session data. Duplicate group names are removed.
-func (a *API) newHookResponse(groups []*types.Group, existingAccessToken, existingIDToken map[string]interface{}) *oauth2.TokenHookResponse {
-	resp := oauth2.TokenHookResponse{
-		Session: *flow.NewConsentRequestSessionData(),
+func (a *API) newHookResponse(groups []*types.Group, existingAccessToken, existingIDToken map[string]interface{}) *TokenHookResponse {
+	resp := TokenHookResponse{
+		Session: ConsentRequestSessionData{
+			AccessToken: make(map[string]interface{}),
+			IDToken:     make(map[string]interface{}),
+		},
 	}
 
 	for k, v := range existingAccessToken {

@@ -5,7 +5,6 @@ package hooks
 
 import (
 	"github.com/canonical/hook-service/internal/logging"
-	"github.com/ory/hydra/v2/oauth2"
 )
 
 type User struct {
@@ -24,7 +23,7 @@ func (u *User) GetUserId() string {
 	return ""
 }
 
-func NewUserFromHookRequest(r *oauth2.TokenHookRequest, logger logging.LoggerInterface) *User {
+func NewUserFromHookRequest(r *TokenHookRequest, logger logging.LoggerInterface) *User {
 	u := new(User)
 	if isServiceAccount(r.Request.GrantTypes) {
 		u.ClientId = r.Request.ClientID

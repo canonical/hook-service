@@ -15,7 +15,6 @@ import (
 	"github.com/canonical/hook-service/internal/tenants"
 	"github.com/canonical/hook-service/internal/tracing"
 	"github.com/canonical/hook-service/internal/types"
-	"github.com/ory/hydra/v2/oauth2"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 )
@@ -64,7 +63,7 @@ type Service struct {
 // pool concurrently. AuthorizeRequest is gated only on FetchUserGroups, so
 // tenant validation proceeds in parallel with authorization. Returns ErrTooBusy
 // when the pool queue is full; all other errors indicate an authorization failure.
-func (s *Service) ProcessRequest(ctx context.Context, user User, req oauth2.TokenHookRequest) (*HookContext, error) {
+func (s *Service) ProcessRequest(ctx context.Context, user User, req TokenHookRequest) (*HookContext, error) {
 	ctx, span := s.tracer.Start(ctx, "hooks.Service.ProcessRequest")
 	defer span.End()
 
@@ -189,7 +188,7 @@ func (s *Service) FetchUserGroups(ctx context.Context, user User) ([]*types.Grou
 func (s *Service) AuthorizeRequest(
 	ctx context.Context,
 	user User,
-	req oauth2.TokenHookRequest,
+	req TokenHookRequest,
 	groups []*types.Group,
 ) (bool, error) {
 	ctx, span := s.tracer.Start(ctx, "hooks.Service.AuthorizeRequest")
@@ -243,7 +242,7 @@ func (s *Service) AuthorizeRequest(
 
 // extractTenantID returns the tenant ID from the session extra data, or
 // an empty string if none was set at login time.
-func extractTenantID(req *oauth2.TokenHookRequest) string {
+func extractTenantID(req *TokenHookRequest) string {
 	if req.Session == nil || req.Session.Extra == nil {
 		return ""
 	}
