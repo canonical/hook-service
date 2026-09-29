@@ -19,6 +19,8 @@
 /hook_service
 /hook-service
 /app
+/logs
+.centralized-authz.pids
 *.rock
 
 # misc

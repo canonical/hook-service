@@ -4,9 +4,9 @@
 set -e
 
 cleanup () {
-  docker compose -f ./docker-compose.dev.yml down > /dev/null
-  docker stop oidc_client > /dev/null
-  exit
+  docker compose -f ./docker-compose.dev.yml down > /dev/null 2>&1 || true
+  docker stop oidc_client > /dev/null 2>&1 || true
+  exit 0
 }
 
 trap "cleanup" INT EXIT
@@ -24,7 +24,13 @@ echo "Docker compose services started successfully"
 
 # Start client app
 HYDRA_CONTAINER_ID=$(docker ps -aqf "name=hook-service-hydra-1")
-HYDRA_IMAGE=ghcr.io/canonical/hydra:2.2.0-canonical
+HYDRA_IMAGE=ghcr.io/canonical/hydra:2.3.0-canonical
+
+echo "Waiting for Hydra to be ready..."
+until curl -s http://127.0.0.1:4445/health/ready | grep -q "ok"; do
+  sleep 1
+done
+echo "Hydra is ready"
 
 CLIENT_RESULT=$(docker exec "$HYDRA_CONTAINER_ID" \
   hydra create client \
@@ -45,6 +51,7 @@ AUTH_CLIENT_RESULT=$(docker exec "$HYDRA_CONTAINER_ID" \
     --endpoint http://127.0.0.1:4445 \
     --name "Hook Service Auth Client" \
     --grant-type client_credentials \
+    --scope hook-service:admin \
     --format json
 )
 
@@ -70,15 +77,22 @@ export PORT="8000"
 export TRACING_ENABLED="false"
 export LOG_LEVEL="debug"
 export API_TOKEN="secret_api_key"
-export SALESFORCE_ENABLED="true"
 export OPENFGA_API_SCHEME="http"
 export OPENFGA_API_HOST="127.0.0.1:8080"
 export OPENFGA_API_TOKEN="42"
-export OPENFGA_STORE_ID=$(fga store create --name hook-service --api-token $OPENFGA_API_TOKEN | yq .store.id)
-export OPENFGA_AUTHORIZATION_MODEL_ID=$(./app create-fga-model --fga-api-url http://127.0.0.1:8080 --fga-api-token $OPENFGA_API_TOKEN --fga-store-id $OPENFGA_STORE_ID --format json | yq .model_id)
+
+echo "Waiting for OpenFGA to be ready..."
+until curl -s http://127.0.0.1:8080/healthz > /dev/null 2>&1; do
+  sleep 1
+done
+echo "OpenFGA is ready"
+
+FGA_RESULT=$(./app create-fga-model --fga-api-url http://127.0.0.1:8080 --fga-api-token $OPENFGA_API_TOKEN --format json)
+export OPENFGA_STORE_ID=$(echo "$FGA_RESULT" | jq -r .store_id)
+export OPENFGA_AUTHORIZATION_MODEL_ID=$(echo "$FGA_RESULT" | jq -r .model_id)
 export SALESFORCE_ENABLED="false"
 export AUTHORIZATION_ENABLED="true"
-export DSN="postgres://groups:groups@127.0.0.1:5432/groups"
+export DSN="postgres://groups:groups@127.0.0.1:5433/groups"
 
 # JWT Authentication configuration (enabled by default with Hydra)
 export AUTHENTICATION_ENABLED="true"
@@ -100,7 +114,8 @@ echo "Model ID: $OPENFGA_AUTHORIZATION_MODEL_ID"
 echo "==============================================="
 echo "To get a JWT token, run:"
 echo "curl -X POST http://localhost:4444/oauth2/token \\"
-echo "  -u \"$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET\""
+echo "  -u \"$AUTH_CLIENT_ID:$AUTH_CLIENT_SECRET\" \\"
+echo "  -d \"grant_type=client_credentials&scope=hook-service:admin\""
 echo "==============================================="
 echo
 
