@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/canonical/hook-service/internal/authorization"
+	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -103,6 +104,7 @@ func TestIntegration_JWTAuthentication(t *testing.T) {
 		tenantValidator,
 		verifier,
 		nil,
+		config.ModeStandalone,
 		tracer,
 		monitor,
 		logger,

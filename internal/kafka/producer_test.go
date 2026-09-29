@@ -6,11 +6,15 @@ package kafka
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	kafkago "github.com/segmentio/kafka-go"
+	"go.opentelemetry.io/otel/attribute"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace/noop"
 	"go.uber.org/mock/gomock"
 	"google.golang.org/protobuf/proto"
@@ -22,6 +26,13 @@ import (
 //go:generate mockgen -build_flags=--mod=mod -package kafka -destination ./mock_monitor.go -source=../../internal/monitoring/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package kafka -destination ./mock_logger.go -source=../../internal/logging/interfaces.go
 //go:generate mockgen -build_flags=--mod=mod -package kafka -destination ./mock_kafka.go -source=./interfaces.go
+
+// Values a default deployment would derive. Declared here rather than in the package
+// under test: internal/kafka holds no deployment-specific default by design.
+const (
+	testServiceName = "hook-service"
+	testTopic       = "hook-service.permissions"
+)
 
 func TestPermissionPublisher_PublishWrite(t *testing.T) {
 	tests := []struct {
@@ -134,7 +145,7 @@ func TestPermissionPublisher_PublishWrite(t *testing.T) {
 				tt.mockMonitor(mockMonitor)
 			}
 
-			publisher := NewPermissionPublisher(mockWriter, mockTracer, mockMonitor, mockLogger)
+			publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
 			err := publisher.PublishWrite(context.Background(), tt.subject, tt.relation, tt.object)
 
 			if (err != nil) != tt.wantErr {
@@ -233,7 +244,7 @@ func TestPermissionPublisher_PublishDelete(t *testing.T) {
 				tt.mockMonitor(mockMonitor)
 			}
 
-			publisher := NewPermissionPublisher(mockWriter, mockTracer, mockMonitor, mockLogger)
+			publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
 			err := publisher.PublishDelete(context.Background(), tt.subject, tt.relation, tt.object)
 
 			if (err != nil) != tt.wantErr {
@@ -256,7 +267,7 @@ func TestPermissionPublisher_PublishOperations(t *testing.T) {
 		mockMonitor := NewMockMonitorInterface(ctrl)
 		mockLogger := NewMockLoggerInterface(ctrl)
 
-		publisher := NewPermissionPublisher(mockWriter, mockTracer, mockMonitor, mockLogger)
+		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
 		err := publisher.PublishOperations(context.Background())
 		if err != nil {
 			t.Fatalf("expected nil error for empty ops, got %v", err)
@@ -303,7 +314,7 @@ func TestPermissionPublisher_PublishOperations(t *testing.T) {
 
 		mockMonitor.EXPECT().SetDependencyAvailability(map[string]string{"component": "kafka"}, float64(1)).Return(nil)
 
-		publisher := NewPermissionPublisher(mockWriter, mockTracer, mockMonitor, mockLogger)
+		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
 		err := publisher.PublishOperations(context.Background(),
 			Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u1", Relation: "member", Object: "group-in-claim:grp-1"},
 			Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u2", Relation: "member", Object: "group-in-claim:grp-1"},
@@ -348,7 +359,7 @@ func TestPermissionPublisher_PublishOperations(t *testing.T) {
 
 		mockMonitor.EXPECT().SetDependencyAvailability(map[string]string{"component": "kafka"}, float64(1)).Return(nil).Times(2)
 
-		publisher := NewPermissionPublisher(mockWriter, mockTracer, mockMonitor, mockLogger)
+		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
 		op1 := Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u1", Relation: "member", Object: "group-in-claim:grp-1"}
 		op2 := Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u2", Relation: "member", Object: "group-in-claim:grp-1"}
 
@@ -376,7 +387,7 @@ func TestPermissionPublisher_Close(t *testing.T) {
 		mockWriter := NewMockKafkaWriterInterface(ctrl)
 		mockWriter.EXPECT().Close().Return(nil)
 
-		publisher := NewPermissionPublisher(mockWriter, nil, nil, nil)
+		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, nil, nil, nil)
 		if err := publisher.Close(); err != nil {
 			t.Fatalf("expected nil error on close, got: %v", err)
 		}
@@ -389,14 +400,14 @@ func TestPermissionPublisher_Close(t *testing.T) {
 		mockWriter := NewMockKafkaWriterInterface(ctrl)
 		mockWriter.EXPECT().Close().Return(errors.New("failed to close writer"))
 
-		publisher := NewPermissionPublisher(mockWriter, nil, nil, nil)
+		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, nil, nil, nil)
 		if err := publisher.Close(); err == nil {
 			t.Fatalf("expected error on close, got nil")
 		}
 	})
 
 	t.Run("nil writer close", func(t *testing.T) {
-		publisher := NewPermissionPublisher(nil, nil, nil, nil)
+		publisher := NewPermissionPublisher(nil, testServiceName, testTopic, nil, nil, nil)
 		if err := publisher.Close(); err != nil {
 			t.Fatalf("expected nil error on close with nil writer, got: %v", err)
 		}
@@ -404,13 +415,10 @@ func TestPermissionPublisher_Close(t *testing.T) {
 }
 
 func TestNewKafkaWriter(t *testing.T) {
-	t.Run("default topic", func(t *testing.T) {
-		writer := NewKafkaWriter([]string{"localhost:9092"}, "")
-		if writer == nil {
-			t.Fatal("expected non-nil kafka writer")
-		}
-		if writer.Topic != DefaultPermissionsTopic {
-			t.Errorf("expected topic %q, got %q", DefaultPermissionsTopic, writer.Topic)
+	t.Run("topic used verbatim", func(t *testing.T) {
+		writer := NewKafkaWriter([]string{"localhost:9092"}, testTopic)
+		if writer.Topic != testTopic {
+			t.Errorf("expected topic %q, got %q", testTopic, writer.Topic)
 		}
 		if !writer.Async {
 			t.Errorf("expected Async true, got false")
@@ -443,9 +451,6 @@ func TestNewKafkaWriter(t *testing.T) {
 
 	t.Run("custom topic", func(t *testing.T) {
 		writer := NewKafkaWriter([]string{"localhost:9092"}, "custom.topic")
-		if writer == nil {
-			t.Fatal("expected non-nil kafka writer")
-		}
 		if writer.Topic != "custom.topic" {
 			t.Errorf("expected topic 'custom.topic', got %q", writer.Topic)
 		}
@@ -460,7 +465,7 @@ func TestNewKafkaWriter(t *testing.T) {
 
 		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any())
 
-		_ = NewPermissionPublisher(writer, nil, nil, mockLogger)
+		_ = NewPermissionPublisher(writer, testServiceName, testTopic, nil, nil, mockLogger)
 		if writer.Completion == nil {
 			t.Fatal("expected completion handler to be set on kafka.Writer")
 		}
@@ -468,6 +473,138 @@ func TestNewKafkaWriter(t *testing.T) {
 		writer.Completion([]kafkago.Message{{}}, nil)
 		writer.Completion([]kafkago.Message{{}}, errors.New("network failure"))
 	})
+}
+
+func TestPermissionPublisher_DeclaredServiceIdentity(t *testing.T) {
+	tests := []struct {
+		name        string
+		serviceName string
+		wantService string
+	}{
+		{
+			name:        "default identity",
+			serviceName: testServiceName,
+			wantService: "hook-service",
+		},
+		{
+			name:        "portal identity",
+			serviceName: "portal",
+			wantService: "portal",
+		},
+		{
+			name:        "empty identity is not substituted",
+			serviceName: "",
+			wantService: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockWriter := NewMockKafkaWriterInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+			mockLogger := NewMockLoggerInterface(ctrl)
+
+			noopTracer := noop.NewTracerProvider().Tracer("test")
+			mockTracer.EXPECT().Start(gomock.Any(), "kafka.PermissionPublisher.PublishOperations", gomock.Any()).
+				DoAndReturn(func(ctx context.Context, spanName string, opts ...any) (context.Context, any) {
+					return noopTracer.Start(ctx, spanName)
+				})
+			mockMonitor.EXPECT().SetDependencyAvailability(map[string]string{"component": "kafka"}, float64(1)).Return(nil)
+
+			mockWriter.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(ctx context.Context, msgs ...kafkago.Message) error {
+					if len(msgs) != 1 {
+						t.Fatalf("expected 1 message, got %d", len(msgs))
+					}
+					var env v1.PermissionUpdateEnvelope
+					if err := proto.Unmarshal(msgs[0].Value, &env); err != nil {
+						t.Fatalf("failed to unmarshal proto envelope: %v", err)
+					}
+					if env.GetService() != tt.wantService {
+						t.Errorf("expected service %q, got %q", tt.wantService, env.GetService())
+					}
+					return nil
+				})
+
+			publisher := NewPermissionPublisher(mockWriter, tt.serviceName, testTopic, mockTracer, mockMonitor, mockLogger)
+			if err := publisher.PublishWrite(t.Context(), "user:u1", "can_delete", "group:g1"); err != nil {
+				t.Fatalf("PublishWrite() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestPermissionPublisher_ReportsConfiguredDestination(t *testing.T) {
+	tests := []struct {
+		name            string
+		topic           string
+		wantDestination string
+	}{
+		{
+			name:            "default destination",
+			topic:           testTopic,
+			wantDestination: "hook-service.permissions",
+		},
+		{
+			name:            "portal destination",
+			topic:           "portal.permissions",
+			wantDestination: "portal.permissions",
+		},
+		{
+			name:            "empty destination is not substituted",
+			topic:           "",
+			wantDestination: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := gomock.NewController(t)
+			defer ctrl.Finish()
+
+			mockWriter := NewMockKafkaWriterInterface(ctrl)
+			mockTracer := NewMockTracingInterface(ctrl)
+			mockMonitor := NewMockMonitorInterface(ctrl)
+			mockLogger := NewMockLoggerInterface(ctrl)
+
+			// A noop span discards attributes, so record through the SDK instead.
+			recorder := tracetest.NewSpanRecorder()
+			provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+			sdkTracer := provider.Tracer("test")
+
+			mockTracer.EXPECT().Start(gomock.Any(), "kafka.PermissionPublisher.PublishOperations", gomock.Any()).
+				DoAndReturn(func(ctx context.Context, spanName string, opts ...any) (context.Context, any) {
+					return sdkTracer.Start(ctx, spanName)
+				})
+			mockMonitor.EXPECT().SetDependencyAvailability(map[string]string{"component": "kafka"}, float64(1)).Return(nil)
+			mockWriter.EXPECT().WriteMessages(gomock.Any(), gomock.Any()).Return(nil)
+
+			publisher := NewPermissionPublisher(mockWriter, testServiceName, tt.topic, mockTracer, mockMonitor, mockLogger)
+			if err := publisher.PublishWrite(t.Context(), "user:u1", "can_delete", "group:g1"); err != nil {
+				t.Fatalf("PublishWrite() error = %v", err)
+			}
+
+			ended := recorder.Ended()
+			if len(ended) != 1 {
+				t.Fatalf("expected 1 recorded span, got %d", len(ended))
+			}
+
+			attrs := ended[0].Attributes()
+			i := slices.IndexFunc(attrs, func(kv attribute.KeyValue) bool {
+				return kv.Key == "messaging.destination"
+			})
+			if i < 0 {
+				t.Fatalf("messaging.destination attribute not set on span")
+			}
+			if got := attrs[i].Value.AsString(); got != tt.wantDestination {
+				t.Errorf("messaging.destination = %q, want %q", got, tt.wantDestination)
+			}
+		})
+	}
 }
 
 func TestNoopPublisher(t *testing.T) {

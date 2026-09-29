@@ -15,6 +15,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/canonical/hook-service/internal/authorization"
+	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/http/types"
 	"github.com/canonical/hook-service/internal/logging"
@@ -41,6 +42,7 @@ func NewRouter(
 	tenantValidator tenants.TenantValidatorInterface,
 	jwtVerifier authentication.TokenVerifierInterface,
 	publisher groups_api.PermissionPublisherInterface,
+	deploymentMode config.DeploymentMode,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -115,7 +117,7 @@ func NewRouter(
 		monitor,
 		logger).RegisterEndpoints(router)
 	metrics.NewAPI(logger).RegisterEndpoints(router)
-	status.NewAPI(tracer, monitor, logger).RegisterEndpoints(router)
+	status.NewAPI(deploymentMode, tracer, monitor, logger).RegisterEndpoints(router)
 
 	router.Mount("/api/v0/authz", authzRouter)
 

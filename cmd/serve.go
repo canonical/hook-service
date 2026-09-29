@@ -27,6 +27,7 @@ import (
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/kafka"
 	"github.com/canonical/hook-service/internal/logging"
+	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/monitoring/prometheus"
 	"github.com/canonical/hook-service/internal/openfga"
 	"github.com/canonical/hook-service/internal/pool"
@@ -52,6 +53,78 @@ func init() {
 }
 
 var errShutdownSignal = errors.New("shutdown signal received")
+
+// publisherSetup is the outcome of selecting a permission publisher: the publisher
+// itself, the deployment mode its selection implies, and the function that releases it.
+type publisherSetup struct {
+	publisher groups_api.PermissionPublisherInterface
+	mode      config.DeploymentMode
+	close     func() error
+}
+
+// newPublisherSetup selects the permission publisher and the deployment mode implied by
+// the configured brokers, reports the active mode, and warns when the configured
+// federated service name disagrees with that mode. The publisher and the mode are
+// produced together so the reported mode cannot diverge from the publisher in use.
+//
+// The federated service name is validated regardless of mode: an invalid name is a
+// configuration error whether or not the running mode consumes it, and deferring the
+// check to platform mode would surface it when brokers are first configured rather
+// than when the mistake is made.
+func newPublisherSetup(
+	specs *config.EnvSpec,
+	tracer tracing.TracingInterface,
+	monitor monitoring.MonitorInterface,
+	logger logging.LoggerInterface,
+) (*publisherSetup, error) {
+	if err := config.ValidateFederatedServiceName(specs.FederatedServiceName); err != nil {
+		return nil, fmt.Errorf("invalid federated service configuration: %w", err)
+	}
+
+	namedDeployment := specs.FederatedServiceName != config.DefaultFederatedServiceName
+
+	if len(specs.KafkaBrokers) == 0 {
+		publisher := kafka.NewNoopPublisher(tracer, monitor, logger)
+		logger.Infof(
+			"Running in %s mode: permission event publishing is disabled (no brokers configured)",
+			config.ModeStandalone,
+		)
+		if namedDeployment {
+			logger.Warnf(
+				"Federated service name %q is configured but no brokers are set; running in %s mode and publishing nothing",
+				specs.FederatedServiceName, config.ModeStandalone,
+			)
+		}
+		return &publisherSetup{
+			publisher: publisher,
+			mode:      config.ModeStandalone,
+			close:     publisher.Close,
+		}, nil
+	}
+
+	if err := config.ValidateKafkaBrokers(specs.KafkaBrokers); err != nil {
+		return nil, fmt.Errorf("invalid kafka configuration: %w", err)
+	}
+
+	topic := config.PermissionsTopic(specs.FederatedServiceName)
+	writer := kafka.NewKafkaWriter(specs.KafkaBrokers, topic)
+	publisher := kafka.NewPermissionPublisher(writer, specs.FederatedServiceName, topic, tracer, monitor, logger)
+	logger.Infof(
+		"Running in %s mode: federated service %q, permission topic %q, brokers %v",
+		config.ModePlatform, specs.FederatedServiceName, topic, specs.KafkaBrokers,
+	)
+	if !namedDeployment {
+		logger.Warnf(
+			"Running in %s mode under the default federated service name %q; permission events will be attributed to the standalone service",
+			config.ModePlatform, specs.FederatedServiceName,
+		)
+	}
+	return &publisherSetup{
+		publisher: publisher,
+		mode:      config.ModePlatform,
+		close:     publisher.Close,
+	}, nil
+}
 
 func serve() error {
 	specs := new(config.EnvSpec)
@@ -180,24 +253,16 @@ func serve() error {
 	wpool := pool.NewWorkerPool(specs.HookMaxConcurrent, tracer, monitor, logger)
 	defer wpool.Stop()
 
-	var publisher groups_api.PermissionPublisherInterface
-	if len(specs.KafkaBrokers) > 0 {
-		if err := config.ValidateKafkaBrokers(specs.KafkaBrokers); err != nil {
-			return fmt.Errorf("invalid kafka configuration: %w", err)
-		}
-		kafkaWriter := kafka.NewKafkaWriter(specs.KafkaBrokers, "")
-		kafkaPublisher := kafka.NewPermissionPublisher(kafkaWriter, tracer, monitor, logger)
-		defer func() {
-			if err := kafkaPublisher.Close(); err != nil {
-				logger.Errorf("failed to close kafka publisher: %v", err)
-			}
-		}()
-		publisher = kafkaPublisher
-		logger.Infof("Kafka permission publisher initialized with brokers: %v", specs.KafkaBrokers)
-	} else {
-		publisher = kafka.NewNoopPublisher(tracer, monitor, logger)
-		logger.Info("Kafka permission publisher disabled (no brokers configured)")
+	publishing, err := newPublisherSetup(specs, tracer, monitor, logger)
+	if err != nil {
+		return err
 	}
+	defer func() {
+		if err := publishing.close(); err != nil {
+			logger.Errorf("failed to close kafka publisher: %v", err)
+		}
+	}()
+	publisher, deploymentMode := publishing.publisher, publishing.mode
 
 	router := web.NewRouter(
 		specs.ApiToken,
@@ -209,6 +274,7 @@ func serve() error {
 		tenantValidator,
 		jwtVerifier,
 		publisher,
+		deploymentMode,
 		tracer,
 		monitor,
 		logger,
