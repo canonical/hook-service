@@ -50,15 +50,38 @@ The application is configured via environment variables.
 | `REPLICA_DB_MAX_CONN_IDLE_TIME` | Max replica connection idle time | `30m` |
 | `MAX_REPLICA_LAG_MS` | Max replication lag before falling back to primary | `1000` |
 | `REPLICA_POOL_SIZE_MULTIPLIER` | Multiplier for sizing replica pool relative to primary pool | `1.0` |
-| `KAFKA_BROKERS` | Comma-separated Kafka broker addresses for Authorization Service permission event publishing (empty = disabled) | |
+| `KAFKA_BROKERS` | Comma-separated Kafka broker addresses. Selects the deployment mode: set = `platform`, empty = `standalone` | |
+| `FEDERATED_SERVICE_NAME` | This deployment's identity as known to Authorization Service. Derives the permission topic (`<name>.permissions`) and the identity declared in each event | `hook-service` |
 
 ## Features
 
-### Authorization Service Onboarding (Kafka Permission Publishing)
+### Deployment modes
 
-When `KAFKA_BROKERS` is configured, `hook-service` publishes permission lifecycle events (`owner` and `member` relationship tuples) to the `hook-service.permissions` Kafka topic whenever groups and group memberships are created, updated, or deleted. These protobuf-encoded events (`PermissionUpdateEnvelope`) are consumed by Authorization Service (`authorization-service`) to synchronize fine-grained authorization state in OpenFGA.
+`hook-service` runs in one of two modes, selected at startup from `KAFKA_BROKERS` alone:
 
-Publishing is resilient and decoupled from PostgreSQL transactions: if Kafka is unavailable or returns an error, the database operation still succeeds, and the failure is logged as a warning.
+| Mode | Selected when | Behaviour |
+|---|---|---|
+| `standalone` | `KAFKA_BROKERS` is empty | No permission events are published. This is the Canonical Identity Platform deployment. |
+| `platform` | `KAFKA_BROKERS` is set | Permission event publishing is enabled. This is the deployment shape used by Canonical Portal. |
+
+The active mode is logged at startup and reported by `GET /api/v0/status` as the `mode` field, so the behaviour of a running instance can be determined without access to its configuration.
+
+`FEDERATED_SERVICE_NAME` is configured independently of the mode. The two may disagree — a named deployment without brokers, or the default name with brokers — and both cases are warned at startup without preventing startup.
+
+### Permission event publishing
+
+`FEDERATED_SERVICE_NAME` determines where permission events are sent and how they identify themselves:
+
+| `FEDERATED_SERVICE_NAME` | Topic | Declared identity |
+|---|---|---|
+| `hook-service` (default) | `hook-service.permissions` | `hook-service` |
+| `portal` | `portal.permissions` | `portal` |
+
+Events are protobuf-encoded `PermissionUpdateEnvelope` messages intended for consumption by Authorization Service to synchronise authorization state in OpenFGA.
+
+**No permission events are currently published.** The publisher is wired and configurable but has no callers: group creation, update, deletion, and membership changes do not emit events in either mode. Publishing will be introduced once the per-group authorization model it should describe is defined.
+
+Delivery, when publishing is introduced, is asynchronous and fire-and-forget: it is decoupled from PostgreSQL transactions, so database operations succeed regardless of broker availability, and delivery failures are reported through a background completion handler rather than to the caller.
 
 ### JWT Authentication
 
