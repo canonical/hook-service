@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
@@ -17,11 +18,14 @@ import (
 const okValue = "ok"
 
 type Status struct {
-	Status    string     `json:"status"`
-	BuildInfo *BuildInfo `json:"buildInfo"`
+	Status    string                `json:"status"`
+	Mode      config.DeploymentMode `json:"mode"`
+	BuildInfo *BuildInfo            `json:"buildInfo"`
 }
 
 type API struct {
+	mode config.DeploymentMode
+
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
 	logger  logging.LoggerInterface
@@ -39,6 +43,7 @@ func (a *API) alive(w http.ResponseWriter, r *http.Request) {
 
 	rr := Status{
 		Status: okValue,
+		Mode:   a.mode,
 	}
 
 	_, span := a.tracer.Start(r.Context(), "buildInfo")
@@ -66,9 +71,12 @@ func (a *API) version(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func NewAPI(tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *API {
+// NewAPI creates a status API reporting the given deployment mode. The mode is supplied
+// by the caller that wired the permission publisher, so it cannot drift from what is running.
+func NewAPI(mode config.DeploymentMode, tracer tracing.TracingInterface, monitor monitoring.MonitorInterface, logger logging.LoggerInterface) *API {
 	a := new(API)
 
+	a.mode = mode
 	a.tracer = tracer
 	a.monitor = monitor
 	a.logger = logger
