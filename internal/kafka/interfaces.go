@@ -6,9 +6,8 @@ package kafka
 import (
 	"context"
 
+	v1 "github.com/canonical/authorization-service/api/v1"
 	kafkago "github.com/segmentio/kafka-go"
-
-	v1 "github.com/canonical/hook-service/gen/authorization/service/api/v1"
 )
 
 // Operation represents a single permission update operation.

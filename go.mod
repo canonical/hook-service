@@ -1,9 +1,10 @@
 module github.com/canonical/hook-service
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
+	github.com/canonical/authorization-service v1.0.0
 	github.com/canonical/identity-platform-api v0.0.0-20260924175044-8c1a27b95cef
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/exaring/otelpgx v0.12.1
@@ -16,7 +17,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/openfga/go-sdk v0.7.1
+	github.com/openfga/go-sdk v0.7.5
 	github.com/openfga/language/pkg/go v0.3.2
 	github.com/ory/hydra-client-go/v2 v2.2.1
 	github.com/pressly/goose/v3 v3.28.0
@@ -110,7 +111,7 @@ require (
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
-	github.com/sourcegraph/conc v0.3.0 // indirect
+	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect

@@ -22,7 +22,7 @@ type EnvSpec struct {
 
 	Port int `envconfig:"port" default:"8080"`
 
-	GRPCPort int `envconfig:"grpc_port" default:"9090"`
+	GRPCPort                 int    `envconfig:"grpc_port" default:"9090"`
 	GRPCMaxConcurrentStreams uint32 `envconfig:"grpc_max_concurrent_streams" default:"100"`
 
 	ApiToken string `envconfig:"api_token" default:""`
@@ -57,17 +57,67 @@ type EnvSpec struct {
 	TenantServiceGRPCTimeout time.Duration `envconfig:"tenant_service_grpc_timeout" default:"5s"`
 	TenantServiceTLSEnabled  bool          `envconfig:"tenant_service_tls_enabled" default:"false"`
 
-	ReplicaDSN                 string        `envconfig:"replica_dsn" default:""`
-	ReplicaDBMaxConns          int32         `envconfig:"replica_db_max_conns" default:"25"`
-	ReplicaDBMinConns          int32         `envconfig:"replica_db_min_conns" default:"2"`
-	ReplicaDBMaxConnLifetime   time.Duration `envconfig:"replica_db_max_conn_lifetime" default:"1h"`
-	ReplicaDBMaxConnIdleTime   time.Duration `envconfig:"replica_db_max_conn_idle_time" default:"30m"`
-	MaxReplicaLagMs            int64         `envconfig:"max_replica_lag_ms" default:"1000"`
-	ReplicaPoolSizeMultiplier  float64       `envconfig:"replica_pool_size_multiplier" default:"1.0"`
-	StreamTimeout              time.Duration `envconfig:"stream_timeout" default:"30s"`
-	KafkaBrokers               []string      `envconfig:"kafka_brokers" default:""`
+	ReplicaDSN                string        `envconfig:"replica_dsn" default:""`
+	ReplicaDBMaxConns         int32         `envconfig:"replica_db_max_conns" default:"25"`
+	ReplicaDBMinConns         int32         `envconfig:"replica_db_min_conns" default:"2"`
+	ReplicaDBMaxConnLifetime  time.Duration `envconfig:"replica_db_max_conn_lifetime" default:"1h"`
+	ReplicaDBMaxConnIdleTime  time.Duration `envconfig:"replica_db_max_conn_idle_time" default:"30m"`
+	MaxReplicaLagMs           int64         `envconfig:"max_replica_lag_ms" default:"1000"`
+	ReplicaPoolSizeMultiplier float64       `envconfig:"replica_pool_size_multiplier" default:"1.0"`
+	StreamTimeout             time.Duration `envconfig:"stream_timeout" default:"30s"`
+	KafkaBrokers              []string      `envconfig:"kafka_brokers" default:""`
+
+	FederatedServiceName string `envconfig:"federated_service_name" default:"hook-service"`
 
 	HookMaxConcurrent int `envconfig:"hook_max_concurrent" default:"150"`
+}
+
+// DefaultFederatedServiceName is the federated service name used when none is configured.
+const DefaultFederatedServiceName = "hook-service"
+
+// MaxTopicNameLength is the maximum length Kafka permits for a topic name.
+const MaxTopicNameLength = 249
+
+// DeploymentMode names the behaviour selected at startup. It is derived solely from
+// whether message broker addresses are configured.
+type DeploymentMode string
+
+// Deployment modes reported to operators.
+const (
+	ModePlatform   DeploymentMode = "platform"
+	ModeStandalone DeploymentMode = "standalone"
+)
+
+// PermissionsTopic returns the topic a federated service publishes permission updates to.
+func PermissionsTopic(federatedServiceName string) string {
+	return "permissions." + federatedServiceName
+}
+
+// ValidateFederatedServiceName checks that the federated service name is non-empty and
+// yields a usable topic name.
+func ValidateFederatedServiceName(name string) error {
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("invalid federated service name %q: must not be empty", name)
+	}
+	if strings.ContainsFunc(name, isNotTopicNameRune) {
+		return fmt.Errorf("invalid federated service name %q: must contain only letters, digits, dots, underscores, or hyphens", name)
+	}
+	if topic := PermissionsTopic(name); len(topic) > MaxTopicNameLength {
+		return fmt.Errorf("invalid federated service name %q: derived topic is %d characters, exceeding the %d character limit", name, len(topic), MaxTopicNameLength)
+	}
+	return nil
+}
+
+// isNotTopicNameRune reports whether r is disallowed in a topic name.
+func isNotTopicNameRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		return false
+	case r == '.', r == '_', r == '-':
+		return false
+	default:
+		return true
+	}
 }
 
 // ValidateKafkaBrokers checks that all non-empty broker addresses have valid host:port format.
