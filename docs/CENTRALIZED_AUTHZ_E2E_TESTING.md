@@ -77,7 +77,7 @@ The Canonical Identity and Access Management (IAM) platform enforces a **zero-tr
                                        Ready for future streaming)
                                                       v
                                             [Kafka Broker :9092]
-                                          (hook-service.permissions)
+                                          (permissions.hook-service)
 ```
 
 ---
@@ -114,7 +114,7 @@ The Canonical Identity and Access Management (IAM) platform enforces a **zero-tr
      - Performs OpenFGA `BatchCheck` queries against OpenFGA (`:8082`), verifying user relations while enforcing multi-tenant isolation via the `tenant_match` condition.
      - Returns gRPC `CheckResponse` to Envoy, injecting `Authorization: Bearer <JWT>`.
   2. **Kafka Listener Daemon (`bin/app listen`)** & **Async Worker Daemon (`bin/app worker`)**:
-     - Consumes protobuf messages from `<slug>.permissions` Kafka topics and reconciles OpenFGA tuples.
+     - Consumes protobuf messages from `permissions.<slug>` Kafka topics and reconciles OpenFGA tuples.
 
 ### Pillar 4: Hook Service
 - **Role**: Microservice resource server and Canonical Identity Platform Hydra token hook.
@@ -205,7 +205,7 @@ sequenceDiagram
 | **Hook Service Internal gRPC** | `app serve` | `9095` | gRPC | Groups mapping streaming gRPC API |
 | **OpenFGA Engine** | `openfga run` | `8082` (host) / `8080` (ctr) | HTTP | OpenFGA API (`/stores/{id}/check`, `/write`, `/read`) |
 | **OpenFGA gRPC** | `openfga run` | `8081` (host) / `8081` (ctr) | gRPC | OpenFGA high-performance gRPC endpoint |
-| **Kafka Broker** | `kafka` | `9092` | TCP | Event streaming topic: `hook-service.permissions` |
+| **Kafka Broker** | `kafka` | `9092` | TCP | Event streaming topic: `permissions.hook-service` |
 | **PostgreSQL Database** | `postgres:16` | `5433` (host) / `5432` (ctr) | TCP | Multi-DB host: `authorization-service`, `groups`, `sts` |
 | **Valkey / Redis Cache** | `valkey:8` | `6380` (host) / `6379` (ctr) | TCP | Session store for STS / Janus |
 
@@ -633,7 +633,7 @@ docker exec -it authz-valkey redis-cli -p 6379 GET "<session_key>"
 ```bash
 docker exec authz-kafka /opt/kafka/bin/kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 \
-  --topic hook-service.permissions \
+  --topic permissions.hook-service \
   --from-beginning
 ```
 

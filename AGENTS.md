@@ -484,11 +484,17 @@ func (s *Storage) CreateGroup(ctx context.Context, group *types.Group) {
 See `internal/config/specs.go` for complete list:
 - `AUTHORIZATION_ENABLED`: Enable OpenFGA checks (default: false)
 - `OPENFGA_API_HOST`, `OPENFGA_STORE_ID`, `OPENFGA_API_TOKEN`: OpenFGA connection details
-- `SALESFORCE_ENABLED`: Enable Salesforce group provider (default: true)
 - `SALESFORCE_DOMAIN`, `SALESFORCE_CONSUMER_KEY`, `SALESFORCE_CONSUMER_SECRET`: Salesforce OAuth configuration
+- `KAFKA_BROKERS`: Comma-separated broker addresses. Selects the deployment mode: set = `platform`, empty = `standalone` (default: empty)
+- `FEDERATED_SERVICE_NAME`: This deployment's identity as known to Authorization Service. Derives the permission topic (`permissions.<name>`) and the identity declared in each published event (default: `hook-service`)
 - `API_TOKEN`: Optional bearer token for webhook endpoint protection
 - `LOG_LEVEL`: debug, info, error (default: error)
 - `TRACING_ENABLED`: Enable OpenTelemetry (default: true)
+
+Deployment mode is derived from `KAFKA_BROKERS` alone and is never inferred from
+`FEDERATED_SERVICE_NAME`. The two are configured independently; when they disagree the
+service warns at startup and continues. No permission events are published in either mode
+today, as the publisher has no callers.
 
 ---
 
