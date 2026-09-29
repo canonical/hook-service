@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/canonical/hook-service/internal/authorization"
+	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/db"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -59,6 +60,7 @@ func setupIntegrationEnv(t *testing.T) (string, func()) {
 		tenantValidator,
 		jwtVerifier,
 		nil,
+		config.ModeStandalone,
 		tracer,
 		monitor,
 		logger,

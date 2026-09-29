@@ -249,9 +249,11 @@ start_daemon "Authorization Service Kafka Listener" 9101 "$LOGS_DIR/authorizatio
     "$AUTHZ_SERVICE_DIR/bin/app" listen
 
 # Start Hook Service Serve
+# No KAFKA_BROKERS: this harness asserts standalone role-membership behaviour, so
+# hook-service must run in standalone mode and publish no permission events.
 start_daemon "Hook Service Serve" 8000 "$LOGS_DIR/hook-service.log" \
     env PORT="8000" GRPC_PORT="9095" AUTHENTICATION_ENABLED="false" \
-    KAFKA_BROKERS="localhost:9092" DSN="postgres://groups:groups@localhost:5433/groups?sslmode=disable" \
+    DSN="postgres://groups:groups@localhost:5433/groups?sslmode=disable" \
     SALESFORCE_ENABLED="false" AUTHORIZATION_ENABLED="false" LOG_LEVEL="debug" \
     "$HOOK_SERVICE_DIR/app" serve
 

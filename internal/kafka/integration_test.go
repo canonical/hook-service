@@ -8,12 +8,13 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/canonical/authorization-service/api/v1"
 	kafkago "github.com/segmentio/kafka-go"
 	tc_kafka "github.com/testcontainers/testcontainers-go/modules/kafka"
 	trace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 
-	v1 "github.com/canonical/hook-service/gen/authorization/service/api/v1"
+	"github.com/canonical/hook-service/internal/config"
 	"github.com/canonical/hook-service/internal/kafka"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
@@ -42,7 +43,6 @@ func (m *noopMonitor) SetDependencyAvailability(_ map[string]string, _ float64) 
 
 var _ tracing.TracingInterface = (*noopTracer)(nil)
 var _ monitoring.MonitorInterface = (*noopMonitor)(nil)
-
 
 func setupKafkaContainer(t *testing.T) (string, func()) {
 	t.Helper()
@@ -79,7 +79,7 @@ func setupKafkaContainer(t *testing.T) (string, func()) {
 	_, _ = client.CreateTopics(ctx, &kafkago.CreateTopicsRequest{
 		Topics: []kafkago.TopicConfig{
 			{
-				Topic:             kafka.DefaultPermissionsTopic,
+				Topic:             config.PermissionsTopic(config.DefaultFederatedServiceName),
 				NumPartitions:     1,
 				ReplicationFactor: 1,
 			},
@@ -93,7 +93,6 @@ func setupKafkaContainer(t *testing.T) (string, func()) {
 	return brokers[0], cleanup
 }
 
-
 func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
 	broker, cleanup := setupKafkaContainer(t)
 	defer cleanup()
@@ -101,13 +100,13 @@ func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	topic := kafka.DefaultPermissionsTopic
+	topic := config.PermissionsTopic(config.DefaultFederatedServiceName)
 	writer := kafka.NewKafkaWriter([]string{broker}, topic)
 	logger := logging.NewLogger("debug")
 	tracer := &noopTracer{}
 	monitor := &noopMonitor{}
 
-	publisher := kafka.NewPermissionPublisher(writer, tracer, monitor, logger)
+	publisher := kafka.NewPermissionPublisher(writer, config.DefaultFederatedServiceName, topic, tracer, monitor, logger)
 	defer func() { _ = publisher.Close() }()
 
 	// 1. Test PublishWrite
@@ -186,7 +185,6 @@ func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
 		t.Errorf("env2 idempotency_key = %q, want %q", env2.IdempotencyKey, expectedIdempotencyKey2)
 	}
 
-
 	if len(env2.Operations) != 1 {
 		t.Fatalf("msg2 operations count = %d, want 1", len(env2.Operations))
 	}
@@ -230,4 +228,3 @@ func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
 		t.Errorf("unexpected op 1 in batch: %+v", env3.Operations[1])
 	}
 }
-
