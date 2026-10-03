@@ -17,7 +17,7 @@ require (
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/openfga/go-sdk v0.7.1
-	github.com/openfga/language/pkg/go v0.3.1
+	github.com/openfga/language/pkg/go v0.3.2
 	github.com/ory/hydra-client-go/v2 v2.2.1
 	github.com/pressly/goose/v3 v3.28.0
 	github.com/prometheus/client_golang v1.24.1
