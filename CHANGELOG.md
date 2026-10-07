@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0](https://github.com/canonical/hook-service/compare/v1.4.1...v1.5.0) (2026-10-07)
+
+
+### Features
+
+* authz svc onboarding ([04650a3](https://github.com/canonical/hook-service/commit/04650a3d8d743413317db31f8518798fbf3ee64b))
+* platform mode ([f0fe08b](https://github.com/canonical/hook-service/commit/f0fe08bd6d43518d75deead9c580a37b0973d021))
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([b89a9ad](https://github.com/canonical/hook-service/commit/b89a9ada90e1da3d0ac41102f0661b83fec531b7))
+* **deps:** update module github.com/segmentio/kafka-go to v0.4.51 ([b13ad72](https://github.com/canonical/hook-service/commit/b13ad725d554c87f24cbbda129ad227be1842cad))
+* **deps:** update module github.com/segmentio/kafka-go to v0.4.51 ([#384](https://github.com/canonical/hook-service/issues/384)) ([ea6791b](https://github.com/canonical/hook-service/commit/ea6791b21f5074bf38fc80a01dd78bd9c07f6f91))
+* fix the local devevelopment setup ([b870553](https://github.com/canonical/hook-service/commit/b870553195a6fec5931787f56ee6b243b427dc36))
+
 ## [1.4.1](https://github.com/canonical/hook-service/compare/v1.4.0...v1.4.1) (2026-10-07)
 
 
