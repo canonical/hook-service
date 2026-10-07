@@ -28,7 +28,12 @@ func (m *Monitor) SetResponseTimeMetric(tags map[string]string, value float64) e
 		return fmt.Errorf("metric not instantiated")
 	}
 
-	m.responseTime.With(tags).Observe(value)
+	observer, err := m.responseTime.GetMetricWith(tags)
+	if err != nil {
+		return fmt.Errorf("failed to get response time metric: %v", err)
+	}
+
+	observer.Observe(value)
 
 	return nil
 }
@@ -38,7 +43,12 @@ func (m *Monitor) SetDependencyAvailability(tags map[string]string, value float6
 		return fmt.Errorf("metric not instantiated")
 	}
 
-	m.dependencyAvailability.With(tags).Set(value)
+	gauge, err := m.dependencyAvailability.GetMetricWith(tags)
+	if err != nil {
+		return fmt.Errorf("failed to get dependency availability metric: %v", err)
+	}
+
+	gauge.Set(value)
 
 	return nil
 }

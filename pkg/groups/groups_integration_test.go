@@ -13,6 +13,7 @@ import (
 
 	"github.com/canonical/hook-service/internal/authorization"
 	"github.com/canonical/hook-service/internal/db"
+	"github.com/canonical/hook-service/internal/kafka"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/openfga"
@@ -33,6 +34,7 @@ func setupIntegrationEnv(t *testing.T) (string, func()) {
 	logger := logging.NewNoopLogger()
 	monitor := monitoring.NewNoopMonitor("hook-service-test", logger)
 	tracer := tracing.NewNoopTracer()
+	publisher := kafka.NewNoopPublisher(tracer, monitor, logger)
 
 	dbClient, err := db.NewDBClient(db.Config{DSN: connStr, MaxConns: 5, MinConns: 1}, tracer, monitor, logger)
 	if err != nil {
@@ -58,6 +60,7 @@ func setupIntegrationEnv(t *testing.T) (string, func()) {
 		authz,
 		tenantValidator,
 		jwtVerifier,
+		publisher,
 		tracer,
 		monitor,
 		logger,
