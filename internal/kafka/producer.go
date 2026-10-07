@@ -11,6 +11,7 @@ import (
 	"slices"
 	"time"
 
+	v1 "github.com/canonical/authorization-service/api/v1"
 	"github.com/google/uuid"
 	kafkago "github.com/segmentio/kafka-go"
 	"go.opentelemetry.io/otel/attribute"
@@ -18,37 +19,29 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
-	v1 "github.com/canonical/hook-service/gen/authorization/service/api/v1"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
-const (
-	// DefaultPermissionsTopic is the default Kafka topic for permission updates.
-	DefaultPermissionsTopic = "hook-service.permissions"
-	// ServiceName is the service identifier published in envelopes.
-	ServiceName = "hook-service"
-	// SchemaVersion is the envelope payload schema version.
-	SchemaVersion = "1"
-)
+// SchemaVersion is the envelope payload schema version.
+const SchemaVersion = "1"
 
 var _ PermissionPublisherInterface = (*PermissionPublisher)(nil)
 
 // PermissionPublisher publishes permission updates to a Kafka topic.
 type PermissionPublisher struct {
-	writer KafkaWriterInterface
+	writer      KafkaWriterInterface
+	serviceName string
+	topic       string
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
 	logger  logging.LoggerInterface
 }
 
-// NewKafkaWriter creates a configured kafka.Writer.
+// NewKafkaWriter creates a configured kafka.Writer publishing to topic.
 func NewKafkaWriter(brokers []string, topic string) *kafkago.Writer {
-	if topic == "" {
-		topic = DefaultPermissionsTopic
-	}
 	return &kafkago.Writer{
 		Addr:                   kafkago.TCP(brokers...),
 		Topic:                  topic,
@@ -65,9 +58,15 @@ func NewKafkaWriter(brokers []string, topic string) *kafkago.Writer {
 	}
 }
 
-// NewPermissionPublisher constructs a new PermissionPublisher.
+// NewPermissionPublisher constructs a new PermissionPublisher. Both serviceName and
+// topic are required and are used verbatim: this package holds no deployment-specific
+// default, because substituting one would silently attribute a deployment's events to
+// another service. topic must match the one the writer was built with; the caller
+// derives both from the federated service name.
 func NewPermissionPublisher(
 	writer KafkaWriterInterface,
+	serviceName string,
+	topic string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -80,10 +79,12 @@ func NewPermissionPublisher(
 		}
 	}
 	return &PermissionPublisher{
-		writer:  writer,
-		tracer:  tracer,
-		monitor: monitor,
-		logger:  logger,
+		writer:      writer,
+		serviceName: serviceName,
+		topic:       topic,
+		tracer:      tracer,
+		monitor:     monitor,
+		logger:      logger,
 	}
 }
 
@@ -99,7 +100,7 @@ func (p *PermissionPublisher) PublishOperations(ctx context.Context, ops ...Oper
 
 	span.SetAttributes(
 		attribute.String("messaging.system", "kafka"),
-		attribute.String("messaging.destination", DefaultPermissionsTopic),
+		attribute.String("messaging.destination", p.topic),
 		attribute.String("messaging.operation", "publish"),
 		attribute.Int("permission.operation_count", len(ops)),
 	)
@@ -182,7 +183,7 @@ func (p *PermissionPublisher) publish(ctx context.Context, ops ...Operation) err
 
 	envelope := &v1.PermissionUpdateEnvelope{
 		Version:        SchemaVersion,
-		Service:        ServiceName,
+		Service:        p.serviceName,
 		MessageId:      messageID,
 		IdempotencyKey: idempotencyKey,
 		EventTime:      timestamppb.Now(),
