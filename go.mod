@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/canonical/identity-platform-api v0.0.0-20260609125125-fe6c4040a954
 	github.com/coreos/go-oidc/v3 v3.21.0
-	github.com/exaring/otelpgx v0.12.0
+	github.com/exaring/otelpgx v0.12.1
 	github.com/go-chi/chi/v5 v5.3.2
 	github.com/go-chi/cors v1.2.2
 	github.com/go-playground/validator/v10 v10.30.5
