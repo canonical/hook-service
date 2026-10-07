@@ -22,7 +22,7 @@ services:
       retries: 10
 
   migrateopenfga:
-    image: openfga/openfga:v1.14.1
+    image: openfga/openfga:v1.22.0
     container_name: authz-migrateopenfga
     command: migrate --datastore-engine postgres --datastore-uri 'postgresql://authorization-service:password@postgres/openfga?sslmode=disable'
     depends_on:
@@ -32,7 +32,7 @@ services:
       - authz-network
 
   openfga:
-    image: openfga/openfga:v1.14.1
+    image: openfga/openfga:v1.22.0
     container_name: authz-openfga
     ports:
       - "8082:8080"  # HTTP API
