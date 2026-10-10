@@ -106,7 +106,7 @@ services:
       retries: 10
 
   envoy:
-    image: envoyproxy/envoy:v1.30-latest
+    image: envoyproxy/envoy:v1.39-latest
     container_name: authz-envoy
     ports:
       - "10000:10000"
