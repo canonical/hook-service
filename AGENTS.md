@@ -487,14 +487,54 @@ See `internal/config/specs.go` for complete list:
 - `SALESFORCE_DOMAIN`, `SALESFORCE_CONSUMER_KEY`, `SALESFORCE_CONSUMER_SECRET`: Salesforce OAuth configuration
 - `KAFKA_BROKERS`: Comma-separated broker addresses. Selects the deployment mode: set = `platform`, empty = `standalone` (default: empty)
 - `FEDERATED_SERVICE_NAME`: This deployment's identity as known to Authorization Service. Derives the permission topic (`permissions.<name>`) and the identity declared in each published event (default: `hook-service`)
+- `KAFKA_AUTH_TYPE`: Kafka authentication mechanism: `none` or `oauthbearer` (default: `none`)
+- `KAFKA_OAUTH_TOKEN_URL`: Ory Hydra OAuth2 token endpoint URL (required when `KAFKA_AUTH_TYPE=oauthbearer`)
+- `KAFKA_OAUTH_CLIENT_ID`: OAuth2 client ID registered in Ory Hydra (required when `KAFKA_AUTH_TYPE=oauthbearer`)
+- `KAFKA_OAUTH_CLIENT_SECRET`: OAuth2 client secret for Hydra authentication (required when `KAFKA_AUTH_TYPE=oauthbearer`)
+- `KAFKA_OAUTH_SCOPES`: Comma-separated OAuth2 scopes requested from Hydra (default: `""`)
+- `KAFKA_OAUTH_AUDIENCE`: Target audience claim in the OAuth token, validated by Kafka (default: `kafka`)
+- `KAFKA_OAUTH_CA_FILE`: Path to custom PEM CA certificate file for validating Ory Hydra TLS (optional; defaults to system truststore)
+- `KAFKA_TLS_ENABLED`: Enable TLS encryption on Kafka broker connections, required for `SASL_SSL` (default: `false`)
+- `KAFKA_TLS_CA_FILE`: Path to custom PEM CA certificate file for validating Kafka broker TLS (optional; defaults to system truststore)
+- `KAFKA_TLS_INSECURE_SKIP_VERIFY`: Insecurely skip Kafka broker TLS certificate verification (default: `false`; testing only)
 - `API_TOKEN`: Optional bearer token for webhook endpoint protection
 - `LOG_LEVEL`: debug, info, error (default: error)
 - `TRACING_ENABLED`: Enable OpenTelemetry (default: true)
 
 Deployment mode is derived from `KAFKA_BROKERS` alone and is never inferred from
 `FEDERATED_SERVICE_NAME`. The two are configured independently; when they disagree the
-service warns at startup and continues. No permission events are published in either mode
-today, as the publisher has no callers.
+service warns at startup and continues. In standalone mode (`KAFKA_BROKERS` empty), Kafka
+security validation is bypassed, and a warning is logged if Kafka auth/TLS parameters are
+present.
+
+### Deploying with Charmed Kafka & Ory Hydra (SASL_SSL + OAUTHBEARER)
+
+In production environments managed by Charmed Operators:
+1. **Ory Hydra OAuth2 Client Registration**:
+   - Register an OAuth2 client in Ory Hydra dedicated to `hook-service`:
+     - Grant types: `client_credentials`
+     - Response types: `token`
+     - Token endpoint auth method: `client_secret_basic`
+     - Audience: `["kafka"]` (or matching `KAFKA_OAUTH_AUDIENCE`)
+2. **Charmed Kafka Broker Configuration**:
+   - Charmed Kafka must be configured with `oauthbearer` listener authentication:
+     - Integrated with Ory Hydra (via charm relation or configuring Hydra's JWKS endpoint).
+     - Broker listener protocol set to `SASL_SSL`.
+3. **Hook Service Charm / Workload Configuration**:
+   - `KAFKA_BROKERS`: Set to comma-separated broker addresses.
+   - `KAFKA_AUTH_TYPE`: Set to `oauthbearer`.
+   - `KAFKA_TLS_ENABLED`: Set to `true`.
+   - `KAFKA_OAUTH_TOKEN_URL`: Set to Hydra's token endpoint (e.g. `https://hydra.internal:4444/oauth2/token`).
+   - `KAFKA_OAUTH_CLIENT_ID` and `KAFKA_OAUTH_CLIENT_SECRET`: Set to the registered client credentials.
+   - `KAFKA_OAUTH_AUDIENCE`: Set to `kafka`.
+4. **Certificate Management (CA Trust Isolation)**:
+   - When TLS certificates are provisioned by Juju certificate provider charms (e.g., `tls-certificates-operator`):
+     - The CA certificate for Kafka should be mounted into the container and configured via `KAFKA_TLS_CA_FILE`.
+     - The CA certificate for Hydra should be mounted into the container and configured via `KAFKA_OAUTH_CA_FILE`.
+     - `hook-service` constructs dedicated, isolated `x509.CertPool` instances for Kafka and Hydra respectively, preventing cross-domain trust contamination. If both services share the same internal root CA, both variables can point to the same path. If using public CAs, omit these variables to fall back to system trust.
+5. **Connection Lifecycles & Token Rotation**:
+   - Tokens acquired by `hook-service` are cached in memory and refreshed proactively when remaining validity is $\le 60$ seconds.
+   - The Kafka client uses connection recycling (`IdleTimeout: 5m`). In addition, Charmed Kafka brokers enforce `connections.max.reauth.ms`, terminating sockets upon token expiration, prompting seamless client re-dial with the refreshed token.
 
 ---
 
