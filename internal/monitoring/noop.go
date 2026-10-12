@@ -29,3 +29,4 @@ func (m *NoopMonitor) SetResponseTimeMetric(map[string]string, float64) error {
 func (m *NoopMonitor) SetDependencyAvailability(map[string]string, float64) error {
 	return nil
 }
+
