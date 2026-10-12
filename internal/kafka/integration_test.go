@@ -41,6 +41,7 @@ func (m *noopMonitor) SetDependencyAvailability(_ map[string]string, _ float64) 
 	return nil
 }
 
+
 var _ tracing.TracingInterface = (*noopTracer)(nil)
 var _ monitoring.MonitorInterface = (*noopMonitor)(nil)
 
@@ -94,6 +95,10 @@ func setupKafkaContainer(t *testing.T) (string, func()) {
 }
 
 func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
 	broker, cleanup := setupKafkaContainer(t)
 	defer cleanup()
 
@@ -101,7 +106,7 @@ func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
 	defer cancel()
 
 	topic := config.PermissionsTopic(config.DefaultFederatedServiceName)
-	writer := kafka.NewKafkaWriter([]string{broker}, topic)
+	writer := kafka.NewKafkaWriter([]string{broker}, topic, nil)
 	logger := logging.NewLogger("debug")
 	tracer := &noopTracer{}
 	monitor := &noopMonitor{}
