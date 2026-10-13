@@ -145,7 +145,7 @@ func TestPermissionPublisher_PublishWrite(t *testing.T) {
 			}
 
 			publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
-			err := publisher.PublishWrite(context.Background(), tt.subject, tt.relation, tt.object)
+			err := publisher.PublishWrite(t.Context(), tt.subject, tt.relation, tt.object)
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("PublishWrite() error = %v, wantErr %v", err, tt.wantErr)
@@ -244,7 +244,7 @@ func TestPermissionPublisher_PublishDelete(t *testing.T) {
 			}
 
 			publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
-			err := publisher.PublishDelete(context.Background(), tt.subject, tt.relation, tt.object)
+			err := publisher.PublishDelete(t.Context(), tt.subject, tt.relation, tt.object)
 
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("PublishDelete() error = %v, wantErr %v", err, tt.wantErr)
@@ -267,7 +267,7 @@ func TestPermissionPublisher_PublishOperations(t *testing.T) {
 		mockLogger := NewMockLoggerInterface(ctrl)
 
 		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
-		err := publisher.PublishOperations(context.Background())
+		err := publisher.PublishOperations(t.Context())
 		if err != nil {
 			t.Fatalf("expected nil error for empty ops, got %v", err)
 		}
@@ -314,7 +314,7 @@ func TestPermissionPublisher_PublishOperations(t *testing.T) {
 		mockMonitor.EXPECT().SetDependencyAvailability(map[string]string{"component": "kafka"}, float64(1)).Return(nil)
 
 		publisher := NewPermissionPublisher(mockWriter, testServiceName, testTopic, mockTracer, mockMonitor, mockLogger)
-		err := publisher.PublishOperations(context.Background(),
+		err := publisher.PublishOperations(t.Context(),
 			Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u1", Relation: "member", Object: "group-in-claim:grp-1"},
 			Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u2", Relation: "member", Object: "group-in-claim:grp-1"},
 		)
@@ -362,10 +362,10 @@ func TestPermissionPublisher_PublishOperations(t *testing.T) {
 		op1 := Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u1", Relation: "member", Object: "group-in-claim:grp-1"}
 		op2 := Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:u2", Relation: "member", Object: "group-in-claim:grp-1"}
 
-		if err := publisher.PublishOperations(context.Background(), op1, op2); err != nil {
+		if err := publisher.PublishOperations(t.Context(), op1, op2); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if err := publisher.PublishOperations(context.Background(), op2, op1); err != nil {
+		if err := publisher.PublishOperations(t.Context(), op2, op1); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -415,7 +415,7 @@ func TestPermissionPublisher_Close(t *testing.T) {
 
 func TestNewKafkaWriter(t *testing.T) {
 	t.Run("topic used verbatim", func(t *testing.T) {
-		writer := NewKafkaWriter([]string{"localhost:9092"}, testTopic)
+		writer := NewKafkaWriter([]string{"localhost:9092"}, testTopic, nil)
 		if writer.Topic != testTopic {
 			t.Errorf("expected topic %q, got %q", testTopic, writer.Topic)
 		}
@@ -449,7 +449,7 @@ func TestNewKafkaWriter(t *testing.T) {
 	})
 
 	t.Run("custom topic", func(t *testing.T) {
-		writer := NewKafkaWriter([]string{"localhost:9092"}, "custom.topic")
+		writer := NewKafkaWriter([]string{"localhost:9092"}, "custom.topic", nil)
 		if writer.Topic != "custom.topic" {
 			t.Errorf("expected topic 'custom.topic', got %q", writer.Topic)
 		}
@@ -460,7 +460,7 @@ func TestNewKafkaWriter(t *testing.T) {
 		defer ctrl.Finish()
 
 		mockLogger := NewMockLoggerInterface(ctrl)
-		writer := NewKafkaWriter([]string{"localhost:9092"}, "")
+		writer := NewKafkaWriter([]string{"localhost:9092"}, "", nil)
 
 		mockLogger.EXPECT().Errorf(gomock.Any(), gomock.Any(), gomock.Any())
 
@@ -471,6 +471,24 @@ func TestNewKafkaWriter(t *testing.T) {
 
 		writer.Completion([]kafkago.Message{{}}, nil)
 		writer.Completion([]kafkago.Message{{}}, errors.New("network failure"))
+	})
+
+	t.Run("nil transport argument leaves Transport nil", func(t *testing.T) {
+		writer := NewKafkaWriter([]string{"localhost:9092"}, testTopic, nil)
+		if writer.Transport != nil {
+			t.Errorf("expected Transport nil, got %v", writer.Transport)
+		}
+	})
+
+	t.Run("custom transport sets Transport without mutation", func(t *testing.T) {
+		transport := &kafkago.Transport{IdleTimeout: 10 * time.Minute}
+		writer := NewKafkaWriter([]string{"localhost:9092"}, testTopic, transport)
+		if writer.Transport != transport {
+			t.Errorf("expected Transport %v, got %v", transport, writer.Transport)
+		}
+		if transport.IdleTimeout != 10*time.Minute {
+			t.Errorf("expected IdleTimeout 10m, got %v", transport.IdleTimeout)
+		}
 	})
 }
 
@@ -608,7 +626,7 @@ func TestPermissionPublisher_ReportsConfiguredDestination(t *testing.T) {
 
 func TestNoopPublisher(t *testing.T) {
 	noop := NewNoopPublisher(nil, nil, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if err := noop.PublishWrite(ctx, "user:1", "owner", "group-in-claim:1"); err != nil {
 		t.Errorf("expected nil error, got: %v", err)

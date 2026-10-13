@@ -260,3 +260,5 @@ type noopMonitor struct{}
 func (noopMonitor) GetService() string                                         { return "test" }
 func (noopMonitor) SetResponseTimeMetric(map[string]string, float64) error     { return nil }
 func (noopMonitor) SetDependencyAvailability(map[string]string, float64) error { return nil }
+
+

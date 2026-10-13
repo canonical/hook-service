@@ -21,7 +21,7 @@ import (
 // and returns its credentials. No explicit cleanup is needed: clients live
 // in the container's in-memory DSN and disappear with container teardown.
 // Any failure is fatal to the calling test.
-func CreateHydraClient(t *testing.T, env *HydraEnv, name string) (clientID, clientSecret string) {
+func CreateHydraClient(t *testing.T, env *HydraEnv, name string, audience ...string) (clientID, clientSecret string) {
 	t.Helper()
 
 	configuration := hydra.NewConfiguration()
@@ -31,6 +31,9 @@ func CreateHydraClient(t *testing.T, env *HydraEnv, name string) (clientID, clie
 	client := hydra.NewOAuth2Client()
 	client.SetClientName(name)
 	client.SetGrantTypes([]string{"client_credentials"})
+	if len(audience) > 0 {
+		client.SetAudience(audience)
+	}
 
 	createdClient, _, err := apiClient.OAuth2API.CreateOAuth2Client(context.Background()).OAuth2Client(*client).Execute()
 	if err != nil {

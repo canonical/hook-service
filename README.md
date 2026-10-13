@@ -52,6 +52,16 @@ The application is configured via environment variables.
 | `REPLICA_POOL_SIZE_MULTIPLIER` | Multiplier for sizing replica pool relative to primary pool | `1.0` |
 | `KAFKA_BROKERS` | Comma-separated Kafka broker addresses. Selects the deployment mode: set = `platform`, empty = `standalone` | |
 | `FEDERATED_SERVICE_NAME` | This deployment's identity as known to Authorization Service. Derives the permission topic (`permissions.<name>`) and the identity declared in each event | `hook-service` |
+| `KAFKA_AUTH_TYPE` | Kafka authentication mechanism: `none` or `oauthbearer` | `none` |
+| `KAFKA_OAUTH_TOKEN_URL` | Ory Hydra OAuth2 token endpoint URL (required when `KAFKA_AUTH_TYPE=oauthbearer`) | |
+| `KAFKA_OAUTH_CLIENT_ID` | OAuth2 client ID registered in Ory Hydra (required when `KAFKA_AUTH_TYPE=oauthbearer`) | |
+| `KAFKA_OAUTH_CLIENT_SECRET` | OAuth2 client secret for Hydra authentication (required when `KAFKA_AUTH_TYPE=oauthbearer`) | |
+| `KAFKA_OAUTH_SCOPES` | Comma-separated OAuth2 scopes requested from Hydra | |
+| `KAFKA_OAUTH_AUDIENCE` | Target audience claim in the OAuth token, validated by Kafka | `kafka` |
+| `KAFKA_OAUTH_CA_FILE` | Path to custom PEM CA certificate file for validating Ory Hydra TLS (defaults to system truststore) | |
+| `KAFKA_TLS_ENABLED` | Enable TLS encryption on Kafka broker connections, required for `SASL_SSL` | `false` |
+| `KAFKA_TLS_CA_FILE` | Path to custom PEM CA certificate file for validating Kafka broker TLS (defaults to system truststore) | |
+| `KAFKA_TLS_INSECURE_SKIP_VERIFY` | Insecurely skip Kafka broker TLS certificate verification (testing only) | `false` |
 
 ## Features
 
@@ -82,6 +92,52 @@ Events are protobuf-encoded `PermissionUpdateEnvelope` messages intended for con
 **No permission events are currently published.** The publisher is wired and configurable but has no callers: group creation, update, deletion, and membership changes do not emit events in either mode. Publishing will be introduced once the per-group authorization model it should describe is defined.
 
 Delivery, when publishing is introduced, is asynchronous and fire-and-forget: it is decoupled from PostgreSQL transactions, so database operations succeed regardless of broker availability, and delivery failures are reported through a background completion handler rather than to the caller.
+
+### Kafka Authentication & TLS (SASL_SSL + OAUTHBEARER)
+
+When operating in `platform` mode with `KAFKA_AUTH_TYPE=oauthbearer`, `hook-service` authenticates to Kafka brokers using the SASL/OAUTHBEARER mechanism (RFC 7628) over TLS (`SASL_SSL`). Authentication bearer tokens are acquired from Ory Hydra using OAuth2 client credentials (`grant_type=client_credentials`).
+
+#### Deploying with Charmed Kafka & Ory Hydra
+
+In production environments managed by Charmed Operators:
+
+1. **Ory Hydra OAuth2 Client Registration**:
+   Register a dedicated OAuth2 client in Ory Hydra for `hook-service`:
+   - Grant types: `client_credentials`
+   - Response types: `token`
+   - Token endpoint auth method: `client_secret_basic`
+   - Audience: `["kafka"]` (or matching `KAFKA_OAUTH_AUDIENCE`)
+
+2. **Charmed Kafka Broker Configuration**:
+   Configure Charmed Kafka with `oauthbearer` listener authentication:
+   - Integrated with Ory Hydra (via charm relation or configuring Hydra's JWKS endpoint).
+   - Set broker listener protocol to `SASL_SSL`.
+
+3. **Hook Service Workload Configuration**:
+   - `KAFKA_BROKERS`: Comma-separated broker addresses.
+   - `KAFKA_AUTH_TYPE`: Set to `oauthbearer`.
+   - `KAFKA_TLS_ENABLED`: Set to `true`.
+   - `KAFKA_OAUTH_TOKEN_URL`: Ory Hydra token endpoint (e.g., `https://hydra.internal:4444/oauth2/token`).
+   - `KAFKA_OAUTH_CLIENT_ID` and `KAFKA_OAUTH_CLIENT_SECRET`: Set to the registered client credentials.
+   - `KAFKA_OAUTH_AUDIENCE`: Target audience (default `kafka`).
+
+4. **CA Certificate Trust Isolation**:
+   - When using custom internal CAs provisioned by Juju certificates charms:
+     - CA certificate for Kafka brokers should be mounted and set via `KAFKA_TLS_CA_FILE`.
+     - CA certificate for Ory Hydra should be mounted and set via `KAFKA_OAUTH_CA_FILE`.
+   - The service builds isolated in-memory certificate pools (`x509.CertPool`) for Kafka and Hydra independently, preventing cross-domain trust contamination. If both services share the same root CA, both variables can point to the same file. When using public CAs, omit these variables to fall back to the system truststore.
+
+5. **Token Lifecycle & Connection Recycling**:
+   - Tokens are cached in memory using single-flight deduplication (`singleflight.Group`) and refreshed proactively when remaining validity is $\le 60$ seconds.
+   - Transport connections recycle on `IdleTimeout: 5m`, allowing seamless socket re-dial with refreshed bearer tokens without in-band re-authentication.
+
+**Monitoring metrics:**
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `kafka_oauth_token_refresh_total` | Counter | Total Kafka OAuth token acquisitions/refreshes partitioned by `status` (`success` or `error`) |
+| `kafka_oauth_token_expiry_seconds` | Gauge | Expiration timestamp of current Kafka OAuth bearer token in Unix seconds |
+
 
 ### JWT Authentication
 

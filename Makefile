@@ -77,3 +77,19 @@ authz-down:
 authz-e2e:
 	./scripts/run-centralized-authz-e2e.sh
 .PHONY: authz-e2e
+
+kafka-auth-setup:
+	./scripts/setup-kafka-auth-e2e.sh
+.PHONY: kafka-auth-setup
+
+kafka-auth-test:
+	./scripts/test-kafka-auth-e2e.sh
+.PHONY: kafka-auth-test
+
+kafka-auth-down:
+	./scripts/teardown-kafka-auth-e2e.sh
+.PHONY: kafka-auth-down
+
+kafka-auth-e2e:
+	./scripts/run-kafka-auth-e2e.sh
+.PHONY: kafka-auth-e2e
