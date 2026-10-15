@@ -115,7 +115,7 @@ TEST_OUTPUT=$(env KAFKA_AUTH_E2E="1" \
     KAFKA_BROKERS="$KAFKA_SASL_SSL" \
     KAFKA_TLS_CA_FILE="$CA_FILE" \
     KAFKA_OAUTH_TOKEN_URL="$HYDRA_PUBLIC/oauth2/token" \
-    go test -v "$HOOK_SERVICE_DIR/tests/e2e" -run TestE2E_KafkaAuth 2>&1) || true
+    go test -count=1 -v "$HOOK_SERVICE_DIR/tests/e2e" -run TestE2E_KafkaAuth 2>&1) || true
 
 report_go_test() {
     local test_name="$1"

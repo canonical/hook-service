@@ -18,6 +18,13 @@ LOGS_DIR="$HOOK_SERVICE_DIR/logs/kafka-auth"
 PID_FILE="$HOOK_SERVICE_DIR/.kafka-auth-e2e.pids"
 COMPOSE_FILE="$E2E_DIR/docker-compose.yml"
 
+ENABLE_UI=false
+for arg in "$@"; do
+    if [ "$arg" == "--ui" ] || [ "$arg" == "--with-ui" ]; then
+        ENABLE_UI=true
+    fi
+done
+
 mkdir -p "$CERTS_DIR" "$LOGS_DIR"
 touch "$PID_FILE"
 
@@ -28,6 +35,9 @@ echo "[INFO] Hook Service Directory : $HOOK_SERVICE_DIR"
 echo "[INFO] E2E Docker Directory   : $E2E_DIR"
 echo "[INFO] Certificates Directory : $CERTS_DIR"
 echo "[INFO] Logs Directory         : $LOGS_DIR"
+if [ "$ENABLE_UI" = true ]; then
+    echo "[INFO] Kafbat Web UI Enabled  : http://localhost:8088"
+fi
 echo "=================================================================="
 
 # Stop any lingering background processes from previous test runs
@@ -79,10 +89,67 @@ else
     echo "  ✓ Existing PKI & Keystores detected in $CERTS_DIR"
 fi
 
+prepare_ui_protos() {
+    local protos_dir="$E2E_DIR/protos"
+    local msg_target="$protos_dir/v1/messages.proto"
+    local ts_target="$protos_dir/google/protobuf/timestamp.proto"
+
+    if [ -f "$msg_target" ] && [ -f "$ts_target" ]; then
+        echo "  ✓ Protobuf schemas already present in $protos_dir"
+        return 0
+    fi
+
+    echo "[INFO] Fetching Protobuf schemas on-demand for Kafbat UI SerDe..."
+    mkdir -p "$protos_dir/v1" "$protos_dir/google/protobuf"
+
+    local gomodcache
+    gomodcache=$(go env GOMODCACHE 2>/dev/null || true)
+
+    # 1. Resolve messages.proto
+    if [ ! -f "$msg_target" ]; then
+        local authz_local=""
+        if [ -n "$gomodcache" ]; then
+            authz_local=$(find "${gomodcache}/github.com/canonical" -maxdepth 1 -type d -name "authorization-service*" 2>/dev/null | head -n 1)
+        fi
+
+        if [ -n "$authz_local" ] && [ -f "$authz_local/api/proto/v1/messages.proto" ]; then
+            echo "  ✓ Copied messages.proto from Go module cache ($authz_local)"
+            cp "$authz_local/api/proto/v1/messages.proto" "$msg_target"
+        else
+            local authz_ver
+            authz_ver=$(go list -m -f '{{.Version}}' github.com/canonical/authorization-service 2>/dev/null || echo "v1.0.0")
+            echo "  ✓ Downloading messages.proto from canonical/authorization-service ($authz_ver)..."
+            curl -sSL -f "https://raw.githubusercontent.com/canonical/authorization-service/${authz_ver}/api/proto/v1/messages.proto" -o "$msg_target"
+        fi
+    fi
+
+    # 2. Resolve timestamp.proto
+    if [ ! -f "$ts_target" ]; then
+        local ts_local=""
+        if [ -n "$gomodcache" ]; then
+            ts_local=$(find "${gomodcache}" -name "timestamp.proto" 2>/dev/null | head -n 1)
+        fi
+
+        if [ -n "$ts_local" ] && [ -f "$ts_local" ]; then
+            echo "  ✓ Copied timestamp.proto from Go module cache"
+            cp "$ts_local" "$ts_target"
+        else
+            echo "  ✓ Downloading timestamp.proto from google/protobuf..."
+            curl -sSL -f "https://raw.githubusercontent.com/protocolbuffers/protobuf/main/src/google/protobuf/timestamp.proto" -o "$ts_target"
+        fi
+    fi
+    chmod -R 777 "$protos_dir"
+}
+
 # 2. Start Docker Compose Stack
 echo ""
 echo "==== Step 2: Starting Docker Infrastructure ===="
-docker compose -p kafka-auth-e2e -f "$COMPOSE_FILE" up -d
+COMPOSE_ARGS=()
+if [ "$ENABLE_UI" = true ]; then
+    prepare_ui_protos
+    COMPOSE_ARGS+=("--profile" "ui")
+fi
+docker compose -p kafka-auth-e2e "${COMPOSE_ARGS[@]}" -f "$COMPOSE_FILE" up -d
 
 echo "[INFO] Waiting for PostgreSQL (5434)..."
 for i in $(seq 1 30); do
@@ -125,6 +192,20 @@ for i in $(seq 1 30); do
     fi
     sleep 1
 done
+
+if [ "$ENABLE_UI" = true ]; then
+    echo "[INFO] Waiting for Kafbat UI (8088)..."
+    for i in $(seq 1 30); do
+        if curl -s http://localhost:8088/actuator/health 2>/dev/null | grep -q 'UP'; then
+            echo "  ✓ Kafbat UI is healthy"
+            break
+        fi
+        if [ "$i" -eq 30 ]; then
+            echo "[WARNING] Kafbat UI took longer than expected to start (may still be initializing)"
+        fi
+        sleep 1
+    done
+fi
 
 # 3. Register Ory Hydra OAuth2 Clients
 echo ""
@@ -225,6 +306,9 @@ if ! curl -s http://localhost:8000/api/v0/status | grep -q '"mode":"platform"'; 
 fi
 
 echo "  ✓ Hook Service is healthy in Platform Mode (PID: $HOOK_PID)"
+if [ "$ENABLE_UI" = true ]; then
+    echo "  ✓ Kafbat Web UI available at : http://localhost:8088"
+fi
 echo ""
 echo "=================================================================="
 echo " Kafka Authentication E2E Environment Setup Complete!"

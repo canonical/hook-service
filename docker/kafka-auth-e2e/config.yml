@@ -1,0 +1,15 @@
+# Copyright 2026 Canonical Ltd.
+# SPDX-License-Identifier: AGPL-3.0-only
+
+kafka:
+  clusters:
+    - name: kafka-auth-e2e
+      bootstrapServers: localhost:9092
+      serde:
+        - name: ProtobufFile
+          properties:
+            protobufFilesDir: /etc/protos
+            protobufMessageName: authorization.service.api.v1.PermissionUpdateEnvelope
+            protobufMessageNameByTopic:
+              permissions.hook-service: authorization.service.api.v1.PermissionUpdateEnvelope
+          topicValuesPattern: "permissions\\..*"

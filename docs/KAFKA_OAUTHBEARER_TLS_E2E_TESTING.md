@@ -41,7 +41,7 @@ The Canonical Identity and Access Management (IAM) platform employs an asynchron
 |  * Topic: permissions.hook-service          |              |  * StandardAuthorizer: Zero-Trust           |
 |                                             |              |                                             |
 |  [Published Event Payloads]                 |  4. Produce  |  [Topic: permissions.hook-service]          |
-|  * Protobuf v1.PermissionEventEnvelope      |=============>|  * Partition 0                              |
+|  * Protobuf v1.PermissionUpdateEnvelope     |=============>|  * Partition 0                              |
 |  * Atomic multi-record batch delivery       |   Records    |  * ACL: User:hook-service [Write, Describe] |
 +=============================================+              +=============================================+
 ```
@@ -91,9 +91,9 @@ The Canonical Identity and Access Management (IAM) platform employs an asynchron
 ### Pillar 3: Hook Service Platform Publisher & Token Lifecycle Manager
 - **Role**: Producer client that packages and dispatches permission and group lifecycle events.
 - **Client Implementation (`internal/kafka/producer.go`)**:
-  - Built on `segmentio/kafka-go` (`github.com/segmentio/kafka-go`).
-  - Configured with `kafkago.Writer` and a custom `kafkago.Transport` implementing `github.com/segmentio/kafka-go/sasl.Mechanism`.
-  - Implements RFC 7628 GS2 framing (`n,,\x01auth=Bearer <token>\x01\x01`) in `internal/kafka/sasl/oauthbearer.go`.
+  - Built on `twmb/franz-go` (`github.com/twmb/franz-go`).
+  - Native SASL `OAUTHBEARER` support and deterministic Murmur2 partition assignment based on message key.
+  - Implements RFC 7628 GS2 framing via `twmb/franz-go/pkg/sasl/oauth` and `internal/kafka/sasl/`.
 - **Dynamic Token Acquisition & In-Memory Caching**:
   - Hook Service does not re-authenticate with Hydra on every produce request.
   - `internal/kafka/sasl/` maintains an in-memory token pool:
@@ -102,7 +102,7 @@ The Canonical Identity and Access Management (IAM) platform employs an asynchron
     - Automatically reuses active tokens until a configurable safety buffer before expiration, minimizing network overhead and Hydra load.
 - **Unified Protobuf Envelopes**:
   - All messages are serialized as Protocol Buffers using `github.com/canonical/authorization-service/api/v1` protobuf definitions.
-  - Multi-operation batches are encapsulated in a single `v1.PermissionEventEnvelope` containing discrete `v1.PermissionEvent` entries.
+  - Multi-operation batches are encapsulated in a single `v1.PermissionUpdateEnvelope` containing discrete `v1.PermissionOperation` entries.
 - **Autonomous Operating Modes**:
   - **Standalone Mode**: Activated when `KAFKA_BROKERS` is unset. Bypasses Kafka initialization without errors.
   - **Platform Mode**: Activated when `KAFKA_BROKERS` is populated. Enforces strict validation of all `KAFKA_*` configuration settings, verifies TLS CAs, and initializes the secure publisher.
@@ -189,6 +189,7 @@ sequenceDiagram
 | **PostgreSQL Database** | `postgres:14` | `5434` (host) / `5432` (ctr) | TCP | Persistence for Ory Hydra state and Hook Service groups database |
 | **Hook Service HTTP** | `app serve` | `8000` | HTTP | Group management API, `/api/v0/status`, and Prometheus `/api/v0/metrics` |
 | **Hook Service gRPC** | `app serve` | `9090` | gRPC | Internal gRPC service listener |
+| **Kafbat Web UI** | `kafbat/kafka-ui:v1.3.0` | `8088` | HTTP | Web UI dashboard (`http://localhost:8088`) for interactive topic, consumer, and Protobuf payload inspection (enabled via `--ui` / `--with-ui`) |
 
 ### 4.2 Credentials & Persona Allocation Matrix
 
@@ -209,11 +210,17 @@ The E2E test harness creates a self-contained, containerized environment that mi
 
 ```
 docker/kafka-auth-e2e/
-├── certs/                      # Generated X.509 PKI & PKCS12 keystores
+├── certs/                      # Generated X.509 PKI & PKCS12 keystores (git-ignored)
 │   ├── ca.crt                  # Trusted Root CA Certificate
 │   ├── server.keystore.p12     # Broker PKCS12 Keystore
 │   └── server.truststore.p12   # Broker PKCS12 Truststore
-├── docker-compose.yml          # Postgres (5434), Hydra (4444/4445), Kafka (9092/9096)
+├── protos/                     # Ephemeral Protobuf definitions for Kafbat UI SerDe (git-ignored, resolved via Option C)
+│   ├── google/protobuf/
+│   │   └── timestamp.proto
+│   └── v1/
+│       └── messages.proto
+├── config.yml                  # Kafbat UI configuration (Protobuf SerDe & cluster connection)
+├── docker-compose.yml          # Postgres (5434), Hydra (4444/4445), Kafka (9092/9096), Kafbat UI (8088)
 └── server.properties           # Charmed Kafka broker configuration with KIP-768
 ```
 
@@ -221,21 +228,67 @@ docker/kafka-auth-e2e/
 
 | Script | Purpose | Execution Characteristics |
 |---|---|---|
-| [`scripts/setup-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/setup-kafka-auth-e2e.sh) | Bootstrap environment | 1. Generates 2048-bit RSA CA and server certificates with SAN.<br>2. Builds PKCS12 keystore/truststore.<br>3. Starts Docker Compose infrastructure.<br>4. Registers Hydra OAuth2 clients.<br>5. Creates Kafka topic and provisions Charmed ACLs.<br>6. Runs migrations and compiles Hook Service.<br>7. Launches Hook Service daemon detached with `setsid`. |
+| [`scripts/setup-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/setup-kafka-auth-e2e.sh) | Bootstrap environment | 1. Generates 2048-bit RSA CA and server certificates with SAN.<br>2. Builds PKCS12 keystore/truststore.<br>3. Resolves Protobuf schemas via Option C when `--ui` / `--with-ui` is passed.<br>4. Starts Docker Compose infrastructure (enabling Kafbat UI profile if requested).<br>5. Registers Hydra OAuth2 clients.<br>6. Creates Kafka topic and provisions Charmed ACLs.<br>7. Runs migrations and compiles Hook Service.<br>8. Launches Hook Service daemon detached with `setsid`. |
 | [`scripts/test-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/test-kafka-auth-e2e.sh) | Run 16-test suite | Executes 5 sequential verification steps (Hydra token tests, Kafka ACL audits, Go test matrix, broker partition offset check, daemon health check). |
-| [`scripts/teardown-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/teardown-kafka-auth-e2e.sh) | Graceful teardown | Terminates background Hook Service daemons via PID tracking and fallback port inspection; tears down Docker containers and volumes. |
-| [`scripts/run-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/run-kafka-auth-e2e.sh) | Orchestrator | Coordinates setup -> test -> teardown. Supports `--keep-running` flag for live debugging. |
+| [`scripts/teardown-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/teardown-kafka-auth-e2e.sh) | Graceful teardown | Terminates background Hook Service daemons via PID tracking and fallback port inspection; tears down Docker containers and volumes. Supports `--clean` / `--wipe-all` to prune ephemeral `certs/` and `protos/`. |
+| [`scripts/run-kafka-auth-e2e.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/run-kafka-auth-e2e.sh) | Orchestrator | Coordinates setup -> test -> teardown. Supports `--keep-running` / `--no-teardown` to leave services running for interactive exploration, and forwards `--ui` / `--with-ui` to bootstrap Kafbat UI. |
+| [`scripts/view-kafka-messages.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/view-kafka-messages.sh) | CLI Message Visualizer | Wrapper executing [`scripts/view-kafka-messages.go`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/view-kafka-messages.go). Deserializes `v1.PermissionUpdateEnvelope` Protobuf records into formatted JSON, supports live streaming (`-follow`), batch limits (`-limit`), raw JSON for `jq` piping (`-json-only`), and TLS encryption (`-tls`, `-tls-ca`). |
 
-### 5.3 Quick Start via Makefile
+### 5.3 Quick Start & Interactive Inspection
 
 ```bash
-# Execute the full end-to-end cycle (setup -> test -> teardown)
+# Execute the full automated cycle (setup -> test -> teardown)
 make kafka-auth-e2e
 
-# Or run stages interactively for iterative debugging:
-make kafka-auth-setup   # Start infrastructure and leave running
-make kafka-auth-test    # Run the test suite against live environment
-make kafka-auth-down    # Clean up processes and containers
+# Run with Kafbat Web UI and leave running for interactive inspection
+./scripts/run-kafka-auth-e2e.sh --with-ui --keep-running
+
+# Or run stages interactively:
+./scripts/setup-kafka-auth-e2e.sh --with-ui    # Start infrastructure including Kafbat UI
+./scripts/test-kafka-auth-e2e.sh              # Run the test suite against live environment
+./scripts/view-kafka-messages.sh              # Inspect published Protobuf messages via CLI
+./scripts/teardown-kafka-auth-e2e.sh --clean   # Clean up daemons, containers, certs, and protos
+```
+
+### 5.4 Message Payload Visualization (Web UI & CLI)
+
+Hook Service publishes messages to `permissions.hook-service` serialized as binary Protocol Buffers (`v1.PermissionUpdateEnvelope`). Use either the web dashboard or CLI tool to inspect decoded payloads:
+
+#### 1. Kafbat Web UI (`http://localhost:8088`)
+
+Start the test environment with the `--ui` or `--with-ui` flag to launch Kafbat UI:
+
+```bash
+# Start full test suite with Web UI and leave running:
+./scripts/run-kafka-auth-e2e.sh --with-ui --keep-running
+
+# Or start infrastructure only:
+./scripts/setup-kafka-auth-e2e.sh --with-ui
+```
+
+Open [http://localhost:8088](http://localhost:8088) in your browser:
+1. Navigate to **Topics** -> **`permissions.hook-service`**.
+2. Select the **Messages** tab to view Protobuf envelopes deserialized into formatted JSON in real time.
+
+#### 2. Native CLI Visualizer (`scripts/view-kafka-messages.sh`)
+
+[`scripts/view-kafka-messages.sh`](file:///home/shu.du@canonical.com/workspaces/canonical/sync/hook-service/scripts/view-kafka-messages.sh) decodes Protobuf messages directly in the terminal without requiring a browser or extra containers:
+
+```bash
+# Print existing messages on permissions.hook-service (default limit: 10):
+./scripts/view-kafka-messages.sh
+
+# Follow/tail new messages live in real time:
+./scripts/view-kafka-messages.sh -follow
+
+# Read a specific number of messages:
+./scripts/view-kafka-messages.sh -limit 5
+
+# Output raw JSON for piping to jq:
+./scripts/view-kafka-messages.sh -json-only | jq '.operations[] | {subject, relation, object}'
+
+# Connect over TLS listener (:9096):
+./scripts/view-kafka-messages.sh -broker localhost:9096 -tls -tls-ca docker/kafka-auth-e2e/certs/ca.crt
 ```
 
 ---
@@ -320,13 +373,36 @@ docker exec kafka-auth-e2e-broker /opt/kafka/bin/kafka-acls.sh \
 ```
 
 ### 4. Reading Committed Protobuf Events from Topic
-To consume and inspect raw records published to `permissions.hook-service`:
+Because Hook Service encodes records as binary `v1.PermissionUpdateEnvelope` Protocol Buffers, running standard `kafka-console-consumer.sh` outputs garbled binary escape sequences without unmarshaling. Use the dedicated visualizers instead:
+
+#### Method A: Native Modern Go CLI Visualizer (Recommended for Terminal)
+```bash
+# Pretty-print all existing messages on permissions.hook-service:
+./scripts/view-kafka-messages.sh
+
+# Follow/tail messages live in real time:
+./scripts/view-kafka-messages.sh -follow
+
+# Output pure JSON and query with jq:
+./scripts/view-kafka-messages.sh -json-only | jq .
+```
+
+#### Method B: Kafbat Web UI (Recommended for Browser)
+When started with `--with-ui` or `--ui`, navigate to:
+```
+http://localhost:8088/ui/clusters/kafka-auth-e2e/all-topics/permissions.hook-service/messages
+```
+Kafbat uses Option C dynamically resolved schemas to deserialize binary payloads into syntax-highlighted JSON.
+
+#### Method C: Raw Binary Kafka Console Consumer (Diagnostics Only)
+If diagnosing raw broker transport without Go dependencies:
 ```bash
 docker exec kafka-auth-e2e-broker /opt/kafka/bin/kafka-console-consumer.sh \
     --bootstrap-server localhost:9092 \
     --topic permissions.hook-service \
     --from-beginning
 ```
+*(Note: Binary Protobuf payloads will appear as unprintable characters)*
 
 ### 5. Hook Service Daemon Diagnostics
 Hook Service logs are recorded in real time under `logs/kafka-auth/`:
