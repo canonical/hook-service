@@ -19,6 +19,7 @@ This is an identity platform webhook service that integrates with Ory Kratos for
 - **internal/authorization**: OpenFGA authorization model management and client wrapper
 - **internal/openfga**: Low-level OpenFGA client implementation with batching and model comparison
 - **internal/salesforce**: Optional external group provider integration
+- **internal/kafka**: Kafka publisher powered by `twmb/franz-go` with native SASL OAUTHBEARER support
 - **pkg/web**: HTTP router setup using chi, wires all services together with middleware
 - **cmd/serve.go**: Application bootstrap - dependency injection happens here
 
@@ -68,7 +69,7 @@ The last three parameters (tracer, monitor, logger) are **always** in this order
   * Generate explicit table-driven mock layouts detailing input/output matrix variations.
   * No mocks are to be included in version-controlled code. The usage of `go:generate` annotations for dynamic mock generation is an absolute must.
   * Integration tests MUST isolate external dependencies (databases like Postgres, external APIs like Hydra) dynamically using the `testcontainers` library. Relying on local host-bound dependencies or static docker-compose setups in integration tests is forbidden.
-  * Shared container fixtures live in `internal/testhelpers` (`SetupPostgres`, `SetupHydra`, `SetupOpenFGA`, `RunMigrations`, `CreateHydraClient`, `GetAccessToken`). New integration tests MUST use these helpers instead of defining local container setup; helpers register teardown via `t.Cleanup` and fail hard on any error.
+  * Shared container fixtures live in `internal/testhelpers` (`SetupPostgres`, `SetupHydra`, `SetupOpenFGA`, `SetupKafka`, `RunMigrations`, `CreateHydraClient`, `GetAccessToken`). New integration tests MUST use these helpers instead of defining local container setup; helpers register teardown via `t.Cleanup` and fail hard on any error.
   * Shared-fixture adoption rule (`SharedContainers` + `IsolatedDB` in `internal/testhelpers`):
     * Use `shared.Postgres.IsolatedDB(t)` (package-level `SharedContainers` + `TestMain` + `Close()`) ONLY in packages whose container tests do NOT call `t.Parallel()` — sharing saves a full container start per test only when starts are sequential.
     * In packages with `t.Parallel()` container tests, keep per-test `testhelpers.SetupPostgres(t)` — starts already overlap, so sharing adds contention without saving time.
@@ -533,8 +534,9 @@ In production environments managed by Charmed Operators:
      - The CA certificate for Hydra should be mounted into the container and configured via `KAFKA_OAUTH_CA_FILE`.
      - `hook-service` constructs dedicated, isolated `x509.CertPool` instances for Kafka and Hydra respectively, preventing cross-domain trust contamination. If both services share the same internal root CA, both variables can point to the same path. If using public CAs, omit these variables to fall back to system trust.
 5. **Connection Lifecycles & Token Rotation**:
-   - Tokens acquired by `hook-service` are cached in memory and refreshed proactively when remaining validity is $\le 60$ seconds.
-   - The Kafka client uses connection recycling (`IdleTimeout: 5m`). In addition, Charmed Kafka brokers enforce `connections.max.reauth.ms`, terminating sockets upon token expiration, prompting seamless client re-dial with the refreshed token.
+   - The Kafka client (`internal/kafka`) is powered by `twmb/franz-go` (`kgo.Client`), using native SASL OAUTHBEARER authentication (`twmb/franz-go/pkg/sasl/oauth`) with KIP-368 re-authentication support for non-produce connections.
+   - With `NoAck`, KIP-368 in-place re-auth applies to non-produce connections only. Produce connections are re-dialed on session expiry using the fresh token from `TokenSource`. Broker-side produce errors are not visible.
+   - Tokens acquired by `hook-service` are cached in memory and refreshed proactively when remaining validity is $\le 60$ seconds. If broker SASL authentication fails (`kerr.SaslAuthenticationFailed`), the token cache is invalidated immediately via `kgo.HookBrokerConnect`.
 
 ---
 
