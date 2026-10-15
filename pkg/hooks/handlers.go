@@ -172,16 +172,16 @@ func (a *API) newHookResponse(groups []*types.Group, existingAccessToken, existi
 		resp.Session.IDToken[k] = v
 	}
 
-	if len(groups) == 0 {
-		return &resp
+	gg := make([]string, 0)
+	if len(groups) > 0 {
+		groupNames := make(map[string]struct{}, len(groups))
+		for _, g := range groups {
+			groupNames[g.Name] = struct{}{}
+		}
+		gg = slices.Collect(maps.Keys(groupNames))
+		slices.Sort(gg)
 	}
 
-	groupNames := make(map[string]struct{}, len(groups))
-	for _, g := range groups {
-		groupNames[g.Name] = struct{}{}
-	}
-
-	gg := slices.Collect(maps.Keys(groupNames))
 	resp.Session.AccessToken["groups"] = gg
 	resp.Session.IDToken["groups"] = gg
 	return &resp

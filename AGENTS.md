@@ -39,7 +39,7 @@ The last three parameters (tracer, monitor, logger) are **always** in this order
 1. Hydra calls `/api/v0/hook/hydra` during token issuance
 2. `hooks.Service.FetchUserGroups()` queries all registered `ClientInterface` implementations (e.g., Salesforce)
 3. `hooks.Service.AuthorizeRequest()` checks OpenFGA for access based on user, client, and groups
-4. Response enriches token with groups or denies request
+4. Response enriches token with groups (setting `"groups": []` when the subject has no groups to clear stale session claims on refresh) or denies request
 
 ---
 
