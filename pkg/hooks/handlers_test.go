@@ -41,7 +41,7 @@ func createHookRequestWithExtra(clientId, userId string, grantTypes []string, au
 	if userId != "" {
 		r.Session.DefaultSession = &DefaultSession{
 			Subject: userId,
-			Claims:  &IDTokenClaims{Extra: map[string]interface{}{"email": 2134}},
+			Claims:  &IDTokenClaims{},
 		}
 	}
 	return r
@@ -85,11 +85,12 @@ func createHookResponse(groups []*types.Group) *TokenHookResponse {
 			IDToken:     make(map[string]interface{}),
 		},
 	}
-	groupIDs := make([]string, len(groups))
+	groupNames := make([]interface{}, len(groups))
 	for i, g := range groups {
-		groupIDs[i] = g.ID
+		groupNames[i] = g.Name
 	}
-	r.Session.AccessToken["groups"] = groupIDs
+	r.Session.AccessToken["groups"] = groupNames
+	r.Session.IDToken["groups"] = groupNames
 	return &r
 }
 
@@ -120,6 +121,27 @@ func TestHandleHydraHook(t *testing.T) {
 			processRequestResult: &HookContext{Groups: groups},
 			expectedStatus:       http.StatusOK,
 			expectedResponse:     createHookResponse(groups),
+		},
+		{
+			name: "Should deduplicate group names",
+			userId: "user",
+			clientId: "client",
+			grantTypes: []string{"authorization_code"},
+			processRequestResult: &HookContext{Groups: []*types.Group{
+				{ID: "g1", Name: "group1"},
+				{ID: "g2", Name: "group1"},
+			}},
+			expectedStatus:   http.StatusOK,
+			expectedResponse: createHookResponse([]*types.Group{{ID: "g1", Name: "group1"}}),
+		},
+		{
+			name:                 "Should set empty groups array when user has no groups",
+			userId:               "user",
+			clientId:             "client",
+			grantTypes:           []string{"authorization_code"},
+			processRequestResult: &HookContext{Groups: []*types.Group{}},
+			expectedStatus:       http.StatusOK,
+			expectedResponse:     createHookResponse([]*types.Group{}),
 		},
 		{
 			name:                 "Should add groups to client when using client_credentials",
@@ -282,6 +304,45 @@ func TestHandleHydraHook(t *testing.T) {
 			},
 		},
 		{
+			name:                 "Should clear stale groups claim when refresh finds no groups",
+			processRequestResult: &HookContext{Groups: []*types.Group{}},
+			expectedStatus:       http.StatusOK,
+			request: ptr(createHookRequestWithSessionAndIDTokenExtra(
+				"client",
+				"user",
+				[]string{"refresh_token"},
+				map[string]interface{}{"groups": []string{"stale-group"}, "scope": "openid"},
+				map[string]interface{}{"groups": []string{"stale-group"}, "email": "user@example.com"},
+			)),
+			assertResponse: func(t *testing.T, resp *TokenHookResponse) {
+				scope, ok := resp.Session.AccessToken["scope"].(string)
+				if !ok || scope != "openid" {
+					t.Fatalf("expected access_token scope to be %q, got %v", "openid", resp.Session.AccessToken["scope"])
+				}
+
+				email, ok := resp.Session.IDToken["email"].(string)
+				if !ok || email != "user@example.com" {
+					t.Fatalf("expected id_token email to be %q, got %v", "user@example.com", resp.Session.IDToken["email"])
+				}
+
+				atGroups, ok := resp.Session.AccessToken["groups"].([]interface{})
+				if !ok {
+					t.Fatalf("expected access_token groups claim to be []interface{}, got %T", resp.Session.AccessToken["groups"])
+				}
+				if len(atGroups) != 0 {
+					t.Fatalf("expected access_token groups to be empty, got %v", atGroups)
+				}
+
+				idtGroups, ok := resp.Session.IDToken["groups"].([]interface{})
+				if !ok {
+					t.Fatalf("expected id_token groups claim to be []interface{}, got %T", resp.Session.IDToken["groups"])
+				}
+				if len(idtGroups) != 0 {
+					t.Fatalf("expected id_token groups to be empty, got %v", idtGroups)
+				}
+			},
+		},
+		{
 			name:                 "Should not panic when default session is nil",
 			processRequestResult: &HookContext{Groups: []*types.Group{{ID: "g1", Name: "g1"}}},
 			expectedStatus:       http.StatusOK,
@@ -375,7 +436,7 @@ func TestHandleHydraHook(t *testing.T) {
 				}
 
 				if test.expectedResponse != nil {
-					if reflect.DeepEqual(resp.Session, test.expectedResponse.Session) {
+					if !reflect.DeepEqual(resp.Session, test.expectedResponse.Session) {
 						t.Fatalf("expected response body to be %v got %v", test.expectedResponse, *resp)
 					}
 				}
