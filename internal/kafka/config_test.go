@@ -4,9 +4,15 @@
 package kafka
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/mock/gomock"
 
 	"github.com/canonical/hook-service/internal/kafka/sasl"
@@ -15,9 +21,10 @@ import (
 
 // newPublisherConfig returns a platform configuration that NewPublisher accepts, which
 // individual cases narrow to the setting under test.
-func newPublisherConfig() *Config {
+func newPublisherConfig(t *testing.T) *Config {
+	t.Helper()
 	return &Config{
-		Brokers:     []string{"localhost:9092"},
+		Brokers:     newFakeCluster(t),
 		ServiceName: testServiceName,
 		Topic:       testTopic,
 		AuthType:    AuthTypeNone,
@@ -25,8 +32,9 @@ func newPublisherConfig() *Config {
 }
 
 // oauthPublisherConfig returns a configuration with complete OAUTHBEARER credentials.
-func oauthPublisherConfig() *Config {
-	cfg := newPublisherConfig()
+func oauthPublisherConfig(t *testing.T) *Config {
+	t.Helper()
+	cfg := newPublisherConfig(t)
 	cfg.AuthType = AuthTypeOAuthBearer
 	cfg.OAuthTokenURL = "https://auth.example.com/oauth2/token"
 	cfg.OAuthClientID = "my-client"
@@ -41,29 +49,33 @@ func oauthPublisherConfig() *Config {
 func TestNewPublisherSelectsImplementation(t *testing.T) {
 	tests := []struct {
 		name        string
-		cfg         *Config
+		cfgFunc     func(t *testing.T) *Config
 		wantRealPub bool
 	}{
 		{
 			name: "no brokers selects the noop publisher",
-			cfg: &Config{
-				ServiceName: testServiceName,
-				Topic:       testTopic,
+			cfgFunc: func(t *testing.T) *Config {
+				return &Config{
+					ServiceName: testServiceName,
+					Topic:       testTopic,
+				}
 			},
 			wantRealPub: false,
 		},
 		{
 			name: "empty broker slice selects the noop publisher",
-			cfg: &Config{
-				Brokers:     []string{},
-				ServiceName: testServiceName,
-				Topic:       testTopic,
+			cfgFunc: func(t *testing.T) *Config {
+				return &Config{
+					Brokers:     []string{},
+					ServiceName: testServiceName,
+					Topic:       testTopic,
+				}
 			},
 			wantRealPub: false,
 		},
 		{
 			name:        "a broker selects the permission publisher",
-			cfg:         newPublisherConfig(),
+			cfgFunc:     newPublisherConfig,
 			wantRealPub: true,
 		},
 	}
@@ -73,7 +85,8 @@ func TestNewPublisherSelectsImplementation(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			publisher, err := NewPublisher(tt.cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
+			cfg := tt.cfgFunc(t)
+			publisher, err := NewPublisher(cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
 			if err != nil {
 				t.Fatalf("NewPublisher() unexpected error = %v", err)
 			}
@@ -99,28 +112,28 @@ func TestNewPublisherSelectsImplementation(t *testing.T) {
 // TestNewPublisherTransportModes asserts that every supported transport combination
 // produces a usable publisher.
 func TestNewPublisherTransportModes(t *testing.T) {
-	tlsWithSkipVerify := func() *Config {
-		cfg := oauthPublisherConfig()
+	tlsWithSkipVerify := func(t *testing.T) *Config {
+		cfg := oauthPublisherConfig(t)
 		cfg.TLSEnabled = true
 		cfg.TLSInsecureSkipVerify = true
 		return cfg
 	}
 
-	oauthWithScopes := func() *Config {
-		cfg := oauthPublisherConfig()
+	oauthWithScopes := func(t *testing.T) *Config {
+		cfg := oauthPublisherConfig(t)
 		cfg.OAuthScopes = []string{"openid", "profile"}
 		cfg.OAuthAudience = "custom-audience"
 		return cfg
 	}
 
 	tests := []struct {
-		name string
-		cfg  *Config
+		name    string
+		cfgFunc func(t *testing.T) *Config
 	}{
-		{name: "unauthenticated plain tcp", cfg: newPublisherConfig()},
-		{name: "oauthbearer without tls", cfg: oauthPublisherConfig()},
-		{name: "oauthbearer with scopes and custom audience", cfg: oauthWithScopes()},
-		{name: "oauthbearer with tls and skip verify", cfg: tlsWithSkipVerify()},
+		{name: "unauthenticated plain tcp", cfgFunc: newPublisherConfig},
+		{name: "oauthbearer without tls", cfgFunc: oauthPublisherConfig},
+		{name: "oauthbearer with scopes and custom audience", cfgFunc: oauthWithScopes},
+		{name: "oauthbearer with tls and skip verify", cfgFunc: tlsWithSkipVerify},
 	}
 
 	for _, tt := range tests {
@@ -128,7 +141,8 @@ func TestNewPublisherTransportModes(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			publisher, err := NewPublisher(tt.cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
+			cfg := tt.cfgFunc(t)
+			publisher, err := NewPublisher(cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
 			if err != nil {
 				t.Fatalf("NewPublisher() unexpected error = %v", err)
 			}
@@ -142,11 +156,11 @@ func TestNewPublisherTransportModes(t *testing.T) {
 			if !ok {
 				t.Fatalf("publisher is %T, want *PermissionPublisher", publisher)
 			}
-			if p.topic != tt.cfg.Topic {
-				t.Errorf("topic = %q, want %q", p.topic, tt.cfg.Topic)
+			if p.topic != cfg.Topic {
+				t.Errorf("topic = %q, want %q", p.topic, cfg.Topic)
 			}
-			if p.serviceName != tt.cfg.ServiceName {
-				t.Errorf("serviceName = %q, want %q", p.serviceName, tt.cfg.ServiceName)
+			if p.serviceName != cfg.ServiceName {
+				t.Errorf("serviceName = %q, want %q", p.serviceName, cfg.ServiceName)
 			}
 		})
 	}
@@ -156,32 +170,32 @@ func TestNewPublisherTransportModes(t *testing.T) {
 // cannot have intended fails startup rather than silently falling back to weaker
 // settings, and that no publisher is returned alongside the error.
 func TestNewPublisherRejectsUnreadableCertificates(t *testing.T) {
-	brokerCAMissing := func() *Config {
-		cfg := newPublisherConfig()
+	brokerCAMissing := func(t *testing.T) *Config {
+		cfg := newPublisherConfig(t)
 		cfg.TLSEnabled = true
 		cfg.TLSCAFile = "/nonexistent/ca/path/cert.pem"
 		return cfg
 	}
 
-	oauthCAMissing := func() *Config {
-		cfg := oauthPublisherConfig()
+	oauthCAMissing := func(t *testing.T) *Config {
+		cfg := oauthPublisherConfig(t)
 		cfg.OAuthCAFile = "/nonexistent/oauth/ca/cert.pem"
 		return cfg
 	}
 
 	tests := []struct {
 		name    string
-		cfg     *Config
+		cfgFunc func(t *testing.T) *Config
 		wantErr string
 	}{
 		{
 			name:    "unreadable broker ca file",
-			cfg:     brokerCAMissing(),
+			cfgFunc: brokerCAMissing,
 			wantErr: "invalid kafka broker TLS configuration",
 		},
 		{
 			name:    "unreadable oauth ca file",
-			cfg:     oauthCAMissing(),
+			cfgFunc: oauthCAMissing,
 			wantErr: "invalid kafka oauth HTTP client configuration",
 		},
 	}
@@ -191,7 +205,8 @@ func TestNewPublisherRejectsUnreadableCertificates(t *testing.T) {
 			ctrl := gomock.NewController(t)
 			defer ctrl.Finish()
 
-			publisher, err := NewPublisher(tt.cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
+			cfg := tt.cfgFunc(t)
+			publisher, err := NewPublisher(cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
 			if err == nil {
 				t.Fatalf("expected an error containing %q, got publisher %T", tt.wantErr, publisher)
 			}
@@ -205,13 +220,13 @@ func TestNewPublisherRejectsUnreadableCertificates(t *testing.T) {
 	}
 }
 
-// TestNewPublisherOwnsTransport asserts that Close releases the transport the publisher
+// TestNewPublisherClosesCleanly asserts that Close flushes and closes the client the publisher
 // built, so the caller never has to track it, and that repeated calls stay safe.
-func TestNewPublisherOwnsTransport(t *testing.T) {
+func TestNewPublisherClosesCleanly(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	cfg := oauthPublisherConfig()
+	cfg := oauthPublisherConfig(t)
 	cfg.TLSEnabled = true
 	cfg.TLSInsecureSkipVerify = true
 
@@ -224,8 +239,8 @@ func TestNewPublisherOwnsTransport(t *testing.T) {
 	if !ok {
 		t.Fatalf("publisher is %T, want *PermissionPublisher", publisher)
 	}
-	if p.transport == nil {
-		t.Fatal("expected the publisher to own the transport it built")
+	if p.client == nil {
+		t.Fatal("expected the publisher to own the client it built")
 	}
 
 	if err := publisher.Close(); err != nil {
@@ -238,13 +253,13 @@ func TestNewPublisherOwnsTransport(t *testing.T) {
 	}
 }
 
-// TestNewPublisherPlainTransportIsUnowned asserts that a plain TCP publisher holds no
-// transport, so Close has nothing extra to release.
-func TestNewPublisherPlainTransportIsUnowned(t *testing.T) {
+// TestNewPublisherPlainTCP asserts that a plain TCP publisher initializes a valid client
+// and closes cleanly.
+func TestNewPublisherPlainTCP(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	publisher, err := NewPublisher(newPublisherConfig(), NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
+	publisher, err := NewPublisher(newPublisherConfig(t), NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
 	if err != nil {
 		t.Fatalf("NewPublisher() unexpected error = %v", err)
 	}
@@ -258,134 +273,71 @@ func TestNewPublisherPlainTransportIsUnowned(t *testing.T) {
 	if !ok {
 		t.Fatalf("publisher is %T, want *PermissionPublisher", publisher)
 	}
-	if p.transport != nil {
-		t.Errorf("expected no owned transport for plain TCP, got %+v", p.transport)
+	if p.client == nil {
+		t.Fatal("expected initialized client for plain TCP")
 	}
 }
 
-// TestNewTransport asserts that the transport carries exactly the TLS and SASL
-// configuration the config implies, and that plain TCP yields the nil transport that
-// selects kafka-go's default.
-func TestNewTransport(t *testing.T) {
+// mockTokenProvider is a stub TokenProvider for testing hooks.
+type mockTokenProvider struct {
+	invalidated bool
+}
+
+func (m *mockTokenProvider) Token(ctx context.Context) (string, error) {
+	return "test-token", nil
+}
+
+func (m *mockTokenProvider) Invalidate() {
+	m.invalidated = true
+}
+
+// TestBrokerConnectHookInvalidatesToken asserts that only SASL authentication errors trigger
+// token invalidation on the TokenProvider so subsequent connections get a fresh token.
+func TestBrokerConnectHookInvalidatesToken(t *testing.T) {
 	tests := []struct {
-		name     string
-		cfg      *Config
-		wantNil  bool
-		wantTLS  bool
-		wantSASL bool
+		name            string
+		err             error
+		wantInvalidated bool
 	}{
 		{
-			name:    "plain tcp without auth returns no transport",
-			cfg:     &Config{AuthType: AuthTypeNone},
-			wantNil: true,
+			name:            "nil error does not invalidate",
+			err:             nil,
+			wantInvalidated: false,
 		},
 		{
-			name:    "empty auth type without tls returns no transport",
-			cfg:     &Config{},
-			wantNil: true,
+			name:            "network connection error does not invalidate",
+			err:             errors.New("connection refused"),
+			wantInvalidated: false,
 		},
 		{
-			name: "tls alone configures tls only",
-			cfg: &Config{
-				TLSEnabled:            true,
-				TLSInsecureSkipVerify: true,
-			},
-			wantTLS: true,
+			name:            "direct sasl authentication error invalidates",
+			err:             kerr.SaslAuthenticationFailed,
+			wantInvalidated: true,
 		},
 		{
-			name: "oauthbearer alone configures sasl only",
-			cfg: &Config{
-				AuthType:          AuthTypeOAuthBearer,
-				OAuthTokenURL:     "https://auth.example.com/oauth2/token",
-				OAuthClientID:     "client-id",
-				OAuthClientSecret: "client-secret",
-			},
-			wantSASL: true,
-		},
-		{
-			name: "oauthbearer with tls configures both",
-			cfg: &Config{
-				AuthType:              AuthTypeOAuthBearer,
-				OAuthTokenURL:         "https://auth.example.com/oauth2/token",
-				OAuthClientID:         "client-id",
-				OAuthClientSecret:     "client-secret",
-				TLSEnabled:            true,
-				TLSInsecureSkipVerify: true,
-			},
-			wantTLS:  true,
-			wantSASL: true,
-		},
-		{
-			// A CA file is never read while TLS is disabled, so an unreadable path
-			// cannot fail startup. The configuration layer reports it as ignored.
-			name: "broker ca file is not loaded when tls is disabled",
-			cfg: &Config{
-				AuthType:          AuthTypeOAuthBearer,
-				OAuthTokenURL:     "https://auth.example.com/oauth2/token",
-				OAuthClientID:     "client-id",
-				OAuthClientSecret: "client-secret",
-				TLSCAFile:         "/nonexistent/broker-ca.pem",
-			},
-			wantSASL: true,
+			name:            "wrapped sasl authentication error invalidates",
+			err:             fmt.Errorf("broker handshake failed: %w", kerr.SaslAuthenticationFailed),
+			wantInvalidated: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctrl := gomock.NewController(t)
-			defer ctrl.Finish()
+			mockTokenSource := &mockTokenProvider{}
+			hook := &brokerConnectHook{tokenSource: mockTokenSource}
 
-			transport, err := newTransport(tt.cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
-			if err != nil {
-				t.Fatalf("newTransport() unexpected error = %v", err)
-			}
-
-			if tt.wantNil {
-				if transport != nil {
-					t.Fatalf("expected no transport, got %+v", transport)
-				}
-				return
-			}
-
-			if transport == nil {
-				t.Fatal("expected a transport, got nil")
-			}
-			if transport.IdleTimeout != DefaultTransportIdleTimeout {
-				t.Errorf("IdleTimeout = %v, want %v", transport.IdleTimeout, DefaultTransportIdleTimeout)
-			}
-			if tt.wantTLS != (transport.TLS != nil) {
-				t.Errorf("transport.TLS = %+v, want configured = %v", transport.TLS, tt.wantTLS)
-			}
-			if tt.wantSASL != (transport.SASL != nil) {
-				t.Errorf("transport.SASL = %+v, want configured = %v", transport.SASL, tt.wantSASL)
+			hook.OnBrokerConnect(kgo.BrokerMetadata{}, time.Millisecond, nil, tt.err)
+			if mockTokenSource.invalidated != tt.wantInvalidated {
+				t.Errorf("invalidated = %v, want %v for err = %v", mockTokenSource.invalidated, tt.wantInvalidated, tt.err)
 			}
 		})
 	}
 }
 
-// TestNewTransportDefaultsOAuthAudience asserts the audience fallback, so a deployment
-// that omits it still requests the token audience Kafka brokers validate.
-func TestNewTransportDefaultsOAuthAudience(t *testing.T) {
+// TestDefaultOAuthAudience asserts that the default audience is "kafka".
+func TestDefaultOAuthAudience(t *testing.T) {
 	if DefaultOAuthAudience != "kafka" {
 		t.Errorf("DefaultOAuthAudience = %q, want %q", DefaultOAuthAudience, "kafka")
-	}
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	cfg := &Config{
-		AuthType:          AuthTypeOAuthBearer,
-		OAuthTokenURL:     "https://auth.example.com/oauth2/token",
-		OAuthClientID:     "client-id",
-		OAuthClientSecret: "client-secret",
-	}
-
-	transport, err := newTransport(cfg, NewMockTracingInterface(ctrl), NewMockMonitorInterface(ctrl), NewMockLoggerInterface(ctrl))
-	if err != nil {
-		t.Fatalf("newTransport() unexpected error = %v", err)
-	}
-	if transport.SASL == nil {
-		t.Fatal("expected a SASL mechanism on the transport")
 	}
 }
 

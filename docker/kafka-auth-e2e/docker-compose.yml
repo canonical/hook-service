@@ -54,6 +54,20 @@ services:
         exec /opt/kafka/bin/kafka-server-start.sh /etc/kafka/server.properties
       "
 
+  kafbat-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: kafka-auth-e2e-ui
+    profiles:
+      - ui
+    network_mode: host
+    environment:
+      SERVER_PORT: 8088
+      DYNAMIC_CONFIG_ENABLED: "true"
+      DYNAMIC_CONFIG_PATH: /etc/kafkaui/config.yml
+    volumes:
+      - ./config.yml:/etc/kafkaui/config.yml:ro
+      - ./protos:/etc/protos:ro
+
 networks:
   kafka-auth-net:
     name: kafka-auth-net

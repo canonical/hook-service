@@ -10,10 +10,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -44,6 +46,51 @@ func (m *noopMonitor) SetResponseTimeMetric(_ map[string]string, _ float64) erro
 
 func (m *noopMonitor) SetDependencyAvailability(_ map[string]string, _ float64) error {
 	return nil
+}
+
+type tokenCounterMonitor struct {
+	noopMonitor
+	mu           sync.Mutex
+	refreshCount int
+}
+
+func (m *tokenCounterMonitor) IncKafkaOAuthTokenRefresh(status string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if status == "success" {
+		m.refreshCount++
+	}
+	return nil
+}
+
+func (m *tokenCounterMonitor) SetKafkaOAuthTokenExpiry(_ float64) error {
+	return nil
+}
+
+func (m *tokenCounterMonitor) count() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.refreshCount
+}
+
+type captureLogger struct {
+	logging.LoggerInterface
+	errChan chan string
+}
+
+func newCaptureLogger() *captureLogger {
+	return &captureLogger{
+		LoggerInterface: logging.NewLogger("debug"),
+		errChan:         make(chan string, 10),
+	}
+}
+
+func (c *captureLogger) Errorf(format string, args ...interface{}) {
+	c.LoggerInterface.Errorf(format, args...)
+	select {
+	case c.errChan <- fmt.Sprintf(format, args...):
+	default:
+	}
 }
 
 var _ tracing.TracingInterface = (*noopTracer)(nil)
@@ -88,7 +135,7 @@ func fileExists(path string) bool {
 func TestE2E_KafkaAuth_Positive_Publish(t *testing.T) {
 	brokers, caFile, tokenURL := getE2EConfig(t)
 
-	logger := logging.NewLogger("debug")
+	capLogger := newCaptureLogger()
 	tracer := &noopTracer{}
 	monitor := &noopMonitor{}
 
@@ -105,12 +152,12 @@ func TestE2E_KafkaAuth_Positive_Publish(t *testing.T) {
 		TLSCAFile:         caFile,
 	}
 
-	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, logger)
+	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, capLogger)
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	op := kafka.Operation{
@@ -127,12 +174,18 @@ func TestE2E_KafkaAuth_Positive_Publish(t *testing.T) {
 	if err := publisher.Close(); err != nil {
 		t.Fatalf("failed to flush and close publisher: %v", err)
 	}
+
+	select {
+	case msg := <-capLogger.errChan:
+		t.Fatalf("unexpected delivery error: %s", msg)
+	default:
+	}
 }
 
 func TestE2E_KafkaAuth_Batch_Envelope(t *testing.T) {
 	brokers, caFile, tokenURL := getE2EConfig(t)
 
-	logger := logging.NewLogger("debug")
+	capLogger := newCaptureLogger()
 	tracer := &noopTracer{}
 	monitor := &noopMonitor{}
 
@@ -149,12 +202,12 @@ func TestE2E_KafkaAuth_Batch_Envelope(t *testing.T) {
 		TLSCAFile:         caFile,
 	}
 
-	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, logger)
+	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, capLogger)
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
 	ops := []kafka.Operation{
@@ -185,14 +238,20 @@ func TestE2E_KafkaAuth_Batch_Envelope(t *testing.T) {
 	if err := publisher.Close(); err != nil {
 		t.Fatalf("failed to flush and close publisher: %v", err)
 	}
+
+	select {
+	case msg := <-capLogger.errChan:
+		t.Fatalf("unexpected delivery error: %s", msg)
+	default:
+	}
 }
 
 func TestE2E_KafkaAuth_TokenCaching_And_Reuse(t *testing.T) {
 	brokers, caFile, tokenURL := getE2EConfig(t)
 
-	logger := logging.NewLogger("debug")
+	capLogger := newCaptureLogger()
 	tracer := &noopTracer{}
-	monitor := &noopMonitor{}
+	monitor := &tokenCounterMonitor{}
 
 	cfg := &kafka.Config{
 		Brokers:           brokers,
@@ -207,20 +266,15 @@ func TestE2E_KafkaAuth_TokenCaching_And_Reuse(t *testing.T) {
 		TLSCAFile:         caFile,
 	}
 
-	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, logger)
+	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, capLogger)
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
-	t.Cleanup(func() {
-		if closeErr := publisher.Close(); closeErr != nil {
-			t.Errorf("failed to close publisher: %v", closeErr)
-		}
-	})
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	for i := range []int{0, 1, 2} {
+	for i := range 3 {
 		op := kafka.Operation{
 			Op:       v1.PermissionOp_PERMISSION_OP_WRITE,
 			Relation: "member",
@@ -231,6 +285,20 @@ func TestE2E_KafkaAuth_TokenCaching_And_Reuse(t *testing.T) {
 			t.Fatalf("iteration %d: failed to publish: %v", i, err)
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	if err := publisher.Close(); err != nil {
+		t.Fatalf("failed to flush and close publisher: %v", err)
+	}
+
+	select {
+	case msg := <-capLogger.errChan:
+		t.Fatalf("unexpected delivery error: %s", msg)
+	default:
+	}
+
+	if count := monitor.count(); count != 1 {
+		t.Fatalf("expected exactly 1 token refresh, got %d", count)
 	}
 }
 
@@ -284,32 +352,17 @@ func TestE2E_KafkaAuth_Negative_Untrusted_TLS_CA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
+	defer func() { _ = publisher.Close() }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	op := kafka.Operation{
-		Op:       v1.PermissionOp_PERMISSION_OP_WRITE,
-		Relation: "member",
-		Subject:  "user:alice@canonical.com",
-		Object:   "group:engineering",
-	}
-
-	publishErr := publisher.PublishOperations(ctx, op)
-	closeErr := publisher.Close()
-
-	var finalErr error
-	if publishErr != nil {
-		finalErr = publishErr
-	} else {
-		finalErr = closeErr
-	}
-
+	finalErr := publisher.Ping(ctx)
 	if finalErr == nil {
 		t.Fatal("expected TLS verification failure with untrusted CA, but got success")
 	}
 
-	errStr := finalErr.Error()
+	errStr := strings.ToLower(finalErr.Error())
 	if !strings.Contains(errStr, "unknown authority") &&
 		!strings.Contains(errStr, "certificate") &&
 		!strings.Contains(errStr, "tls") &&
@@ -342,27 +395,12 @@ func TestE2E_KafkaAuth_Negative_Invalid_OAuth_Client_Secret(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
+	defer func() { _ = publisher.Close() }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	op := kafka.Operation{
-		Op:       v1.PermissionOp_PERMISSION_OP_WRITE,
-		Relation: "member",
-		Subject:  "user:alice@canonical.com",
-		Object:   "group:engineering",
-	}
-
-	publishErr := publisher.PublishOperations(ctx, op)
-	closeErr := publisher.Close()
-
-	var finalErr error
-	if publishErr != nil {
-		finalErr = publishErr
-	} else {
-		finalErr = closeErr
-	}
-
+	finalErr := publisher.Ping(ctx)
 	if finalErr == nil {
 		t.Fatal("expected authentication error with invalid secret, but got success")
 	}
@@ -402,27 +440,12 @@ func TestE2E_KafkaAuth_Negative_Wrong_Audience(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
+	defer func() { _ = publisher.Close() }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	op := kafka.Operation{
-		Op:       v1.PermissionOp_PERMISSION_OP_WRITE,
-		Relation: "member",
-		Subject:  "user:alice@canonical.com",
-		Object:   "group:engineering",
-	}
-
-	publishErr := publisher.PublishOperations(ctx, op)
-	closeErr := publisher.Close()
-
-	var finalErr error
-	if publishErr != nil {
-		finalErr = publishErr
-	} else {
-		finalErr = closeErr
-	}
-
+	finalErr := publisher.Ping(ctx)
 	if finalErr == nil {
 		t.Fatal("expected SASL handshake rejection due to wrong audience claim, but got success")
 	}
@@ -438,7 +461,7 @@ func TestE2E_KafkaAuth_Negative_Wrong_Audience(t *testing.T) {
 func TestE2E_KafkaAuth_Negative_Unauthorized_Topic_ACL(t *testing.T) {
 	brokers, caFile, tokenURL := getE2EConfig(t)
 
-	logger := logging.NewLogger("debug")
+	capLogger := newCaptureLogger()
 	tracer := &noopTracer{}
 	monitor := &noopMonitor{}
 
@@ -457,12 +480,13 @@ func TestE2E_KafkaAuth_Negative_Unauthorized_Topic_ACL(t *testing.T) {
 		TLSCAFile:         caFile,
 	}
 
-	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, logger)
+	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, capLogger)
 	if err != nil {
 		t.Fatalf("failed to construct publisher: %v", err)
 	}
+	defer func() { _ = publisher.Close() }()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	op := kafka.Operation{
@@ -472,26 +496,23 @@ func TestE2E_KafkaAuth_Negative_Unauthorized_Topic_ACL(t *testing.T) {
 		Object:   "group:engineering",
 	}
 
-	publishErr := publisher.PublishOperations(ctx, op)
-	closeErr := publisher.Close()
-
-	var finalErr error
-	if publishErr != nil {
-		finalErr = publishErr
-	} else {
-		finalErr = closeErr
+	if err := publisher.PublishOperations(ctx, op); err != nil {
+		t.Fatalf("unexpected synchronous error from PublishOperations: %v", err)
 	}
 
-	if finalErr == nil {
-		t.Fatal("expected topic authorization denial due to missing Kafka ACL, but got success")
+	var errMsg string
+	select {
+	case msg := <-capLogger.errChan:
+		errMsg = strings.ToLower(msg)
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for asynchronous topic authorization error log")
 	}
 
-	errStr := strings.ToLower(finalErr.Error())
-	if !strings.Contains(errStr, "authorization failed") &&
-		!strings.Contains(errStr, "topic authorization") &&
-		!strings.Contains(errStr, "[29]") &&
-		!strings.Contains(errStr, "unknown topic or partition") &&
-		!strings.Contains(errStr, "[3]") {
-		t.Fatalf("expected Topic Authorization Failed or Unknown Topic denial, got: %v", finalErr)
+	if !strings.Contains(errMsg, "authorization failed") &&
+		!strings.Contains(errMsg, "topic authorization") &&
+		!strings.Contains(errMsg, "[29]") &&
+		!strings.Contains(errMsg, "unknown topic or partition") &&
+		!strings.Contains(errMsg, "[3]") {
+		t.Fatalf("expected Topic Authorization Failed or Unknown Topic denial, got: %s", errMsg)
 	}
 }

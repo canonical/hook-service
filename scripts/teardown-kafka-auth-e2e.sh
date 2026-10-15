@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Canonical Ltd.
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: AGPL-3.0-only
 
 # teardown-kafka-auth-e2e.sh
 # Gracefully stops Hook Service background daemon and tears down Kafka Auth E2E Docker infrastructure.
@@ -14,9 +14,13 @@ PID_FILE="$HOOK_SERVICE_DIR/.kafka-auth-e2e.pids"
 COMPOSE_FILE="$E2E_DIR/docker-compose.yml"
 
 WIPE_VOLUMES=true
+CLEAN_ALL=false
 for arg in "$@"; do
     if [ "$arg" == "--keep-volumes" ] || [ "$arg" == "--no-wipe" ]; then
         WIPE_VOLUMES=false
+    fi
+    if [ "$arg" == "--clean" ] || [ "$arg" == "--wipe-all" ]; then
+        CLEAN_ALL=true
     fi
 done
 
@@ -74,11 +78,17 @@ echo "==== Step 2: Stopping Docker Compose Services ===="
 if [ -f "$COMPOSE_FILE" ]; then
     if [ "$WIPE_VOLUMES" = true ]; then
         echo "[INFO] Stopping containers and removing persistent volumes (-v)..."
-        docker compose -p kafka-auth-e2e -f "$COMPOSE_FILE" down -v --remove-orphans || true
+        docker compose -p kafka-auth-e2e --profile ui -f "$COMPOSE_FILE" down -v --remove-orphans || true
     else
         echo "[INFO] Stopping containers (preserving database volumes)..."
-        docker compose -p kafka-auth-e2e -f "$COMPOSE_FILE" down --remove-orphans || true
+        docker compose -p kafka-auth-e2e --profile ui -f "$COMPOSE_FILE" down --remove-orphans || true
     fi
+fi
+
+if [ "$CLEAN_ALL" = true ]; then
+    echo "[INFO] Cleaning ephemeral certificates and protos..."
+    rm -rf "$E2E_DIR/certs" "$E2E_DIR/protos"
+    echo "  ✓ Ephemeral certificates and protos removed"
 fi
 
 echo ""

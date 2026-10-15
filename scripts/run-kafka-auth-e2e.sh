@@ -12,10 +12,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 KEEP_RUNNING=false
+ENABLE_UI=false
 
 for arg in "$@"; do
     if [ "$arg" == "--keep-running" ] || [ "$arg" == "--no-teardown" ]; then
         KEEP_RUNNING=true
+    fi
+    if [ "$arg" == "--ui" ] || [ "$arg" == "--with-ui" ]; then
+        ENABLE_UI=true
     fi
 done
 
@@ -28,6 +32,10 @@ cleanup() {
     else
         echo ""
         echo "[INFO] --keep-running specified. Services left running."
+        if [ "$ENABLE_UI" = true ]; then
+            echo "       Kafbat UI: http://localhost:8088"
+        fi
+        echo "       Inspect messages with CLI: ./scripts/view-kafka-messages.sh"
         echo "       Run ./scripts/teardown-kafka-auth-e2e.sh when finished."
     fi
     exit $exit_code
@@ -36,7 +44,11 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Run Setup
-"$SCRIPT_DIR/setup-kafka-auth-e2e.sh"
+SETUP_ARGS=()
+if [ "$ENABLE_UI" = true ]; then
+    SETUP_ARGS+=("--ui")
+fi
+"$SCRIPT_DIR/setup-kafka-auth-e2e.sh" "${SETUP_ARGS[@]}"
 
 # Run Tests
 echo ""

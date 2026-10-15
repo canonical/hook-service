@@ -5,9 +5,15 @@ package kafka
 
 import (
 	"cmp"
+	"context"
+	"errors"
 	"fmt"
+	"net"
+	"time"
 
-	kafkago "github.com/segmentio/kafka-go"
+	"github.com/twmb/franz-go/pkg/kerr"
+	"github.com/twmb/franz-go/pkg/kgo"
+	"github.com/twmb/franz-go/pkg/sasl/oauth"
 
 	"github.com/canonical/hook-service/internal/kafka/sasl"
 	"github.com/canonical/hook-service/internal/logging"
@@ -26,6 +32,18 @@ const (
 
 // DefaultOAuthAudience is the audience claim requested when none is configured.
 const DefaultOAuthAudience = "kafka"
+
+// DefaultRecordDeliveryTimeout bounds how long a buffered record can wait for delivery before timing out.
+const DefaultRecordDeliveryTimeout = 30 * time.Second
+
+// DefaultMaxBufferedRecords bounds the maximum number of buffered records in memory.
+const DefaultMaxBufferedRecords = 10000
+
+// DefaultCloseFlushTimeout bounds how long Close waits to flush buffered records.
+const DefaultCloseFlushTimeout = 5 * time.Second
+
+// maxRecordRetries bounds delivery retries for produced records.
+const maxRecordRetries = 10
 
 // Config describes everything needed to publish permission events. The caller maps its
 // own environment schema onto this struct, which keeps this package independent of how
@@ -58,9 +76,21 @@ type Config struct {
 	TLSInsecureSkipVerify bool
 }
 
+// brokerConnectHook invalidates cached OAuth tokens when the broker rejects SASL authentication.
+type brokerConnectHook struct {
+	tokenSource sasl.TokenProvider
+}
+
+// OnBrokerConnect implements kgo.HookBrokerConnect.
+func (h *brokerConnectHook) OnBrokerConnect(_ kgo.BrokerMetadata, _ time.Duration, _ net.Conn, err error) {
+	if errors.Is(err, kerr.SaslAuthenticationFailed) {
+		h.tokenSource.Invalidate()
+	}
+}
+
 // NewPublisher returns the publisher implied by cfg: a PermissionPublisher when brokers
 // are configured, a NoopPublisher otherwise. The returned publisher owns every resource
-// it creates, including the transport, and releases them on Close.
+// it creates and releases them on Close.
 func NewPublisher(
 	cfg *Config,
 	tracer tracing.TracingInterface,
@@ -71,43 +101,27 @@ func NewPublisher(
 		return NewNoopPublisher(tracer, monitor, logger), nil
 	}
 
-	transport, err := newTransport(cfg, tracer, monitor, logger)
-	if err != nil {
-		return nil, err
-	}
-
-	writer := NewKafkaWriter(cfg.Brokers, cfg.Topic, transport)
-	return newPublisher(writer, cfg.ServiceName, cfg.Topic, transport, tracer, monitor, logger), nil
-}
-
-// newTransport builds the transport implied by cfg, or nil when neither TLS nor SASL is
-// configured, in which case kafka-go's default plain TCP transport applies.
-func newTransport(
-	cfg *Config,
-	tracer tracing.TracingInterface,
-	monitor monitoring.MonitorInterface,
-	logger logging.LoggerInterface,
-) (*kafkago.Transport, error) {
-	if !cfg.TLSEnabled && cfg.AuthType != AuthTypeOAuthBearer {
-		return nil, nil
-	}
-
-	transport := &kafkago.Transport{
-		IdleTimeout: DefaultTransportIdleTimeout,
+	opts := []kgo.Opt{
+		kgo.SeedBrokers(cfg.Brokers...),
+		kgo.RequiredAcks(kgo.NoAck()),
+		kgo.DisableIdempotentWrite(),
+		kgo.RecordRetries(maxRecordRetries),
+		kgo.RecordDeliveryTimeout(DefaultRecordDeliveryTimeout),
+		kgo.MaxBufferedRecords(DefaultMaxBufferedRecords),
 	}
 
 	if cfg.TLSEnabled {
 		tlsConfig, err := BuildBrokerTLSConfig(cfg.TLSCAFile, cfg.TLSInsecureSkipVerify)
 		if err != nil {
-			return nil, fmt.Errorf("invalid kafka broker TLS configuration: %w", err)
+			return nil, fmt.Errorf("invalid kafka broker TLS configuration: %v", err)
 		}
-		transport.TLS = tlsConfig
+		opts = append(opts, kgo.DialTLSConfig(tlsConfig))
 	}
 
 	if cfg.AuthType == AuthTypeOAuthBearer {
 		oauthClient, err := sasl.NewOAuthHTTPClient(cfg.OAuthCAFile)
 		if err != nil {
-			return nil, fmt.Errorf("invalid kafka oauth HTTP client configuration: %w", err)
+			return nil, fmt.Errorf("invalid kafka oauth HTTP client configuration: %v", err)
 		}
 
 		tokenSource := sasl.NewTokenSource(sasl.TokenSourceConfig{
@@ -118,10 +132,27 @@ func newTransport(
 			Audience:     cmp.Or(cfg.OAuthAudience, DefaultOAuthAudience),
 			HTTPClient:   oauthClient,
 		}, tracer, tokenMetrics(monitor), logger)
-		transport.SASL = sasl.NewMechanism(tokenSource)
+
+		saslMech := oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+			token, err := tokenSource.Token(ctx)
+			if err != nil {
+				return oauth.Auth{}, err
+			}
+			return oauth.Auth{Token: token}, nil
+		})
+
+		opts = append(opts,
+			kgo.SASL(saslMech),
+			kgo.WithHooks(&brokerConnectHook{tokenSource: tokenSource}),
+		)
 	}
 
-	return transport, nil
+	client, err := kgo.NewClient(opts...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kafka client: %v", err)
+	}
+
+	return NewPermissionPublisher(client, cfg.ServiceName, cfg.Topic, tracer, monitor, logger), nil
 }
 
 // tokenMetrics adapts monitor to the SASL token metrics interface, returning nil when

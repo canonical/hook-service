@@ -35,14 +35,3 @@ type TokenProvider interface {
 	Token(ctx context.Context) (string, error)
 	Invalidate()
 }
-
-// TokenFunc is a function adapter implementing TokenProvider.
-type TokenFunc func(ctx context.Context) (string, error)
-
-// Token calls the underlying token function.
-func (f TokenFunc) Token(ctx context.Context) (string, error) {
-	return f(ctx)
-}
-
-// Invalidate is a no-op implementation for TokenFunc.
-func (f TokenFunc) Invalidate() {}
