@@ -7,7 +7,6 @@ import (
 	"context"
 
 	v1 "github.com/canonical/authorization-service/api/v1"
-	kafkago "github.com/segmentio/kafka-go"
 )
 
 // Operation represents a single permission update operation.
@@ -18,16 +17,11 @@ type Operation struct {
 	Object   string
 }
 
-// KafkaWriterInterface defines the interface for low-level Kafka message writing.
-type KafkaWriterInterface interface {
-	WriteMessages(ctx context.Context, msgs ...kafkago.Message) error
-	Close() error
-}
-
 // PermissionPublisherInterface publishes authorization permission updates to Kafka.
 type PermissionPublisherInterface interface {
 	PublishWrite(ctx context.Context, subject, relation, object string) error
 	PublishDelete(ctx context.Context, subject, relation, object string) error
 	PublishOperations(ctx context.Context, ops ...Operation) error
+	Ping(ctx context.Context) error
 	Close() error
 }

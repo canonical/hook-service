@@ -40,6 +40,11 @@ func (n *NoopPublisher) PublishOperations(ctx context.Context, ops ...Operation)
 	return nil
 }
 
+// Ping does nothing and returns nil.
+func (n *NoopPublisher) Ping(ctx context.Context) error {
+	return nil
+}
+
 // Close does nothing and returns nil.
 func (n *NoopPublisher) Close() error {
 	return nil

@@ -9,11 +9,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"slices"
-	"time"
 
 	v1 "github.com/canonical/authorization-service/api/v1"
 	"github.com/google/uuid"
-	kafkago "github.com/segmentio/kafka-go"
+	"github.com/twmb/franz-go/pkg/kgo"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"google.golang.org/protobuf/proto"
@@ -29,157 +28,42 @@ const SchemaVersion = "1"
 
 var _ PermissionPublisherInterface = (*PermissionPublisher)(nil)
 
-// PermissionPublisher publishes permission updates to a Kafka topic.
+// PermissionPublisher publishes permission updates to a Kafka topic using franz-go.
 type PermissionPublisher struct {
-	writer      KafkaWriterInterface
+	client      *kgo.Client
 	serviceName string
 	topic       string
-	// transport is owned by this publisher when non-nil; its idle connections are
-	// released on Close so the caller never has to track it separately.
-	transport *kafkago.Transport
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
 	logger  logging.LoggerInterface
 }
 
-// DefaultTransportIdleTimeout is the idle timeout applied to Kafka transports to ensure
-// periodic connection recycling and token refresh pick-up.
-const DefaultTransportIdleTimeout = 5 * time.Minute
-
-// NewKafkaWriter creates a configured kafka.Writer publishing to topic.
-// An optional kafkago.Transport can be provided for custom TLS and SASL authentication.
-// Passing nil uses the default unauthenticated plain TCP transport.
-func NewKafkaWriter(brokers []string, topic string, transport *kafkago.Transport) *kafkago.Writer {
-	writer := &kafkago.Writer{
-		Addr:                   kafkago.TCP(brokers...),
-		Topic:                  topic,
-		Balancer:               &kafkago.Hash{},
-		RequiredAcks:           kafkago.RequireNone,
-		Async:                  true,
-		MaxAttempts:            10,
-		WriteTimeout:           2 * time.Second,
-		ReadTimeout:            1 * time.Second,
-		BatchTimeout:           10 * time.Millisecond,
-		WriteBackoffMin:        100 * time.Millisecond,
-		WriteBackoffMax:        500 * time.Millisecond,
-		AllowAutoTopicCreation: false,
-	}
-	if transport != nil {
-		writer.Transport = transport
-	}
-	return writer
-}
-
-// NewPermissionPublisher constructs a new PermissionPublisher over a caller-supplied
-// writer, whose transport the caller retains responsibility for. Both serviceName and
-// topic are required and are used verbatim: this package holds no deployment-specific
-// default, because substituting one would silently attribute a deployment's events to
-// another service. topic must match the one the writer was built with; the caller
-// derives both from the federated service name.
-//
-// Prefer NewPublisher, which builds the writer and transport from a Config and hands
-// back a publisher that owns both.
+// NewPermissionPublisher constructs a new PermissionPublisher over a caller-supplied *kgo.Client.
+// Both serviceName and topic are required and are used verbatim: this package holds no
+// deployment-specific default, because substituting one would silently attribute a deployment's
+// events to another service.
 func NewPermissionPublisher(
-	writer KafkaWriterInterface,
+	client *kgo.Client,
 	serviceName string,
 	topic string,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
 ) *PermissionPublisher {
-	return newPublisher(writer, serviceName, topic, nil, tracer, monitor, logger)
-}
-
-// newPublisher constructs a PermissionPublisher that additionally takes ownership of
-// transport, releasing its idle connections on Close.
-func newPublisher(
-	writer KafkaWriterInterface,
-	serviceName string,
-	topic string,
-	transport *kafkago.Transport,
-	tracer tracing.TracingInterface,
-	monitor monitoring.MonitorInterface,
-	logger logging.LoggerInterface,
-) *PermissionPublisher {
-	if kw, ok := writer.(*kafkago.Writer); ok && kw != nil && kw.Completion == nil {
-		kw.Completion = func(messages []kafkago.Message, err error) {
-			if err != nil && logger != nil {
-				logger.Errorf("failed to deliver %d kafka message(s): %v", len(messages), err)
-			}
-		}
-	}
 	return &PermissionPublisher{
-		writer:      writer,
+		client:      client,
 		serviceName: serviceName,
 		topic:       topic,
-		transport:   transport,
 		tracer:      tracer,
 		monitor:     monitor,
 		logger:      logger,
 	}
 }
 
-// PublishOperations publishes one or more permission operations in a single envelope.
-// If ops is empty, it returns nil immediately without publishing.
-func (p *PermissionPublisher) PublishOperations(ctx context.Context, ops ...Operation) error {
-	if len(ops) == 0 {
-		return nil
-	}
-
-	ctx, span := p.tracer.Start(ctx, "kafka.PermissionPublisher.PublishOperations")
-	defer span.End()
-
-	span.SetAttributes(
-		attribute.String("messaging.system", "kafka"),
-		attribute.String("messaging.destination", p.topic),
-		attribute.String("messaging.operation", "publish"),
-		attribute.Int("permission.operation_count", len(ops)),
-	)
-
-	err := p.publish(ctx, ops...)
-	if err != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, "failed to publish permission operations")
-		if p.monitor != nil {
-			_ = p.monitor.SetDependencyAvailability(map[string]string{"component": "kafka"}, 0)
-		}
-		return fmt.Errorf("failed to publish permission operations: %v", err)
-	}
-
-	if p.monitor != nil {
-		_ = p.monitor.SetDependencyAvailability(map[string]string{"component": "kafka"}, 1)
-	}
-	span.SetStatus(codes.Ok, "permission operations published")
-	return nil
-}
-
-// PublishWrite publishes a write operation for the given subject, relation, and object tuple.
-func (p *PermissionPublisher) PublishWrite(ctx context.Context, subject, relation, object string) error {
-	return p.PublishOperations(ctx, Operation{
-		Op:       v1.PermissionOp_PERMISSION_OP_WRITE,
-		Subject:  subject,
-		Relation: relation,
-		Object:   object,
-	})
-}
-
-// PublishDelete publishes a delete operation for the given subject, relation, and object tuple.
-func (p *PermissionPublisher) PublishDelete(ctx context.Context, subject, relation, object string) error {
-	return p.PublishOperations(ctx, Operation{
-		Op:       v1.PermissionOp_PERMISSION_OP_DELETE,
-		Subject:  subject,
-		Relation: relation,
-		Object:   object,
-	})
-}
-
-// publish marshals and sends a PermissionUpdateEnvelope message to Kafka.
-func (p *PermissionPublisher) publish(ctx context.Context, ops ...Operation) error {
-	if len(ops) == 0 {
-		return nil
-	}
-
+// buildEnvelope constructs the protobuf PermissionUpdateEnvelope and generates a unique
+// idempotency key whose batch hash part is order-independent.
+func buildEnvelope(serviceName string, ops []Operation) (*v1.PermissionUpdateEnvelope, string) {
 	messageID := uuid.New().String()
 	var idempotencyKey string
 	if len(ops) == 1 {
@@ -215,40 +99,110 @@ func (p *PermissionPublisher) publish(ctx context.Context, ops ...Operation) err
 
 	envelope := &v1.PermissionUpdateEnvelope{
 		Version:        SchemaVersion,
-		Service:        p.serviceName,
+		Service:        serviceName,
 		MessageId:      messageID,
 		IdempotencyKey: idempotencyKey,
 		EventTime:      timestamppb.Now(),
 		Operations:     protoOps,
 	}
 
+	return envelope, ops[0].Object
+}
+
+// PublishOperations publishes one or more permission operations in a single envelope asynchronously.
+// If ops is empty, it returns nil immediately without publishing.
+func (p *PermissionPublisher) PublishOperations(ctx context.Context, ops ...Operation) error {
+	if len(ops) == 0 {
+		return nil
+	}
+
+	ctx, span := p.tracer.Start(ctx, "kafka.PermissionPublisher.PublishOperations")
+	defer span.End()
+
+	span.SetAttributes(
+		attribute.String("messaging.system", "kafka"),
+		attribute.String("messaging.destination", p.topic),
+		attribute.String("messaging.operation", "publish"),
+		attribute.Int("permission.operation_count", len(ops)),
+	)
+
+	err := p.publish(ctx, ops...)
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, "failed to publish permission operations")
+		return fmt.Errorf("failed to publish permission operations: %v", err)
+	}
+
+	span.SetStatus(codes.Ok, "permission operations published")
+	return nil
+}
+
+// PublishWrite publishes a write operation for the given subject, relation, and object tuple.
+func (p *PermissionPublisher) PublishWrite(ctx context.Context, subject, relation, object string) error {
+	return p.PublishOperations(ctx, Operation{
+		Op:       v1.PermissionOp_PERMISSION_OP_WRITE,
+		Subject:  subject,
+		Relation: relation,
+		Object:   object,
+	})
+}
+
+// PublishDelete publishes a delete operation for the given subject, relation, and object tuple.
+func (p *PermissionPublisher) PublishDelete(ctx context.Context, subject, relation, object string) error {
+	return p.PublishOperations(ctx, Operation{
+		Op:       v1.PermissionOp_PERMISSION_OP_DELETE,
+		Subject:  subject,
+		Relation: relation,
+		Object:   object,
+	})
+}
+
+// publish marshals a PermissionUpdateEnvelope and enqueues it to franz-go for asynchronous dispatch.
+func (p *PermissionPublisher) publish(ctx context.Context, ops ...Operation) error {
+	if len(ops) == 0 {
+		return nil
+	}
+
+	envelope, partitionKey := buildEnvelope(p.serviceName, ops)
+
 	payload, err := proto.Marshal(envelope)
 	if err != nil {
 		return fmt.Errorf("failed to marshal permission envelope: %v", err)
 	}
 
-	msg := kafkago.Message{
-		Key:   []byte(ops[0].Object),
+	record := &kgo.Record{
+		Topic: p.topic,
+		Key:   []byte(partitionKey),
 		Value: payload,
-		Time:  time.Now(),
 	}
 
-	if err := p.writer.WriteMessages(ctx, msg); err != nil {
-		return fmt.Errorf("failed to write kafka message: %v", err)
-	}
+	p.client.TryProduce(context.WithoutCancel(ctx), record, p.onDelivery)
 
 	return nil
 }
 
-// Close closes the underlying Kafka writer and releases the transport's idle
-// connections when this publisher owns one.
+// onDelivery logs an error if an asynchronous record delivery fails.
+func (p *PermissionPublisher) onDelivery(_ *kgo.Record, err error) {
+	if err != nil {
+		p.logger.Errorf("failed to deliver permission record: %v", err)
+	}
+}
+
+// Ping verifies that Kafka brokers are reachable and can authenticate.
+func (p *PermissionPublisher) Ping(ctx context.Context) error {
+	return p.client.Ping(ctx)
+}
+
+// Close flushes any in-flight records bounded by DefaultCloseFlushTimeout and closes the franz-go client.
 func (p *PermissionPublisher) Close() error {
-	var err error
-	if p.writer != nil {
-		err = p.writer.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultCloseFlushTimeout)
+	defer cancel()
+
+	flushErr := p.client.Flush(ctx)
+	p.client.Close()
+
+	if flushErr != nil {
+		return fmt.Errorf("failed to flush in-flight records on close: %v", flushErr)
 	}
-	if p.transport != nil {
-		p.transport.CloseIdleConnections()
-	}
-	return err
+	return nil
 }

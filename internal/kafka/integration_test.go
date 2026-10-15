@@ -5,12 +5,13 @@ package kafka_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	v1 "github.com/canonical/authorization-service/api/v1"
-	kafkago "github.com/segmentio/kafka-go"
-	tc_kafka "github.com/testcontainers/testcontainers-go/modules/kafka"
+	"github.com/twmb/franz-go/pkg/kadm"
+	"github.com/twmb/franz-go/pkg/kgo"
 	trace "go.opentelemetry.io/otel/trace"
 	"google.golang.org/protobuf/proto"
 
@@ -18,6 +19,7 @@ import (
 	"github.com/canonical/hook-service/internal/kafka"
 	"github.com/canonical/hook-service/internal/logging"
 	"github.com/canonical/hook-service/internal/monitoring"
+	"github.com/canonical/hook-service/internal/testhelpers"
 	"github.com/canonical/hook-service/internal/tracing"
 )
 
@@ -41,57 +43,27 @@ func (m *noopMonitor) SetDependencyAvailability(_ map[string]string, _ float64) 
 	return nil
 }
 
-
 var _ tracing.TracingInterface = (*noopTracer)(nil)
 var _ monitoring.MonitorInterface = (*noopMonitor)(nil)
 
-func setupKafkaContainer(t *testing.T) (string, func()) {
+func createTopic(t *testing.T, broker, topic string) {
 	t.Helper()
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
 
-	var kafkaContainer *tc_kafka.KafkaContainer
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				t.Skipf("Skipping: Docker not available (%v)", r)
-			}
-		}()
-		var err error
-		kafkaContainer, err = tc_kafka.Run(ctx, "confluentinc/confluent-local:7.5.0")
-		if err != nil {
-			t.Skipf("Skipping: Docker/Kafka container failed to start: %v", err)
-		}
-	}()
-
-	if kafkaContainer == nil {
-		t.Skip("Skipping: Kafka container is nil")
+	kClient, err := kgo.NewClient(kgo.SeedBrokers(broker))
+	if err != nil {
+		t.Fatalf("failed to create client for topic creation: %v", err)
 	}
+	defer kClient.Close()
 
-	brokers, err := kafkaContainer.Brokers(ctx)
-	if err != nil || len(brokers) == 0 {
-		_ = kafkaContainer.Terminate(ctx)
-		t.Skipf("Skipping: failed to get Kafka brokers: %v", err)
+	admin := kadm.NewClient(kClient)
+	defer admin.Close()
+
+	_, err = admin.CreateTopics(ctx, 1, 1, nil, topic)
+	if err != nil {
+		t.Fatalf("failed to create topic %q: %v", topic, err)
 	}
-
-	client := &kafkago.Client{
-		Addr:    kafkago.TCP(brokers[0]),
-		Timeout: 5 * time.Second,
-	}
-	_, _ = client.CreateTopics(ctx, &kafkago.CreateTopicsRequest{
-		Topics: []kafkago.TopicConfig{
-			{
-				Topic:             config.PermissionsTopic(config.DefaultFederatedServiceName),
-				NumPartitions:     1,
-				ReplicationFactor: 1,
-			},
-		},
-	})
-
-	cleanup := func() {
-		_ = kafkaContainer.Terminate(context.Background())
-	}
-
-	return brokers[0], cleanup
 }
 
 func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
@@ -99,137 +71,188 @@ func TestKafkaIntegration_PublishAndConsume(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	broker, cleanup := setupKafkaContainer(t)
-	defer cleanup()
+	broker := testhelpers.SetupKafka(t)
+	topic := config.PermissionsTopic("test-hook-service")
+	createTopic(t, broker, topic)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 
-	topic := config.PermissionsTopic(config.DefaultFederatedServiceName)
-	writer := kafka.NewKafkaWriter([]string{broker}, topic, nil)
 	logger := logging.NewLogger("debug")
 	tracer := &noopTracer{}
 	monitor := &noopMonitor{}
 
-	publisher := kafka.NewPermissionPublisher(writer, config.DefaultFederatedServiceName, topic, tracer, monitor, logger)
-	defer func() { _ = publisher.Close() }()
-
-	// 1. Test PublishWrite
-	if err := publisher.PublishWrite(ctx, "user:alice", "owner", "group-in-claim:grp-1"); err != nil {
-		t.Fatalf("failed to publish write event: %v", err)
-	}
-
-	// 2. Test PublishDelete
-	if err := publisher.PublishDelete(ctx, "user:bob", "member", "group-in-claim:grp-1"); err != nil {
-		t.Fatalf("failed to publish delete event: %v", err)
-	}
-
-	// 3. Read messages using kafka reader
-	reader := kafkago.NewReader(kafkago.ReaderConfig{
+	cfg := &kafka.Config{
 		Brokers:     []string{broker},
+		ServiceName: "test-hook-service",
 		Topic:       topic,
-		Partition:   0,
-		MinBytes:    1,
-		MaxBytes:    10e6,
-		MaxWait:     500 * time.Millisecond,
-		StartOffset: kafkago.FirstOffset,
-	})
-	defer func() { _ = reader.Close() }()
+		AuthType:    kafka.AuthTypeNone,
+	}
 
-	// Read message 1 (Write)
-	msg1, err := reader.ReadMessage(ctx)
+	publisher, err := kafka.NewPublisher(cfg, tracer, monitor, logger)
 	if err != nil {
-		t.Fatalf("failed to read msg1: %v", err)
-	}
-	expectedKey1 := "group-in-claim:grp-1"
-	if string(msg1.Key) != expectedKey1 {
-		t.Errorf("msg1 key = %q, want %q", string(msg1.Key), expectedKey1)
+		t.Fatalf("failed to construct publisher: %v", err)
 	}
 
-	var env1 v1.PermissionUpdateEnvelope
-	if err := proto.Unmarshal(msg1.Value, &env1); err != nil {
-		t.Fatalf("failed to unmarshal proto msg1: %v", err)
-	}
-	expectedIdempotencyKey1 := "user:alice:owner:group-in-claim:grp-1:write:" + env1.MessageId
-	if env1.IdempotencyKey != expectedIdempotencyKey1 {
-		t.Errorf("env1 idempotency_key = %q, want %q", env1.IdempotencyKey, expectedIdempotencyKey1)
-	}
-	if len(env1.Operations) != 1 {
-		t.Fatalf("msg1 operations count = %d, want 1", len(env1.Operations))
-	}
-	op1 := env1.Operations[0]
-	if op1.Op != v1.PermissionOp_PERMISSION_OP_WRITE {
-		t.Errorf("msg1 op = %v, want %v", op1.Op, v1.PermissionOp_PERMISSION_OP_WRITE)
-	}
-	if op1.Subject != "user:alice" || op1.Relation != "owner" || op1.Object != "group-in-claim:grp-1" {
-		t.Errorf("msg1 op tuple = %s %s %s, want user:alice owner group-in-claim:grp-1", op1.Subject, op1.Relation, op1.Object)
-	}
-	if env1.Version != "1" {
-		t.Errorf("msg1 version = %s, want 1", env1.Version)
-	}
-	if env1.Service != "hook-service" {
-		t.Errorf("msg1 service = %s, want hook-service", env1.Service)
+	testCases := []struct {
+		name    string
+		publish func(context.Context, kafka.PermissionPublisherInterface) error
+		wantKey string
+		wantOps []struct {
+			op       v1.PermissionOp
+			subject  string
+			relation string
+			object   string
+		}
+	}{
+		{
+			name: "single write operation",
+			publish: func(ctx context.Context, p kafka.PermissionPublisherInterface) error {
+				return p.PublishWrite(ctx, "user:alice", "owner", "group-in-claim:grp-1")
+			},
+			wantKey: "group-in-claim:grp-1",
+			wantOps: []struct {
+				op       v1.PermissionOp
+				subject  string
+				relation string
+				object   string
+			}{
+				{op: v1.PermissionOp_PERMISSION_OP_WRITE, subject: "user:alice", relation: "owner", object: "group-in-claim:grp-1"},
+			},
+		},
+		{
+			name: "single delete operation",
+			publish: func(ctx context.Context, p kafka.PermissionPublisherInterface) error {
+				return p.PublishDelete(ctx, "user:bob", "member", "group-in-claim:grp-1")
+			},
+			wantKey: "group-in-claim:grp-1",
+			wantOps: []struct {
+				op       v1.PermissionOp
+				subject  string
+				relation string
+				object   string
+			}{
+				{op: v1.PermissionOp_PERMISSION_OP_DELETE, subject: "user:bob", relation: "member", object: "group-in-claim:grp-1"},
+			},
+		},
+		{
+			name: "batch operations",
+			publish: func(ctx context.Context, p kafka.PermissionPublisherInterface) error {
+				return p.PublishOperations(ctx,
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:carol", Relation: "member", Object: "group-in-claim:grp-1"},
+					kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:dave", Relation: "member", Object: "group-in-claim:grp-1"},
+				)
+			},
+			wantKey: "group-in-claim:grp-1",
+			wantOps: []struct {
+				op       v1.PermissionOp
+				subject  string
+				relation string
+				object   string
+			}{
+				{op: v1.PermissionOp_PERMISSION_OP_WRITE, subject: "user:carol", relation: "member", object: "group-in-claim:grp-1"},
+				{op: v1.PermissionOp_PERMISSION_OP_DELETE, subject: "user:dave", relation: "member", object: "group-in-claim:grp-1"},
+			},
+		},
 	}
 
-	// Read message 2 (Delete)
-	msg2, err := reader.ReadMessage(ctx)
+	for _, tc := range testCases {
+		if err := tc.publish(ctx, publisher); err != nil {
+			t.Fatalf("[%s] failed to publish: %v", tc.name, err)
+		}
+	}
+
+	// Verify that Close() flushes in-flight records cleanly before reading back
+	if err := publisher.Close(); err != nil {
+		t.Fatalf("failed to close and flush publisher: %v", err)
+	}
+
+	// Read messages using franz-go consumer
+	consumer, err := kgo.NewClient(
+		kgo.SeedBrokers(broker),
+		kgo.ConsumePartitions(map[string]map[int32]kgo.Offset{
+			topic: {0: kgo.NewOffset().AtStart()},
+		}),
+	)
 	if err != nil {
-		t.Fatalf("failed to read msg2: %v", err)
+		t.Fatalf("failed to create consumer client: %v", err)
 	}
-	expectedKey2 := "group-in-claim:grp-1"
-	if string(msg2.Key) != expectedKey2 {
-		t.Errorf("msg2 key = %q, want %q", string(msg2.Key), expectedKey2)
+	defer consumer.Close()
+
+	var records []*kgo.Record
+	deadline := time.Now().Add(10 * time.Second)
+	for len(records) < len(testCases) && time.Now().Before(deadline) {
+		pollCtx, pollCancel := context.WithTimeout(ctx, 1*time.Second)
+		fetches := consumer.PollFetches(pollCtx)
+		pollCancel()
+		if errs := fetches.Errors(); len(errs) > 0 {
+			for _, fetchErr := range errs {
+				if fetchErr.Err != context.DeadlineExceeded && fetchErr.Err != context.Canceled {
+					t.Fatalf("consumer poll error: %v", fetchErr.Err)
+				}
+			}
+		}
+		fetches.EachRecord(func(rec *kgo.Record) {
+			records = append(records, rec)
+		})
 	}
 
-	var env2 v1.PermissionUpdateEnvelope
-	if err := proto.Unmarshal(msg2.Value, &env2); err != nil {
-		t.Fatalf("failed to unmarshal proto msg2: %v", err)
-	}
-	expectedIdempotencyKey2 := "user:bob:member:group-in-claim:grp-1:delete:" + env2.MessageId
-	if env2.IdempotencyKey != expectedIdempotencyKey2 {
-		t.Errorf("env2 idempotency_key = %q, want %q", env2.IdempotencyKey, expectedIdempotencyKey2)
+	if len(records) != len(testCases) {
+		t.Fatalf("expected %d records, got %d", len(testCases), len(records))
 	}
 
-	if len(env2.Operations) != 1 {
-		t.Fatalf("msg2 operations count = %d, want 1", len(env2.Operations))
-	}
-	op2 := env2.Operations[0]
-	if op2.Op != v1.PermissionOp_PERMISSION_OP_DELETE {
-		t.Errorf("msg2 op = %v, want %v", op2.Op, v1.PermissionOp_PERMISSION_OP_DELETE)
-	}
-	if op2.Subject != "user:bob" || op2.Relation != "member" || op2.Object != "group-in-claim:grp-1" {
-		t.Errorf("msg2 op tuple = %s %s %s, want user:bob member group-in-claim:grp-1", op2.Subject, op2.Relation, op2.Object)
-	}
+	for i, tc := range testCases {
+		rec := records[i]
+		if string(rec.Key) != tc.wantKey {
+			t.Errorf("[%s] key = %q, want %q", tc.name, string(rec.Key), tc.wantKey)
+		}
 
-	// 3. Test PublishOperations (batch operations)
-	if err := publisher.PublishOperations(ctx,
-		kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_WRITE, Subject: "user:carol", Relation: "member", Object: "group-in-claim:grp-1"},
-		kafka.Operation{Op: v1.PermissionOp_PERMISSION_OP_DELETE, Subject: "user:dave", Relation: "member", Object: "group-in-claim:grp-1"},
-	); err != nil {
-		t.Fatalf("failed to publish batch operations: %v", err)
-	}
+		var env v1.PermissionUpdateEnvelope
+		if err := proto.Unmarshal(rec.Value, &env); err != nil {
+			t.Fatalf("[%s] failed to unmarshal proto envelope: %v", tc.name, err)
+		}
 
-	// Read message 3 (Batch Operations)
-	msg3, err := reader.ReadMessage(ctx)
-	if err != nil {
-		t.Fatalf("failed to read msg3: %v", err)
-	}
-	expectedKey3 := "group-in-claim:grp-1"
-	if string(msg3.Key) != expectedKey3 {
-		t.Errorf("msg3 key = %q, want %q", string(msg3.Key), expectedKey3)
-	}
+		if env.Version != "1" {
+			t.Errorf("[%s] version = %s, want 1", tc.name, env.Version)
+		}
+		if env.Service != "test-hook-service" {
+			t.Errorf("[%s] service = %s, want test-hook-service", tc.name, env.Service)
+		}
+		if env.MessageId == "" {
+			t.Errorf("[%s] expected non-empty message_id", tc.name)
+		}
+		if env.IdempotencyKey == "" {
+			t.Errorf("[%s] expected non-empty idempotency_key", tc.name)
+		}
 
-	var env3 v1.PermissionUpdateEnvelope
-	if err := proto.Unmarshal(msg3.Value, &env3); err != nil {
-		t.Fatalf("failed to unmarshal proto msg3: %v", err)
-	}
-	if len(env3.Operations) != 2 {
-		t.Fatalf("msg3 operations count = %d, want 2", len(env3.Operations))
-	}
-	if env3.Operations[0].Op != v1.PermissionOp_PERMISSION_OP_WRITE || env3.Operations[0].Subject != "user:carol" {
-		t.Errorf("unexpected op 0 in batch: %+v", env3.Operations[0])
-	}
-	if env3.Operations[1].Op != v1.PermissionOp_PERMISSION_OP_DELETE || env3.Operations[1].Subject != "user:dave" {
-		t.Errorf("unexpected op 1 in batch: %+v", env3.Operations[1])
+		if len(tc.wantOps) == 1 {
+			opName := "write"
+			if tc.wantOps[0].op == v1.PermissionOp_PERMISSION_OP_DELETE {
+				opName = "delete"
+			}
+			expectedIdempotencyKey := fmt.Sprintf("%s:%s:%s:%s:%s", tc.wantOps[0].subject, tc.wantOps[0].relation, tc.wantOps[0].object, opName, env.MessageId)
+			if env.IdempotencyKey != expectedIdempotencyKey {
+				t.Errorf("[%s] idempotency_key = %q, want %q", tc.name, env.IdempotencyKey, expectedIdempotencyKey)
+			}
+		}
+
+		if len(env.Operations) != len(tc.wantOps) {
+			t.Fatalf("[%s] operations count = %d, want %d", tc.name, len(env.Operations), len(tc.wantOps))
+		}
+		for j, wantOp := range tc.wantOps {
+			gotOp := env.Operations[j]
+			if gotOp.Op != wantOp.op {
+				t.Errorf("[%s] op[%d] = %v, want %v", tc.name, j, gotOp.Op, wantOp.op)
+			}
+			if gotOp.Subject != wantOp.subject {
+				t.Errorf("[%s] op[%d] subject = %q, want %q", tc.name, j, gotOp.Subject, wantOp.subject)
+			}
+			if gotOp.Relation != wantOp.relation {
+				t.Errorf("[%s] op[%d] relation = %q, want %q", tc.name, j, gotOp.Relation, wantOp.relation)
+			}
+			if gotOp.Object != wantOp.object {
+				t.Errorf("[%s] op[%d] object = %q, want %q", tc.name, j, gotOp.Object, wantOp.object)
+			}
+		}
 	}
 }

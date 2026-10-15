@@ -23,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/openfga/go-sdk/client"
 	"github.com/testcontainers/testcontainers-go"
+	tc_kafka "github.com/testcontainers/testcontainers-go/modules/kafka"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 
@@ -38,6 +39,7 @@ const (
 	postgresImage = "postgres:16-alpine"
 	hydraImage    = "oryd/hydra:v25.4.0"
 	openfgaImage  = "openfga/openfga:v1.10.0"
+	kafkaImage    = "confluentinc/confluent-local:7.5.0"
 )
 
 const (
@@ -312,4 +314,27 @@ func startOpenFGA() (*openfga.Client, testcontainers.Container, error) {
 	}
 
 	return fgaClient, fgaContainer, nil
+}
+
+// SetupKafka starts a Kafka container using the confluent-local image and
+// returns the address of the first broker. Teardown is registered on t;
+// callers never terminate the container themselves. Any failure is fatal
+// to the calling test.
+func SetupKafka(t *testing.T) string {
+	t.Helper()
+
+	ctx := context.Background()
+
+	kafkaContainer, err := tc_kafka.Run(ctx, kafkaImage)
+	if err != nil {
+		t.Fatalf("failed to start kafka container (is a container runtime available?): %v", err)
+	}
+	terminate(t, kafkaContainer)
+
+	brokers, err := kafkaContainer.Brokers(ctx)
+	if err != nil || len(brokers) == 0 {
+		t.Fatalf("failed to get kafka brokers: %v", err)
+	}
+
+	return brokers[0]
 }

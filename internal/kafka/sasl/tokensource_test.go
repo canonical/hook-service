@@ -3,8 +3,8 @@
 
 package sasl
 
-//go:generate mockgen -build_flags=--mod=mod -package sasl -destination ./mock_tracing.go -source=../../tracing/interfaces.go
-//go:generate mockgen -build_flags=--mod=mod -package sasl -destination ./mock_interfaces.go -source=./interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package sasl -destination ./mock_tracing_test.go -source=../../tracing/interfaces.go
+//go:generate mockgen -build_flags=--mod=mod -package sasl -destination ./mock_interfaces_test.go -source=./interfaces.go
 
 import (
 	"context"
