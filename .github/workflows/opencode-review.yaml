@@ -13,7 +13,6 @@ jobs:
 
     runs-on: ubuntu-latest
     permissions:
-      id-token: write
       contents: read
       pull-requests: write
       issues: write
@@ -24,8 +23,10 @@ jobs:
         env:
           COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
-          COMMENT="${{ github.event.comment.body }}"
-          if [[ "$COMMENT" =~ model=([^ ]+) ]]; then
+          COMMENT="$COMMENT_BODY"
+          # The model name is written to $GITHUB_ENV, where a newline would start
+          # a new variable, so only plain model-name characters are accepted.
+          if [[ "$COMMENT" =~ model=([A-Za-z0-9._/:-]+) ]]; then
               echo "MODEL=${BASH_REMATCH[1]}" >> $GITHUB_ENV
           else
               echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> $GITHUB_ENV
