@@ -28,7 +28,7 @@ jobs:
       contents: read
     if: ${{ github.ref == 'refs/heads/main' }}
     needs: [ build, unit-test ]
-    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@fc85af7448538c473be450dc2c8ec5d158ea0d15 # v1.17.0
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@bacce5fe2bd598f8daa69c64438fb872334e2d0a # v1.18.0
     with:
       rock: ${{ needs.build.outputs.rock }}
 
@@ -38,7 +38,7 @@ jobs:
       contents: read
     if: ${{ github.ref_type == 'tag' }}
     needs: [ build, unit-test ]
-    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@fc85af7448538c473be450dc2c8ec5d158ea0d15 # v1.17.0
+    uses: canonical/identity-team/.github/workflows/_rock-gh-publish.yaml@bacce5fe2bd598f8daa69c64438fb872334e2d0a # v1.18.0
     with:
       rock: ${{ needs.build.outputs.rock }}
       candidate: true
@@ -51,7 +51,7 @@ jobs:
       actions: read
     if: ${{ !cancelled() && (needs.gh-publish-branch.result == 'success' || needs.gh-publish-candidate.result == 'success') }}
     needs: [ gh-publish-branch, gh-publish-candidate ]
-    uses: canonical/identity-team/.github/workflows/_rock-scan.yaml@fc85af7448538c473be450dc2c8ec5d158ea0d15 # v1.17.0
+    uses: canonical/identity-team/.github/workflows/_rock-scan.yaml@bacce5fe2bd598f8daa69c64438fb872334e2d0a # v1.18.0
     with:
       image: ${{ needs.gh-publish-candidate.outputs.image || needs.gh-publish-branch.outputs.image }}
       exit-code: '1'
@@ -65,7 +65,7 @@ jobs:
       contents: write
     if: ${{ github.ref_type == 'tag' }}
     needs: [ gh-publish-candidate, scan ]
-    uses: canonical/identity-team/.github/workflows/_rock-promote.yaml@fc85af7448538c473be450dc2c8ec5d158ea0d15 # v1.17.0
+    uses: canonical/identity-team/.github/workflows/_rock-promote.yaml@bacce5fe2bd598f8daa69c64438fb872334e2d0a # v1.18.0
     with:
       candidate-image: ${{ needs.gh-publish-candidate.outputs.image }}
       release-tag: ${{ github.ref_name }}
