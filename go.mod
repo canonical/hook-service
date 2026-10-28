@@ -13,7 +13,7 @@ require (
 	github.com/go-playground/validator/v10 v10.30.5
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.6.0
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.32.0
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/k-capehart/go-salesforce/v2 v2.5.2
 	github.com/kelseyhightower/envconfig v1.4.0
@@ -40,7 +40,7 @@ require (
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.24.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261026165753-2ffab32bce7e
-	google.golang.org/grpc v1.84.0
+	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
 
@@ -131,7 +131,7 @@ require (
 	golang.org/x/oauth2 v0.37.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
-	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
+	google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apimachinery v0.33.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
