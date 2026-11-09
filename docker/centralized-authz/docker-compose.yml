@@ -2,7 +2,7 @@ name: dependencies
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:18-alpine
     container_name: authz-postgres
     ports:
       - "5433:5432"
