@@ -6,7 +6,7 @@ package salesforce
 import (
 	"fmt"
 
-	"github.com/k-capehart/go-salesforce/v2"
+	"github.com/k-capehart/go-salesforce/v3"
 )
 
 func NewSalesforceClient(domain, consumerKey, consumerSecret string) (*salesforce.Salesforce, error) {
