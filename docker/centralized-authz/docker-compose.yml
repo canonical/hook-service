@@ -2,7 +2,7 @@ name: dependencies
 
 services:
   postgres:
-    image: postgres:14-alpine
+    image: postgres:18-alpine
     container_name: authz-postgres
     ports:
       - "5433:5432"
@@ -22,7 +22,7 @@ services:
       retries: 10
 
   migrateopenfga:
-    image: openfga/openfga:v1.14.1
+    image: openfga/openfga:v1.22.1
     container_name: authz-migrateopenfga
     command: migrate --datastore-engine postgres --datastore-uri 'postgresql://authorization-service:password@postgres/openfga?sslmode=disable'
     depends_on:
@@ -32,7 +32,7 @@ services:
       - authz-network
 
   openfga:
-    image: openfga/openfga:v1.14.1
+    image: openfga/openfga:v1.22.1
     container_name: authz-openfga
     ports:
       - "8082:8080"  # HTTP API
@@ -82,7 +82,7 @@ services:
       retries: 10
 
   kafka:
-    image: apache/kafka:3.8.0
+    image: apache/kafka:4.4.0
     container_name: authz-kafka
     ports:
       - "9092:9092"
@@ -106,7 +106,7 @@ services:
       retries: 10
 
   envoy:
-    image: envoyproxy/envoy:v1.30-latest
+    image: envoyproxy/envoy:v1.40-latest
     container_name: authz-envoy
     ports:
       - "10000:10000"
