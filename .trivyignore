@@ -1,1 +1,5 @@
 CVE-2026-33504
+# Fixed in go 1.26.9, which is not yet available in the go/1.26/stable snap.
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
