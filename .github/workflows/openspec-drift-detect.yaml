@@ -53,6 +53,19 @@ jobs:
               echo "MODEL=openrouter/deepseek/deepseek-v4-flash" >> $GITHUB_ENV
           fi
 
+      - name: Guard merged or closed PR
+        if: github.event_name == 'issue_comment'
+        id: pr_state
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          STATE=$(gh pr view ${{ github.event.issue.number }} --json state --jq .state)
+          echo "state=$STATE" >> "$GITHUB_OUTPUT"
+          if [ "$STATE" != "OPEN" ]; then
+            gh pr comment ${{ github.event.issue.number }} \
+              --body "ℹ️ **OpenSpec Drift Detection**: this PR is ${STATE} — nothing to audit." || true
+          fi
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -60,13 +73,24 @@ jobs:
           fetch-depth: 0
 
       - name: Checkout PR Branch for ChatOps
-        if: github.event_name == 'issue_comment'
+        if: github.event_name == 'issue_comment' && steps.pr_state.outputs.state == 'OPEN'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh pr checkout ${{ github.event.issue.number }}
 
+      - name: Harden git for read-only audit
+        if: github.event_name == 'pull_request' || steps.pr_state.outputs.state == 'OPEN'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # The audit is read-only: keep agent-dropped artifacts out of
+          # `git status --porcelain` so the action's dirty-branch check never
+          # tries to commit and push them (this job runs with contents: read).
+          git config status.showUntrackedFiles no
+
       - name: Run OpenCode Drift Detection
+        if: github.event_name == 'pull_request' || steps.pr_state.outputs.state == 'OPEN'
         uses: anomalyco/opencode/github@77fc88c8ade8e5a620ebbe1197f3a572d29ae91a # latest
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_CI_KEY }}
@@ -78,9 +102,10 @@ jobs:
             Audit this pull request for specification drift against `openspec/specs/`.
             Execute and follow all instructions, heuristics, and formatting rules defined in `.agents/skills/openspec-detect-drift/SKILL.md`.
             CRITICAL: Your response MUST begin with the exact anchor tag `<!-- OPENSPEC_DRIFT_REPORT -->` on the first line.
+            CRITICAL: This is a read-only audit. Do NOT create, modify, delete, stage, or commit any files in the repository. Produce the report as your response text only.
 
       - name: Clean up previous drift reports
-        if: success()
+        if: success() && (github.event_name == 'pull_request' || steps.pr_state.outputs.state == 'OPEN')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -99,3 +124,12 @@ jobs:
               gh api --method DELETE "repos/${REPO}/issues/comments/${ID}" || true
             fi
           done
+
+      - name: Post Failure Comment
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.issue.number }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --body "❌ **OpenSpec Drift Detection failed** — this is an infrastructure or audit-execution failure, not a drift verdict. See the [run logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
