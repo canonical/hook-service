@@ -14,7 +14,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0
-	github.com/jackc/pgx/v5 v5.12.0
+	github.com/jackc/pgx/v5 v5.13.0
 	github.com/k-capehart/go-salesforce/v3 v3.2.2
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/openfga/go-sdk v0.7.5
