@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.5.0](https://github.com/canonical/hook-service/compare/v1.4.1...v1.5.0) (2026-11-14)
+
+
+### Features
+
+* authz svc onboarding ([04650a3](https://github.com/canonical/hook-service/commit/04650a3d8d743413317db31f8518798fbf3ee64b))
+* platform mode ([f0fe08b](https://github.com/canonical/hook-service/commit/f0fe08bd6d43518d75deead9c580a37b0973d021))
+
+
+### Bug Fixes
+
+* **deps:** update go deps ([4a4a87a](https://github.com/canonical/hook-service/commit/4a4a87a96b739876b719003d512fbd9a664e6bda))
+* **deps:** update go deps ([5811f10](https://github.com/canonical/hook-service/commit/5811f105379c875c5cd81ac3d78b49fa7cd43937))
+* **deps:** update go deps ([9088d14](https://github.com/canonical/hook-service/commit/9088d14d9716af65712242e8ce5e7ba7a67ed207))
+* **deps:** update go deps ([751e01c](https://github.com/canonical/hook-service/commit/751e01c13aac13616fe77d465661e93419e7522e))
+* **deps:** update go deps ([b89a9ad](https://github.com/canonical/hook-service/commit/b89a9ada90e1da3d0ac41102f0661b83fec531b7))
+* **deps:** update go deps (minor) ([#391](https://github.com/canonical/hook-service/issues/391)) ([f7bac6c](https://github.com/canonical/hook-service/commit/f7bac6cd0acfb9b8181a53c84c63075bc620702a))
+* **deps:** update go deps (minor) ([#396](https://github.com/canonical/hook-service/issues/396)) ([1710ca3](https://github.com/canonical/hook-service/commit/1710ca35027cf5fa4ad337557619b85b95eba926))
+* **deps:** update go deps (minor) ([#414](https://github.com/canonical/hook-service/issues/414)) ([d002ed0](https://github.com/canonical/hook-service/commit/d002ed0702e6c45abec4c17cfb4ac989aaf07135))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.6 ([1b67a1f](https://github.com/canonical/hook-service/commit/1b67a1f1828ce63a3001c5aa6bf6f5b0696ab5c3))
+* **deps:** update module github.com/go-playground/validator/v10 to v10.30.6 ([#402](https://github.com/canonical/hook-service/issues/402)) ([329090f](https://github.com/canonical/hook-service/commit/329090f941a4885345f08cfd940918cc666595c7))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.12.0 ([529c395](https://github.com/canonical/hook-service/commit/529c395d1f6f0e06919042db44c1f1cda02b2617))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.12.0 ([#401](https://github.com/canonical/hook-service/issues/401)) ([a83fb17](https://github.com/canonical/hook-service/commit/a83fb1751a09c5efd10d54b22c2de658aea81eea))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.13.0 ([f4c6dd7](https://github.com/canonical/hook-service/commit/f4c6dd7e01b04bd1ab0bccc3796dbeaf5a07f373))
+* **deps:** update module github.com/jackc/pgx/v5 to v5.13.0 ([#416](https://github.com/canonical/hook-service/issues/416)) ([34ee7a4](https://github.com/canonical/hook-service/commit/34ee7a4d0dd15935fe59b01f8d41e2667d9a8071))
+* **deps:** update module github.com/k-capehart/go-salesforce/v2 to v3 ([f8baebf](https://github.com/canonical/hook-service/commit/f8baebf4fe77389cd0ebc5f18bd73dc904a8fcd1))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.1 ([ccb9645](https://github.com/canonical/hook-service/commit/ccb9645f7db0b7ce1702b49c89cafc531e6f396f))
+* **deps:** update module github.com/pressly/goose/v3 to v3.30.1 ([#419](https://github.com/canonical/hook-service/issues/419)) ([d4a5964](https://github.com/canonical/hook-service/commit/d4a5964bfba8c08a23c7f649d107b0175edbd71f))
+* **deps:** update module github.com/segmentio/kafka-go to v0.4.51 ([b13ad72](https://github.com/canonical/hook-service/commit/b13ad725d554c87f24cbbda129ad227be1842cad))
+* **deps:** update module github.com/segmentio/kafka-go to v0.4.51 ([#384](https://github.com/canonical/hook-service/issues/384)) ([ea6791b](https://github.com/canonical/hook-service/commit/ea6791b21f5074bf38fc80a01dd78bd9c07f6f91))
+* fix the local devevelopment setup ([b870553](https://github.com/canonical/hook-service/commit/b870553195a6fec5931787f56ee6b243b427dc36))
+* **hooks:** clear stale groups claim when token refresh finds no groups ([62fc8ed](https://github.com/canonical/hook-service/commit/62fc8ed9dfbf4ac46c54b5818612f8a3a4d06ad9))
+
 ## [1.4.1](https://github.com/canonical/hook-service/compare/v1.4.0...v1.4.1) (2026-10-07)
 
 
