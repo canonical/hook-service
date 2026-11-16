@@ -39,7 +39,7 @@ require (
 	go.uber.org/mock v0.6.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.25.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20261110000943-09e21b237f2c
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20261116203732-fd2c7689a808
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
