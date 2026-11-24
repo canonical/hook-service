@@ -34,15 +34,24 @@ type PermissionPublisher struct {
 	writer      KafkaWriterInterface
 	serviceName string
 	topic       string
+	// transport is owned by this publisher when non-nil; its idle connections are
+	// released on Close so the caller never has to track it separately.
+	transport *kafkago.Transport
 
 	tracer  tracing.TracingInterface
 	monitor monitoring.MonitorInterface
 	logger  logging.LoggerInterface
 }
 
+// DefaultTransportIdleTimeout is the idle timeout applied to Kafka transports to ensure
+// periodic connection recycling and token refresh pick-up.
+const DefaultTransportIdleTimeout = 5 * time.Minute
+
 // NewKafkaWriter creates a configured kafka.Writer publishing to topic.
-func NewKafkaWriter(brokers []string, topic string) *kafkago.Writer {
-	return &kafkago.Writer{
+// An optional kafkago.Transport can be provided for custom TLS and SASL authentication.
+// Passing nil uses the default unauthenticated plain TCP transport.
+func NewKafkaWriter(brokers []string, topic string, transport *kafkago.Transport) *kafkago.Writer {
+	writer := &kafkago.Writer{
 		Addr:                   kafkago.TCP(brokers...),
 		Topic:                  topic,
 		Balancer:               &kafkago.Hash{},
@@ -56,17 +65,39 @@ func NewKafkaWriter(brokers []string, topic string) *kafkago.Writer {
 		WriteBackoffMax:        500 * time.Millisecond,
 		AllowAutoTopicCreation: false,
 	}
+	if transport != nil {
+		writer.Transport = transport
+	}
+	return writer
 }
 
-// NewPermissionPublisher constructs a new PermissionPublisher. Both serviceName and
+// NewPermissionPublisher constructs a new PermissionPublisher over a caller-supplied
+// writer, whose transport the caller retains responsibility for. Both serviceName and
 // topic are required and are used verbatim: this package holds no deployment-specific
 // default, because substituting one would silently attribute a deployment's events to
 // another service. topic must match the one the writer was built with; the caller
 // derives both from the federated service name.
+//
+// Prefer NewPublisher, which builds the writer and transport from a Config and hands
+// back a publisher that owns both.
 func NewPermissionPublisher(
 	writer KafkaWriterInterface,
 	serviceName string,
 	topic string,
+	tracer tracing.TracingInterface,
+	monitor monitoring.MonitorInterface,
+	logger logging.LoggerInterface,
+) *PermissionPublisher {
+	return newPublisher(writer, serviceName, topic, nil, tracer, monitor, logger)
+}
+
+// newPublisher constructs a PermissionPublisher that additionally takes ownership of
+// transport, releasing its idle connections on Close.
+func newPublisher(
+	writer KafkaWriterInterface,
+	serviceName string,
+	topic string,
+	transport *kafkago.Transport,
 	tracer tracing.TracingInterface,
 	monitor monitoring.MonitorInterface,
 	logger logging.LoggerInterface,
@@ -82,6 +113,7 @@ func NewPermissionPublisher(
 		writer:      writer,
 		serviceName: serviceName,
 		topic:       topic,
+		transport:   transport,
 		tracer:      tracer,
 		monitor:     monitor,
 		logger:      logger,
@@ -208,10 +240,15 @@ func (p *PermissionPublisher) publish(ctx context.Context, ops ...Operation) err
 	return nil
 }
 
-// Close closes the underlying Kafka writer.
+// Close closes the underlying Kafka writer and releases the transport's idle
+// connections when this publisher owns one.
 func (p *PermissionPublisher) Close() error {
+	var err error
 	if p.writer != nil {
-		return p.writer.Close()
+		err = p.writer.Close()
 	}
-	return nil
+	if p.transport != nil {
+		p.transport.CloseIdleConnections()
+	}
+	return err
 }
