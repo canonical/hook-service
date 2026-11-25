@@ -20,7 +20,7 @@ require (
 	github.com/openfga/go-sdk v0.7.5
 	github.com/openfga/language/pkg/go v0.3.2
 	github.com/ory/hydra-client-go/v2 v2.2.1
-	github.com/pressly/goose/v3 v3.30.1
+	github.com/pressly/goose/v3 v3.30.2
 	github.com/prometheus/client_golang v1.25.0
 	github.com/segmentio/kafka-go v0.4.51
 	github.com/spf13/cobra v1.10.2
